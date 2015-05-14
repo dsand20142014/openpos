@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainMenu</class>
+ <widget class="QDialog" name="MainMenu">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>240</width>
+    <height>320</height>
+   </rect>
+  </property>
+  <property name="font">
+   <font>
+    <family>Serif</family>
+    <pointsize>10</pointsize>
+    <weight>50</weight>
+    <italic>false</italic>
+    <bold>false</bold>
+   </font>
+  </property>
+  <property name="windowTitle">
+   <string>Dialog</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">font: 10pt &quot;Serif&quot;;</string>
+  </property>
+  <widget class="QLabel" name="lTitle">
+   <property name="geometry">
+    <rect>
+     <x>60</x>
+     <y>10</y>
+     <width>111</width>
+     <height>20</height>
+    </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>Serif</family>
+     <pointsize>10</pointsize>
+     <weight>50</weight>
+     <italic>false</italic>
+     <bold>false</bold>
+    </font>
+   </property>
+   <property name="text">
+    <string>SETTINGS</string>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignCenter</set>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbEthernet">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>150</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>ETHERNET</string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/wifi.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/wifi.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbGps">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>200</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>  GPS  </string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/wifi.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/wifi.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbModen">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>200</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="text">
+    <string> MODEN </string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/wifi.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/wifi.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbEnter">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>270</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">background-color: rgb(16, 48, 255);
+</string>
+   </property>
+   <property name="text">
+    <string>ENTER</string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/cancel.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/cancel.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbGsm">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>100</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>  GSM   </string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/gsm.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/gsm.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbCancel">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>270</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">background-color: rgb(16, 48, 255);
+</string>
+   </property>
+   <property name="text">
+    <string>CANCEL</string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/cancel.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/cancel.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbDateTime">
+   <property name="geometry">
+    <rect>
+     <x>120</x>
+     <y>50</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="font">
+    <font>
+     <family>Serif</family>
+     <pointsize>10</pointsize>
+     <weight>50</weight>
+     <italic>false</italic>
+     <bold>false</bold>
+    </font>
+   </property>
+   <property name="text">
+    <string>DATETIME</string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/time.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/time.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbScreen">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>100</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>SCREEN</string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/screen.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/screen.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbWifi">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>150</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>  WIFI  </string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/wifi.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/wifi.png</iconset>
+   </property>
+  </widget>
+  <widget class="QPushButton" name="pbModle">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>50</y>
+     <width>95</width>
+     <height>40</height>
+    </rect>
+   </property>
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Ignored" vsizetype="Fixed">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>90</width>
+     <height>40</height>
+    </size>
+   </property>
+   <property name="text">
+    <string>MODULE</string>
+   </property>
+   <property name="icon">
+    <iconset>
+     <normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/module.png</normaloff>../Settings-build-desktop-Desktop_Qt_4_8_0_for_GCC__Qt_SDK____/image/module.png</iconset>
+   </property>
+  </widget>
+ </widget>
+ <tabstops>
+  <tabstop>pbModle</tabstop>
+  <tabstop>pbDateTime</tabstop>
+  <tabstop>pbScreen</tabstop>
+  <tabstop>pbWifi</tabstop>
+  <tabstop>pbCancel</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

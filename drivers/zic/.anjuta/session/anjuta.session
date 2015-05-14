@@ -1,0 +1,28 @@
+
+[Anjuta]
+Maximized=1
+Geometry=1309x796+65+24
+
+[File Loader]
+Files=../../TDA8007_ic.mod.c#1%%%../../atr.c#1196%%%../../osicc.c#1%%%../../s3c2410_tda8007.c#22%%%../../halicc.h#236%%%../../sync.c#271%%%../../libicc.h#204%%%../../libicc.c#187%%%../../qingdao.c#210%%%../../iso7816.c#246%%%../../icccmd.c#344%%%../../protocol.c#1799%%%../../shebao.c#263%%%../../shsam.c#248%%%../../gjpsam.c#266%%%../../emv.c#381%%%../../gjisam.c#265%%%../../s3c2410_tda8007.h#183
+
+[Document Manager]
+bookmarks=<?xml version="1.0" encoding="UTF-8"?>\n<bookmarks/>\n
+
+[Project Manager]
+Expand=icc.zengshu
+
+[Execution]
+Run in terminal=2
+Working directories=../../../icc
+
+[Build]
+Configuration list=1:Default:%%%1:Debug:Debug%%%1:Profiling:Profiling%%%1:Optimized:Optimized
+Selected Configuration=Default
+BuildArgs/Default=--enable-maintainer-mode
+BuildArgs/Debug=--enable-maintainer-mode 'CFLAGS=-g -O0' 'CXXFLAGS=-g -O0' 'JFLAGS=-g -O0' 'FFLAGS=-g -O0'
+BuildArgs/Profiling=--enable-maintainer-mode 'CFLAGS=-g -pg' 'CXXFLAGS=-g -pg' 'JFLAGS=-g -pg' 'FFLAGS=-g -pg'
+BuildArgs/Optimized=--enable-maintainer-mode 'CFLAGS=-O2' 'CXXFLAGS=-O2' 'JFLAGS=-O2' 'FFLAGS=-O2'
+
+[Debugger]
+Stop at beginning=2

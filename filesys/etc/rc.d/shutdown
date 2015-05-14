@@ -1,0 +1,4 @@
+echo "************Shutdown*************"
+sync
+/bin/umount -a -r
+/sbin/swapoff -a

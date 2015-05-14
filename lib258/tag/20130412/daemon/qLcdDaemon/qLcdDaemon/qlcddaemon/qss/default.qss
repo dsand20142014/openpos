@@ -1,0 +1,156 @@
+
+*{
+  outline:none;
+}
+
+QLabel#gpssatname{
+   font:10px;
+}
+
+QRadioButton{
+        margin:-1px;
+}
+
+QLabel#labelShowKey{
+  background-color:rgb(121,71,26:);
+  color:white;
+  border-radius:4px;
+  border:1px solid black;
+  height:35px;
+}
+
+
+QSlider::groove:horizontal { 
+  border: 1px solid #bbb;  
+  background: black;  
+  height: 16px;  
+  border-radius: 4px;  
+}  
+  
+QSlider::sub-page:horizontal {  
+   background: qlineargradient(x1: 0, y1: 0,    x2: 0, y2: 1,  
+       stop: 0 #66e, stop: 1 #bbf);  
+   background: qlineargradient(x1: 0, y1: 0.2, x2: 1, y2: 1,  
+       stop: 0 #bbf, stop: 1 #55f);  
+   border: 1px solid #777;  
+   height: 10px;  
+   border-radius: 4px;  
+}  
+  
+QSlider::add-page:horizontal {  
+   background: red;  
+   border: 1px solid #777;  
+   height: 10px;  
+   border-radius: 4px;  
+}  
+  
+QSlider::handle:horizontal {  
+   background: qlineargradient(x1:0, y1:0, x2:1, y2:1,  
+        stop:0 #eee, stop:1 #ccc);  
+   border: 1px solid #777;  
+   width: 13px;
+   margin-top: -2px;  
+   margin-bottom: -2px;  
+   border-radius: 4px;  
+} 
+
+QLabel#title {
+    font: bold 14px; color: red;
+}
+QLabel#inputLabel {
+    border-style: solid;
+    border-width: 2px;
+    border-radius: 4px;
+    border-color: gray;
+    background-color: #f0f0f0;
+}
+QLabel#signLabel {
+    border-style: solid;    
+    border-width: 2px;      
+    border-radius: 4px;     
+    border-color: gray;        
+    background-color: white;            
+}  
+
+QFrame#MyIpAddrEdit {
+    background-color: white;
+    border-style: inset;
+    border-width: 2px;
+    border-color: gray;
+    border-radius: 4px
+}
+
+QMessageBox {
+    background-color: rgb(165, 247, 247);
+}
+QListView::item
+{
+    color:black; height:40px;  border-bottom:1px solid black;
+} 
+
+QListView::item:selected 
+{
+   color:white; background-color:rgb(0,24,59);
+}
+
+QCheckBox::indicator:checked {
+      image: url(/daemon/image/checkbox_checked.png);        
+      background-image: url(/daemon/image/checkbox.png);
+      width: 15px;
+      height: 15px;
+}                                                           
+                                   
+QCheckBox::indicator:unchecked {
+        image: url(/daemon/image/checkbox.png);
+}
+
+QComboBox {
+     border: 1px solid gray;
+     border-radius: 3px;
+     padding: 1px 18px 1px 3px;
+     min-width: 6em;
+   }
+
+QComboBox::drop-down {                                 
+    width: 23px;                                       
+    height: 23px;                                      
+    background-image: url(/daemon/image/downarrow.png);
+}
+ 
+QComboBox::item:selected:active
+{
+	backgound-color: rgb(0,24,59);	
+}
+
+QTextEdit
+{	border-style: inset;
+        border-width: 2px;
+        border-radius: 4px;
+        border-color: gray;
+        background-color: #f0f0f0;
+}
+
+QPushButton {
+        background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgb(175, 175, 175), stop:0.4 rgb(51, 70, 98), stop:0.5 rgb(0,24,59), stop:1 rgb(0,24,59));
+        color: white; font: bold 15px;
+        border-radius: 4px; padding:-2px;
+        border-width: 2px; border-color: #e0e0e0;
+} 
+	
+QPushButton:pressed {
+        background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgb(0,24,59), stop:0.5 rgb(0,24,59), stop:0.55 rgb(51, 70, 98), stop:1 rgb(145, 155, 171));
+        color: white; font: bold 15px;
+        border-radius: 4px; padding: -2px;
+        border-width: 2px; border-color: #dfdfdf;
+}
+
+QPushButton:disabled {
+	background-color: #808080; color: #606060
+} 
+
+QProgressBar::chunk {
+     background-color: rgb(0,255,0);
+}
+

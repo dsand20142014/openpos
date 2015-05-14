@@ -1,0 +1,2 @@
+CROSS_COMPILER=/usr/local/gcc_eabi/bin
+PATH=$CROSS_COMPILER:$PATH:$HOME/bin:/bin:/sbin

@@ -1,0 +1,14 @@
+
+
+QDialog{
+    background-image: url(./image/lanse.png);
+}
+
+QPushButton{
+	background-color:rgb(255,87,6);
+	color:white;
+}
+
+QlineEdit {
+    background-color: yellow;
+}

@@ -1,0 +1,33 @@
+#!/bin/sh
+# udhcpc script edited by liuyifeng <johnnyblue_yif@foxmail.com>
+
+RESOLV_CONF="/etc/resolv.conf"
+
+[ -n "$1" ] || { echo "Error: should be called from udhcpc"; exit 1; }
+
+NETMASK=""
+[ -n "$subnet" ] && NETMASK="netmask $subnet"
+BROADCAST="broadcast +"
+[ -n "$broadcast" ] && BROADCAST="broadcast $broadcast"
+
+case "$1" in
+	deconfig)
+		echo "Setting IP address 0.0.0.0 on $interface"
+		ifconfig $interface 0.0.0.0
+		;;
+
+	renew|bound)
+		echo "Setting IP address $ip on $interface"
+		ifconfig $interface $ip $NETMASK $BROADCAST 
+		/etc/usbwifi/reroute	
+		for i in $dns ; do
+			echo " Adding DNS server $i"
+			echo "nameserver $i" >> $RESOLV_CONF-$$
+		done
+		mv $RESOLV_CONF-$$ $RESOLV_CONF
+		;;
+
+
+esac
+
+exit 0

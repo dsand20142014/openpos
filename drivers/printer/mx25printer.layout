@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_layout_file>
+	<ActiveTarget name="ALL" />
+	<File name="apselm205.c" open="1" top="1" tabpos="2">
+		<Cursor position="13960" topLine="130" />
+	</File>
+	<File name="apselm205.h" open="1" top="0" tabpos="1">
+		<Cursor position="1840" topLine="10" />
+	</File>
+	<File name="m-u111s2.c" open="1" top="0" tabpos="7">
+		<Cursor position="635" topLine="0" />
+	</File>
+	<File name="m-u111s2.h" open="1" top="0" tabpos="3">
+		<Cursor position="125" topLine="0" />
+	</File>
+	<File name="mx25_pins.h" open="1" top="0" tabpos="4">
+		<Cursor position="3329" topLine="65" />
+	</File>
+	<File name="mx25printer.c" open="1" top="0" tabpos="6">
+		<Cursor position="2333" topLine="64" />
+	</File>
+	<File name="mx25printer.h" open="1" top="0" tabpos="5">
+		<Cursor position="749" topLine="10" />
+	</File>
+</CodeBlocks_layout_file>

@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# This script will be executed *after* all the other init scripts.
+# You can put your own initialization stuff in here
+if [ -x "/usr/bin/rpm" -a -e "/tmp/ltib" ]
+then
+    echo "rebuilding rpm database"
+    rm -rf /tmp/ltib
+    rpm --rebuilddb
+fi
+
+# fix up permissions
+if [ -d /home/user ]
+then
+    chown -R user.user /home/user
+fi
+
+# Add nodes when running under the hypervisor and static devices
+if [ -r /sys/class/misc/fsl-hv/dev -a ! -r /dev/fsl-hv ]
+then
+   echo "creating hypervisor nodes"
+   DEVID=`cat /sys/class/misc/fsl-hv/dev`
+   if [ -n "$DEVID" ]
+   then
+       MAJOR="${DEVID%:*}"
+       MINOR="${DEVID##*:}"
+
+       if [ \( "$MAJOR" -gt 0 \) -a \( "$MINOR" -gt 0 \) ]
+       then
+	   rm -f /dev/fsl-hv
+	   mknod /dev/fsl-hv c $MAJOR $MINOR
+       fi
+   fi
+   for i in 0 1 2 3 4 5 6 7
+   do
+       mknod /dev/hvc$i c 229 $i
+   done
+fi
+
+# add the fm device nodes
+if [ -n "$(cat /proc/devices | grep fm | sed 's/\([0-9]*\).*/\1/')" -a ! -r /dev/fm0 ]
+then
+    echo "creating fman device nodes"
+    cd /usr/share/doc/fmd-uspace-01.01/test/
+    sh fm_dev_create
+    cd -
+fi
+

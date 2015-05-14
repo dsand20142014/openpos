@@ -1,0 +1,51 @@
+#!/bin/sh
+. /etc/profile
+/bin/mount -t tmpfs tmpfs /tmp
+/bin/mount -t proc none /proc
+/bin/mount -t tmpfs mdev /dev
+/bin/mount -t tmpfs tmpfs /var/lock
+/bin/mount -t tmpfs tmpfs /var/run
+/bin/mount -t sysfs sysfs /sys
+/bin/mkdir -p /dev/pts /dev/input /tmp /sys /proc
+/bin/mount -t devpts devpts /dev/pts
+
+mknod /dev/console c 5 1
+
+/bin/echo /sbin/mdev > /proc/sys/kernel/hotplug
+mdev -s
+ln -s /dev/event0 /dev/input/keyboard0
+ln -s /dev/event1 /dev/input/ts0
+
+hostname SAND
+
+/etc/rc.d/rtcsync.sh &
+/bin/sand_stop_splash
+
+#set LCD not to blank
+echo -e "\033[9;0]" > /dev/tty0 
+
+#set TCP
+echo 40 > /proc/sys/net/ipv4/tcp_retries2
+echo 40 > /proc/sys/net/ipv4/tcp_syn_retries
+echo 40 > /proc/sys/net/ipv4/tcp_synack_retries
+
+if [ ! -f /etc/cpldlock ]; then
+JTAGIO=`ls /drivers/jtagio*`
+insmod $JTAGIO
+echo 1 > /sys/class/leds/led1/brightness
+echo 1 > /sys/class/leds/led2/brightness
+echo 1 > /sys/class/leds/led3/brightness
+echo 1 > /sys/class/leds/led4/brightness
+touch /etc/cpldlock
+jbi -aPROGRAM -s/dev/cpldjtag /firmware/cpld.jbc
+fi
+
+cd /drivers
+./drivers.sh
+
+klogd
+syslogd
+
+cd /daemon
+./sln.dm.*
+./daemon.sh

@@ -1,0 +1,1 @@
+../../arch/arm/mach-mx25/mx25_pins.h

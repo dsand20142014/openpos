@@ -1,0 +1,2384 @@
+#if 0
+#include <stdio.h>
+
+#include "py_input.h"
+#include "asc_table.h"
+
+#include "py_input_config.h"
+
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+	unsigned char //Os__GB2312_display
+		(
+		unsigned char,
+		unsigned char,
+		unsigned char * pt_msg
+		);
+	unsigned long asc_long
+		(
+		unsigned char *Pts,
+		unsigned char Ls
+		);
+	unsigned char *long_tab
+		(
+		unsigned char *Ptd,
+		unsigned char Ld,
+		unsigned long *Pts
+		);
+	unsigned char Os__graph_display
+		(
+		unsigned char,
+		unsigned char,
+		unsigned char * pt_msg,
+		unsigned char LEN
+		)reentrant;
+	void Os__display
+		(
+		unsigned char line,
+		unsigned char col,
+		unsigned char *text
+		);
+#ifdef __cplusplus
+}
+#endif
+
+typedef enum INPUT_TYPE
+{
+	INPUT_TYPE_PINYIN,
+	INPUT_TYPE_NUMBER,
+	INPUT_TYPE_UPPER_CASE,
+	INPUT_TYPE_LOWER_CASE,
+	INPUT_TYPE_QUWEI
+}InputType;
+
+typedef enum INPUT_CHECK
+{
+	INPUT_FOUND,
+	INPUT_NOT_FOUND,
+	INPUT_INCLUDE
+}InputCheck;
+
+typedef struct PY_INDEX
+{
+	const char *m_py;
+	const char *m_pyTable;
+}PinYinIndex;
+
+typedef struct PY_CHAR_INDEX
+{
+	const PinYinIndex *m_pyIndex;
+	unsigned int m_tableSize;
+}PinYinCharIndex;
+
+/*=================È«¾Ö±äÁ¿===========================*/
+//µ±Ç°µÄÊäÈë·¨
+static InputType sg_inputType;
+//¿ÉÓÃµÄÊäÈë·¨±êÖ¾
+static unsigned char sg_inputFlag;
+
+//ÉÏÒ»´Î°´¼ü
+static unsigned char sg_ucPreviousKey;
+//ÉÏÒ»´ÎÊäÈëµÄ×Ö·û
+static unsigned char sg_ucPreviousChar;
+
+//ÊäÈëÊ±¼ä(µ¥Î»:10ms)
+static unsigned int sg_uiTrueTimeOut;
+//ÉÏÒ»´ÎµÄÆ«ÒÆÁ¿
+static unsigned char sg_ucKeyTabOffset;
+
+//Æ´ÒôÊäÈë·¨ºº×ÖÅÅÁÐ±í,Âë±í (mb)
+static PinYinIndex sg_indexLetterA[5];
+static PinYinIndex sg_indexLetterB[16];
+static PinYinIndex sg_indexLetterC[33];
+static PinYinIndex sg_indexLetterD[20];
+static PinYinIndex sg_indexLetterE[3];
+static PinYinIndex sg_indexLetterF[9];
+static PinYinIndex sg_indexLetterG[19];
+static PinYinIndex sg_indexLetterH[19];
+static PinYinIndex sg_indexLetterI[1];
+static PinYinIndex sg_indexLetterJ[14];
+static PinYinIndex sg_indexLetterK[18];
+static PinYinIndex sg_indexLetterL[24];
+static PinYinIndex sg_indexLetterM[19];
+static PinYinIndex sg_indexLetterN[23];
+static PinYinIndex sg_indexLetterO[2];
+static PinYinIndex sg_indexLetterP[17];
+static PinYinIndex sg_indexLetterQ[14];
+static PinYinIndex sg_indexLetterR[14];
+static PinYinIndex sg_indexLetterS[34];
+static PinYinIndex sg_indexLetterT[19];
+static PinYinIndex sg_indexLetterU[1];
+static PinYinIndex sg_indexLetterV[1];
+static PinYinIndex sg_indexLetterW[9];
+static PinYinIndex sg_indexLetterX[14];
+static PinYinIndex sg_indexLetterY[15];
+static PinYinIndex sg_indexLetterZ[36];
+
+//Ë÷Òý±í£¬ÓÃÀ´¼ÓËÙ²éÕÒËÙ¶È
+static PinYinCharIndex sg_headLetterIndex[26];
+
+/*===================³£Á¿¶¨Òå=============================*/
+
+static const unsigned char MAX_SIGNED_CHAR = 0x7F;
+
+//ÇøÎ»ÂëÊäÈë·¨¿ª¹Ø
+#define SI_JIAO		1
+
+//Ã¿Ò»ÐÐ×î³¤¿ÉÏÔÊ¾µÄ×Ö·ûÊý
+//¾ø²»¿ÉÒÔ¶¨ÒåÎªÆæÊý!!!
+#define MAX_DISPLAY	16
+/*=================ÄÚ²¿º¯Êý¶¨Òå===========================*/
+
+//Æ´ÒôÏµÍ³³õÊ¼»¯
+void PY_Initial(void);
+
+//»ñÈ¡ÏÂÒ»¸öÊäÈë·¨
+InputType PY_GetNextInputType(const InputType a_inputType);
+
+//¼ì²éÊäÈë·¨ÊÇ·ñ¿ÉÓÃ
+UCHAR PY_CheckInputType(const InputType a_inputType);
+
+//»ñÈ¡µÚÒ»¸ö¿ÉÓÃµÄÊäÈë·¨
+InputType PY_GetFirstInputType(void);
+
+//¼ì²éÊäÈëµÄÆ´Òô
+InputCheck PY_Check(const unsigned char *a_input);
+
+//»ñÈ¡ÊäÈëµÄÆ´Òô¶ÔÓ¦µÄÖÐÎÄ×Ö±í
+const unsigned char *PY_Ime(const unsigned char *a_input);
+
+//ÏÔÊ¾ÊäÈëµÄ×Ö·û
+void PY_Display(unsigned char ucLine,	const unsigned char * aucInBuff);
+
+//°´¼ü»ñÈ¡º¯Êý
+unsigned char PY_GetKey(unsigned int a_ucWaitTime);
+
+//»ñÈ¡ÓÃ»§Ñ¡ÔñµÄÖÐÎÄ×Ö
+unsigned char PY_ChooseBuffer(const unsigned char *pucInData,unsigned char *pucOutData);
+
+//ÊäÈëµ¥¸ö×ÖÄ¸ºÍÊý×Ö
+unsigned char PY_InputLetter(unsigned char *pucBuf);
+
+//²åÈëÓÃ»§ÊäÈëµÄÆ´Òô×Ö·û£¬²¢¼ì²é
+InputCheck PY_InsertPinYin(unsigned char *pucInput,const unsigned char ucInputOffset,const unsigned char *pucKeyTab,unsigned char *pucKeyTabOffset);
+//Æ´ÒôÊäÈëµ¥¸öÖÐÎÄ×Ö
+unsigned char PY_InputChinese(unsigned char *pucBuf);
+
+
+#if SI_JIAO > 0
+//ÇøÎ»ÂëÊäÈëµ¥¸öÖÐÎÄ×Ö
+unsigned char PY_InputSiJiao(unsigned char *pucBuf);
+#endif
+
+/*******ÊäÈë·¨Ö÷º¯Êý
+ËµÃ÷²Î¼û51py.h
+*/
+unsigned char PY_Main(unsigned char *aucOut,unsigned char ucLine,const unsigned char ucMin,const unsigned char ucMax,const unsigned char ucInputFlag,const unsigned short usTimeOut)
+{
+	unsigned char ucResult;
+	unsigned int uiLen;
+	//Ò»´ÎÊäÈë×Ö·û×î¶àÎª2¸ö×Ö½Ú
+	unsigned char aucBuf[3];
+	unsigned char aucDisplayBuf[PINYIN_MAX_INPUT_NUMBER + 1];
+
+#if PINYIN_TEST > 0
+	util_Printf((char *)"Enter PinYin Main\n");
+	util_Printf((char *)"aucOut = %s\n",aucOut);
+	util_Printf((char *)"ucLine = %d, ucMin = %d, ucMax = %d\n", ucLine, ucMin ,ucMax);
+	util_Printf((char *)"ucInputFlag = %d, usTimeOut = %d\n", ucInputFlag, usTimeOut);
+#endif
+
+	//ÏµÍ³³õÊ¼»¯,¼ì²é²ÎÊý,ÉèÖÃ±äÁ¿
+	if((ucInputFlag & (PY_INPUT_CHINESE
+					| PY_INPUT_UPPER_CASE
+					| PY_INPUT_LOWER_CASE
+					| PY_INPUT_NUMBER
+					| PY_INPUT_QUWEI) == 0x00)
+		|| (ucMax > PINYIN_MAX_INPUT_NUMBER)
+		|| (ucMin > PINYIN_MAX_INPUT_NUMBER)
+		|| (ucMax < ucMin))
+	{
+#if PINYIN_TEST > 0
+		util_Printf((char *)"PinYin Param Error\n");
+#endif
+		return ERR_CANCEL;
+	}
+
+	PY_Initial();
+
+	sg_uiTrueTimeOut = usTimeOut * ONESECOND;
+	sg_inputFlag = ucInputFlag;
+	sg_inputType = PY_GetFirstInputType();
+
+	memset(aucDisplayBuf, 0, sizeof(aucDisplayBuf));
+	memset(aucBuf, 0, sizeof(aucBuf));
+
+	uiLen = strlen((const char *)aucOut);
+	if(uiLen > 0)
+	{
+		if(uiLen > PINYIN_MAX_INPUT_NUMBER)
+		{
+#if PINYIN_TEST > 0
+			util_Printf((char *)"aucOut is too long\n");
+#endif
+			uiLen = PINYIN_MAX_INPUT_NUMBER;
+		}
+		memcpy(aucDisplayBuf, aucOut, uiLen);
+	}
+
+#if PINYIN_TEST > 0
+	util_Printf((char *)"Length of aucOut = %d\n", uiLen);
+#endif
+
+	Os__timer_start(&sg_uiTrueTimeOut);
+
+	//ÊäÈë·¨Ö÷Ñ­»·
+	while(1)
+	{
+		ucResult = SUCCESS;
+
+		PY_Display(ucLine, aucDisplayBuf);
+
+		memset(aucBuf, 0x00, sizeof(aucBuf));
+
+		switch(sg_inputType)
+		{
+			case INPUT_TYPE_PINYIN:
+				//ÓÃ»§Í¨¹ýÊäÈëÆ´Òôºó»ñÈ¡Ò»¸öÖÐÎÄ×Ö·û
+				ucResult = PY_InputChinese(aucBuf);
+				break;
+			case INPUT_TYPE_LOWER_CASE:
+			case INPUT_TYPE_UPPER_CASE:
+			case INPUT_TYPE_NUMBER:
+				//ÓÃ»§ÊäÈëÒ»¸öÊý×Ö»ò×ÖÄ¸
+				ucResult = PY_InputLetter(aucBuf);
+				util_Printf("*****6***[%02x]*\n",ucResult);
+				break;
+				#if SI_JIAO > 0
+			case INPUT_TYPE_QUWEI:
+				ucResult = PY_InputSiJiao(aucBuf);
+				break;
+				#endif
+			default:
+				//Âß¼­ÉÏÓ¦¸Ã²»´æÔÚ´ËÅÐ¶Ï
+				#if PINYIN_TEST > 0
+				util_Printf((char *)"/**************************/\n");
+				util_Printf((char *)"PinYin InputType Fatal Error\n");
+				util_Printf((char *)"/**************************/\n");
+				#endif
+				sg_inputType = PY_GetFirstInputType();
+				break;
+		}
+
+		//³¬Ê±ÅÐ¶Ï
+		if(sg_uiTrueTimeOut == 0)
+		{
+			//·µ»ØÓ¦ÓÃ³ÌÐòÖ®Ç°Ò»¶¨ÒªÍ£Ö¹¼ÆÊ±Æ÷(ÏÂÍ¬)!!!
+
+			util_Printf((char *)"\n PinYin Warning: Timeout\n");
+
+			Os__timer_stop(&sg_uiTrueTimeOut);
+			return ERR_CANCEL;
+		}
+
+		uiLen = strlen((const char  *)aucDisplayBuf);
+		//ÊäÈëºóµÄ·µ»ØÅÐ¶Ï
+		switch(ucResult)
+		{
+			case SUCCESS:
+				if((uiLen >= ucMin) && (uiLen <= ucMax))
+				{
+					strcpy((char *)aucOut,(const char*)aucDisplayBuf);
+					aucOut[uiLen]= '\0';
+					util_Printf((char *)"\n PinYin Out Success: length of aucOut = %d\n", uiLen);
+					util_Printf((char *)"\n aucOut = %s\n", aucOut);
+
+					Os__timer_stop(&sg_uiTrueTimeOut);
+					return SUCCESS;
+				}
+				else
+				{
+					if(uiLen < ucMin)
+					{
+						util_Printf((char *)"\n PinYin Warning: Input length short\n");
+					}
+					else
+					{
+						util_Printf((char *)"\n PinYin Warning: Input length long\n");
+					}
+					Os__beep();
+				}
+				break;
+			case KEY_ENTER:
+				//ÔÚÒÑÓÐ×Ö·ûºó²åÈëÓÃ»§ÊäÈëµÄ×Ö·û
+				if((uiLen + strlen((char *)aucBuf)) <= ucMax)
+				{
+					if(strlen((char *)aucBuf) != 0)
+					{
+						util_Printf((char *)"\n Insert char = %s\n", aucBuf);
+					}
+
+					strcat((char *)aucDisplayBuf, (char *)aucBuf);
+				}
+				else
+				{
+
+					util_Printf((char *)"\n PinYin Warning: Input length long\n");
+					if((uiLen + strlen((char *)aucBuf)) > ucMax)
+						break;
+
+					sg_ucPreviousKey = 0;
+					sg_ucPreviousChar = 0;
+					sg_ucKeyTabOffset = 0;
+					Os__beep();
+					return(SUCCESS);
+				}
+				break;
+			case KEY_CLEAR:
+				if(uiLen > 0)
+				{
+
+					util_Printf((char *)"\n Clean Display\n");
+
+					memset(aucDisplayBuf, 0x00, sizeof(aucDisplayBuf));
+				}
+				else
+				{
+
+					util_Printf((char *)"\n PinYin Cancel Out\n");
+
+					Os__timer_stop(&sg_uiTrueTimeOut);
+					return ERR_CANCEL;
+				}
+				break;
+			case KEY_BCKSP:
+				if(uiLen > 0)
+				{
+					--uiLen;
+					//ÅÐ¶ÏÎªÖÐÎÄ×ÖÊ±É¾³ý2¸ö×Ö·û
+					if(aucDisplayBuf[uiLen] > MAX_SIGNED_CHAR)
+					{
+						util_Printf((char *)"\n Delete a chinese char\n");
+						aucDisplayBuf[uiLen] = 0x00;
+						aucDisplayBuf[uiLen - 1] = 0x00;
+					}
+					else
+					{
+						util_Printf((char *)"\n Delete a english char\n");
+						aucDisplayBuf[uiLen] = 0x00;
+					}
+				}
+				break;
+			case KEY_PAPER_FEED:
+				//ÇÐ»»ÊäÈë·¨Ê¹ÓÃ"×ßÖ½"¼ü
+				sg_ucPreviousKey = 0;
+				sg_ucPreviousChar = 0;
+				sg_ucKeyTabOffset=0;
+				sg_inputType = PY_GetNextInputType(sg_inputType);
+				break;
+			case KEY_00_PT:
+				aucDisplayBuf[uiLen-1]=aucBuf[0];
+				break;
+			default:
+				break;
+		}
+	}
+}
+
+void PY_Initial(void)
+{
+	unsigned char index = 0;
+	sg_ucPreviousKey = 0;
+	sg_ucPreviousChar = 0;
+	sg_ucKeyTabOffset=0;
+	//³õÊ¼»¯Æ´ÒôÁÐ±í
+	/*a*/
+	sg_indexLetterA[0].m_py = "";		sg_indexLetterA[0].m_pyTable = "°¢°¡";
+	sg_indexLetterA[1].m_py = "i";		sg_indexLetterA[1].m_pyTable = "°¥°§°¦°£°¤°¨°©°«°ª°¬°®°¯°­";
+	sg_indexLetterA[2].m_py = "n";		sg_indexLetterA[2].m_pyTable = "°²°±°°°³°¶°´°¸°·°µ";
+	sg_indexLetterA[3].m_py = "ng";		sg_indexLetterA[3].m_pyTable = "°¹°º°»";
+	sg_indexLetterA[4].m_py = "o";		sg_indexLetterA[4].m_pyTable = "°¼°½°¾°¿°À°Á°Â°Ä°Ã";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterA;
+	sg_headLetterIndex[index].m_tableSize = 5;
+	++index;
+	/*b*/
+	sg_indexLetterB[0].m_py = "a";		sg_indexLetterB[0].m_pyTable = "°Ë°Í°È°Ç°É°Å°Ì°Æ°Ê°Î°Ï°Ñ°Ð°Ó°Ö°Õ°Ô";
+	sg_indexLetterB[1].m_py = "ai";		sg_indexLetterB[1].m_pyTable = "°×°Ù°Û°Ø°Ú°Ü°Ý°Þ";
+	sg_indexLetterB[2].m_py = "an";		sg_indexLetterB[2].m_pyTable = "°â°à°ã°ä°ß°á°å°æ°ì°ë°é°ç°è°í°ê";
+	sg_indexLetterB[3].m_py = "ang";	sg_indexLetterB[3].m_pyTable = "°î°ï°ð°ó°ñ°ò°ö°ø°ô°ù°õ°÷";
+	sg_indexLetterB[4].m_py = "ao";		sg_indexLetterB[4].m_pyTable = "°ü°ú°û°ý±¢±¦±¥±£±¤±¨±§±ª±«±©±¬°þ±¡ÆÙ";
+	sg_indexLetterB[5].m_py = "ei";		sg_indexLetterB[5].m_pyTable = "±°±­±¯±®±±±´±·±¸±³±µ±¶±»±¹±º±²";
+	sg_indexLetterB[6].m_py = "en";		sg_indexLetterB[6].m_pyTable = "±¼±¾±½±¿º»";
+	sg_indexLetterB[7].m_py = "eng";	sg_indexLetterB[7].m_pyTable = "±À±Á±Â±Ã±Å±Ä";
+	sg_indexLetterB[8].m_py = "i";		sg_indexLetterB[8].m_pyTable = "±Æ±Ç±È±Ë±Ê±É±Ò±Ø±Ï±Õ±Ó±Ñ±Ý±Ð±Ö±Ô±Í±×±Ì±Î±Ú±Ü±Û";
+	sg_indexLetterB[9].m_py = "ian";	sg_indexLetterB[9].m_pyTable = "±ß±à±Þ±á±â±å±ã±ä±é±æ±ç±è";
+	sg_indexLetterB[10].m_py = "iao";	sg_indexLetterB[10].m_pyTable = "±ë±ê±ì±í";
+	sg_indexLetterB[11].m_py = "ie";	sg_indexLetterB[11].m_pyTable = "±ï±î±ð±ñ";
+	sg_indexLetterB[12].m_py = "in";	sg_indexLetterB[12].m_pyTable = "±ö±ò±ó±õ±ô±÷";
+	sg_indexLetterB[13].m_py = "ing";	sg_indexLetterB[13].m_pyTable = "±ù±ø±û±ü±ú±þ±ý²¢²¡";
+	sg_indexLetterB[14].m_py = "o";		sg_indexLetterB[14].m_pyTable = "²¦²¨²£²§²±²¤²¥²®²µ²¯²´²ª²¬²°²©²³²«²­²²²·";
+	sg_indexLetterB[15].m_py = "u";		sg_indexLetterB[15].m_pyTable = "²¹²¸²¶²»²¼²½²À²¿²º²¾";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterB;
+	sg_headLetterIndex[index].m_tableSize = 16;
+	++index;
+	/*c*/
+	sg_indexLetterC[0].m_py = "a";		sg_indexLetterC[0].m_pyTable = "²Á";
+	sg_indexLetterC[1].m_py = "ai";		sg_indexLetterC[1].m_pyTable = "²Â²Å²Ä²Æ²Ã²É²Ê²Ç²È²Ë²Ì";
+	sg_indexLetterC[2].m_py = "an";		sg_indexLetterC[2].m_pyTable = "²Î²Í²Ð²Ï²Ñ²Ò²Ó";
+	sg_indexLetterC[3].m_py = "ang";	sg_indexLetterC[3].m_pyTable = "²Ö²×²Ô²Õ²Ø";
+	sg_indexLetterC[4].m_py = "ao";		sg_indexLetterC[4].m_pyTable = "²Ù²Ú²Ü²Û²Ý";
+	sg_indexLetterC[5].m_py = "e";		sg_indexLetterC[5].m_pyTable = "²á²à²Þ²â²ß";
+	sg_indexLetterC[6].m_py = "eng";	sg_indexLetterC[6].m_pyTable = "²ã²äÔø";
+	sg_indexLetterC[7].m_py = "ha";		sg_indexLetterC[7].m_pyTable = "²æ²å²é²ç²è²ë²ì²ê²í²ï²îÉ²";
+	sg_indexLetterC[8].m_py = "hai";	sg_indexLetterC[8].m_pyTable = "²ð²ñ²ò";
+	sg_indexLetterC[9].m_py = "han";	sg_indexLetterC[9].m_pyTable = "²ô²ó²÷²ö²ø²õ²ú²ù²û²ü";
+	sg_indexLetterC[10].m_py = "hang";	sg_indexLetterC[10].m_pyTable = "²ý²þ³¦³¢³¥³£³§³¡³¨³©³«³ª";
+	sg_indexLetterC[11].m_py = "hao";	sg_indexLetterC[11].m_pyTable = "³­³®³¬³²³¯³°³±³³³´´Â";
+	sg_indexLetterC[12].m_py = "he";	sg_indexLetterC[12].m_pyTable = "³µ³¶³¹³¸³·³º";
+	sg_indexLetterC[13].m_py = "hen";	sg_indexLetterC[13].m_pyTable = "³»³¾³¼³À³Á³½³Â³¿³Ä³Ã";
+	sg_indexLetterC[14].m_py = "heng";	sg_indexLetterC[14].m_pyTable = "³Æ³Å³É³Ê³Ð³Ï³Ç³Ë³Í³Ì³Î³È³Ñ³Ò³Ó";
+	sg_indexLetterC[15].m_py = "hi";	sg_indexLetterC[15].m_pyTable = "³Ô³Õ³Ú³Ø³Û³Ù³Ö³ß³Þ³Ý³Ü³â³à³ã³á";
+	sg_indexLetterC[16].m_py = "hong";	sg_indexLetterC[16].m_pyTable = "³ä³å³æ³ç³è";
+	sg_indexLetterC[17].m_py = "hou";	sg_indexLetterC[17].m_pyTable = "³é³ð³ñ³ë³î³í³ï³ê³ì³ó³ò³ô";
+	sg_indexLetterC[18].m_py = "hu";	sg_indexLetterC[18].m_pyTable = "³ö³õ³ý³ø³ü³ú³û³÷³ù´¡´¢³þ´¦´¤´¥´£Ðó";
+	sg_indexLetterC[19].m_py = "huai";	sg_indexLetterC[19].m_pyTable = "´§";
+	sg_indexLetterC[20].m_py = "huan";	sg_indexLetterC[20].m_pyTable = "´¨´©´«´¬´ª´­´®";
+	sg_indexLetterC[21].m_py = "huang";	sg_indexLetterC[21].m_pyTable = "´³´¯´°´²´´";
+	sg_indexLetterC[22].m_py = "hui";	sg_indexLetterC[22].m_pyTable = "´µ´¶´¹´·´¸";
+	sg_indexLetterC[23].m_py = "hun";	sg_indexLetterC[23].m_pyTable = "´º´»´¿´½´¾´¼´À";
+	sg_indexLetterC[24].m_py = "huo";	sg_indexLetterC[24].m_pyTable = "´Á";
+	sg_indexLetterC[25].m_py = "i";		sg_indexLetterC[25].m_pyTable = "´Ã´Ê´Ä´É´È´Ç´Å´Æ´Ë´Î´Ì´Í";
+	sg_indexLetterC[26].m_py = "ong";	sg_indexLetterC[26].m_pyTable = "´Ñ´Ó´Ò´Ð´Ï´Ô";
+	sg_indexLetterC[27].m_py = "ou";	sg_indexLetterC[27].m_pyTable = "´Õ";
+	sg_indexLetterC[28].m_py = "u";		sg_indexLetterC[28].m_pyTable = "´Ö´Ù´×´Ø";
+	sg_indexLetterC[29].m_py = "uan";	sg_indexLetterC[29].m_pyTable = "´Ú´Ü´Û";
+	sg_indexLetterC[30].m_py = "ui";	sg_indexLetterC[30].m_pyTable = "´Þ´ß´Ý´à´ã´á´â´ä";
+	sg_indexLetterC[31].m_py = "un";	sg_indexLetterC[31].m_pyTable = "´å´æ´ç";
+	sg_indexLetterC[32].m_py = "uo";	sg_indexLetterC[32].m_pyTable = "´ê´è´é´ì´ë´í";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterC;
+	sg_headLetterIndex[index].m_tableSize = 33;
+	++index;
+	/*d*/
+	sg_indexLetterD[0].m_py = "a";		sg_indexLetterD[0].m_pyTable = "´î´ï´ð´ñ´ò´ó";
+	sg_indexLetterD[1].m_py = "ai";		sg_indexLetterD[1].m_pyTable = "´ô´õ´ö´ú´ø´ýµ¡´ù´û´ü´þ´÷";
+	sg_indexLetterD[2].m_py = "an";		sg_indexLetterD[2].m_pyTable = "µ¤µ¥µ£µ¢µ¦µ¨µ§µ©µ«µ®µ¯µ¬µ­µ°µª";
+	sg_indexLetterD[3].m_py = "ang";	sg_indexLetterD[3].m_pyTable = "µ±µ²µ³µ´µµ";
+	sg_indexLetterD[4].m_py = "ao";		sg_indexLetterD[4].m_pyTable = "µ¶µ¼µºµ¹µ·µ»µ¸µ½µ¿µÁµÀµ¾";
+	sg_indexLetterD[5].m_py = "e";		sg_indexLetterD[5].m_pyTable = "µÃµÂµÄ";
+	sg_indexLetterD[6].m_py = "eng";	sg_indexLetterD[6].m_pyTable = "µÆµÇµÅµÈµËµÊµÉ";
+	sg_indexLetterD[7].m_py = "i";		sg_indexLetterD[7].m_pyTable = "µÍµÌµÎµÒµÏµÐµÓµÑµÕµ×µÖµØµÜµÛµÝµÚµÞµÙ";
+	sg_indexLetterD[8].m_py = "ian";	sg_indexLetterD[8].m_pyTable = "µàµáµßµäµãµâµçµèµéµêµæµëµíµìµîµå";
+	sg_indexLetterD[9].m_py = "iao";	sg_indexLetterD[9].m_pyTable = "µóµðµòµïµñµõµöµô";
+	sg_indexLetterD[10].m_py = "ie";	sg_indexLetterD[10].m_pyTable = "µùµøµüµýµþµúµû";
+	sg_indexLetterD[11].m_py = "ing";	sg_indexLetterD[11].m_pyTable = "¶¡¶£¶¢¶¤¶¥¶¦¶©¶¨¶§";
+	sg_indexLetterD[12].m_py = "iu";	sg_indexLetterD[12].m_pyTable = "¶ª";
+	sg_indexLetterD[13].m_py = "ong";	sg_indexLetterD[13].m_pyTable = "¶«¶¬¶­¶®¶¯¶³¶±¶²¶°¶´";
+	sg_indexLetterD[14].m_py = "ou";	sg_indexLetterD[14].m_pyTable = "¶¼¶µ¶·¶¶¶¸¶¹¶º¶»";
+	sg_indexLetterD[15].m_py = "u";		sg_indexLetterD[15].m_pyTable = "¶½¶¾¶Á¶¿¶À¶Â¶Ä¶Ã¶Ê¶Å¶Ç¶È¶É¶Æ";
+	sg_indexLetterD[16].m_py = "uan";	sg_indexLetterD[16].m_pyTable = "¶Ë¶Ì¶Î¶Ï¶Ð¶Í";
+	sg_indexLetterD[17].m_py = "ui";	sg_indexLetterD[17].m_pyTable = "¶Ñ¶Ó¶Ô¶Ò";
+	sg_indexLetterD[18].m_py = "un";	sg_indexLetterD[18].m_pyTable = "¶Ö¶Ø¶Õ¶×¶Ü¶Û¶Ù¶Ý";
+	sg_indexLetterD[19].m_py = "uo";	sg_indexLetterD[19].m_pyTable = "¶à¶ß¶á¶Þ¶ä¶â¶ã¶ç¶é¶æ¶è¶å";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterD;
+	sg_headLetterIndex[index].m_tableSize = 20;
+	++index;
+	/*e*/
+	sg_indexLetterE[0].m_py = "";		sg_indexLetterE[0].m_pyTable = "¶ï¶í¶ð¶ë¶ì¶ê¶î¶ò¶ó¶ñ¶ö¶õ¶ô";
+	sg_indexLetterE[1].m_py = "n";		sg_indexLetterE[1].m_pyTable = "¶÷";
+	sg_indexLetterE[2].m_py = "r";		sg_indexLetterE[2].m_pyTable = "¶ù¶ø¶û¶ú¶ý¶ü¶þ·¡";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterE;
+	sg_headLetterIndex[index].m_tableSize = 3;
+	++index;
+	/*f*/
+	sg_indexLetterF[0].m_py = "a";		sg_indexLetterF[0].m_pyTable = "·¢·¦·¥·£·§·¤·¨·©";
+	sg_indexLetterF[1].m_py = "an";		sg_indexLetterF[1].m_pyTable = "·«·¬·­·ª·²·¯·°·³·®·±·´·µ·¸·º·¹·¶··";
+	sg_indexLetterF[2].m_py = "ang";	sg_indexLetterF[2].m_pyTable = "·½·»·¼·À·Á·¿·¾·Â·Ã·Ä·Å";
+	sg_indexLetterF[3].m_py = "ei";		sg_indexLetterF[3].m_pyTable = "·É·Ç·È·Æ·Ê·Ë·Ì·Í·Ï·Ð·Î·Ñ";
+	sg_indexLetterF[4].m_py = "en";		sg_indexLetterF[4].m_pyTable = "·Ö·Ô·×·Ò·Õ·Ó·Ø·Ú·Ù·Û·Ý·Ü·Þ·ß·à";
+	sg_indexLetterF[5].m_py = "eng";	sg_indexLetterF[5].m_pyTable = "·á·ç·ã·â·è·å·é·æ·ä·ë·ê·ì·í·ï·î";
+	sg_indexLetterF[6].m_py = "o";		sg_indexLetterF[6].m_pyTable = "·ð";
+	sg_indexLetterF[7].m_py = "ou";		sg_indexLetterF[7].m_pyTable = "·ñ";
+	sg_indexLetterF[8].m_py = "u";		sg_indexLetterF[8].m_pyTable = "·ò·ô·õ·ó¸¥·ü·ö·÷·þ·ý·ú¸¡¸¢·û¸¤·ù¸£·ø¸§¸¦¸®¸«¸©¸ª¸¨¸­¸¯¸¸¸¼¸¶¸¾¸º¸½¸À¸·¸´¸°¸±¸µ¸»¸³¸¿¸¹¸²";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterF;
+	sg_headLetterIndex[index].m_tableSize = 9;
+	++index;
+	/*g*/
+	sg_indexLetterG[0].m_py = "a";		sg_indexLetterG[0].m_pyTable = "¸Â¸Á";
+	sg_indexLetterG[1].m_py = "ai";		sg_indexLetterG[1].m_pyTable = "¸Ã¸Ä¸Æ¸Ç¸È¸Å";
+	sg_indexLetterG[2].m_py = "an";		sg_indexLetterG[2].m_pyTable = "¸É¸Ê¸Ë¸Î¸Ì¸Í¸Ñ¸Ï¸Ò¸Ð¸Ó";
+	sg_indexLetterG[3].m_py = "ang";	sg_indexLetterG[3].m_pyTable = "¸Ô¸Õ¸Ú¸Ù¸Ø¸×¸Ö¸Û¸Ü";
+	sg_indexLetterG[4].m_py = "ao";		sg_indexLetterG[4].m_pyTable = "¸Þ¸á¸ß¸à¸Ý¸â¸ã¸å¸ä¸æ";
+	sg_indexLetterG[5].m_py = "e";		sg_indexLetterG[5].m_pyTable = "¸ê¸í¸ç¸ì¸ë¸î¸é¸è¸ó¸ï¸ñ¸ð¸ô¸ö¸÷¸õ¿©";
+	sg_indexLetterG[6].m_py = "ei";		sg_indexLetterG[6].m_pyTable = "¸ø";
+	sg_indexLetterG[7].m_py = "en";		sg_indexLetterG[7].m_pyTable = "¸ù¸ú";
+	sg_indexLetterG[8].m_py = "eng";	sg_indexLetterG[8].m_pyTable = "¸ü¸ý¸û¸þ¹¡¹¢¹£";
+	sg_indexLetterG[9].m_py = "ong";	sg_indexLetterG[9].m_pyTable = "¹¤¹­¹«¹¦¹¥¹©¹¬¹§¹ª¹¨¹®¹¯¹°¹²¹±";
+	sg_indexLetterG[10].m_py = "ou";	sg_indexLetterG[10].m_pyTable = "¹´¹µ¹³¹·¹¶¹¹¹º¹¸¹»";
+	sg_indexLetterG[11].m_py = "u";		sg_indexLetterG[11].m_pyTable = "¹À¹¾¹Ã¹Â¹Á¹½¹¼¹¿¹Å¹È¹É¹Ç¹Æ¹Ä¹Ì¹Ê¹Ë¹Í";
+	sg_indexLetterG[12].m_py = "ua";	sg_indexLetterG[12].m_pyTable = "¹Ï¹Î¹Ð¹Ñ¹Ò¹Ó";
+	sg_indexLetterG[13].m_py = "uai";	sg_indexLetterG[13].m_pyTable = "¹Ô¹Õ¹Ö";
+	sg_indexLetterG[14].m_py = "uan";	sg_indexLetterG[14].m_pyTable = "¹Ø¹Û¹Ù¹Ú¹×¹Ý¹Ü¹á¹ß¹à¹Þ";
+	sg_indexLetterG[15].m_py = "uang";	sg_indexLetterG[15].m_pyTable = "¹â¹ã¹ä";
+	sg_indexLetterG[16].m_py = "ui";	sg_indexLetterG[16].m_pyTable = "¹é¹ç¹ê¹æ¹ë¹è¹å¹ì¹î¹ï¹í¹ô¹ñ¹ó¹ð¹ò";
+	sg_indexLetterG[17].m_py = "un";	sg_indexLetterG[17].m_pyTable = "¹õ¹ö¹÷";
+	sg_indexLetterG[18].m_py = "uo";	sg_indexLetterG[18].m_pyTable = "¹ù¹ø¹ú¹û¹ü¹ý";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterG;
+	sg_headLetterIndex[index].m_tableSize = 19;
+	++index;
+	/*h*/
+	sg_indexLetterH[0].m_py = "a";		sg_indexLetterH[0].m_pyTable = "¸ò¹þ";
+	sg_indexLetterH[1].m_py = "ai";		sg_indexLetterH[1].m_pyTable = "º¢º¡º£º¥º§º¦º¤";
+	sg_indexLetterH[2].m_py = "an";		sg_indexLetterH[2].m_pyTable = "º¨º©º¬ºªº¯º­º®º«º±º°ººº¹ºµº·º´º¸º¶º³º²";
+	sg_indexLetterH[3].m_py = "ang";	sg_indexLetterH[3].m_pyTable = "º¼º½ÐÐ";
+	sg_indexLetterH[4].m_py = "ao";		sg_indexLetterH[4].m_pyTable = "ºÁºÀº¿º¾ºÃºÂºÅºÆºÄ";
+	sg_indexLetterH[5].m_py = "e";		sg_indexLetterH[5].m_pyTable = "ºÇºÈºÌºÏºÎºÍºÓºÒºËºÉºÔºÐºÊºØºÖºÕº×";
+	sg_indexLetterH[6].m_py = "ei";		sg_indexLetterH[6].m_pyTable = "ºÚºÙ";
+	sg_indexLetterH[7].m_py = "en";		sg_indexLetterH[7].m_pyTable = "ºÛºÜºÝºÞ";
+	sg_indexLetterH[8].m_py = "eng";	sg_indexLetterH[8].m_pyTable = "ºàºßºãºáºâ";
+	sg_indexLetterH[9].m_py = "ong";	sg_indexLetterH[9].m_pyTable = "ºäºåºæºëºìºêºéºçºè";
+	sg_indexLetterH[10].m_py = "ou";	sg_indexLetterH[10].m_pyTable = "ºîºíºïºðºóºñºò";
+	sg_indexLetterH[11].m_py = "u";		sg_indexLetterH[11].m_pyTable = "ºõºôºö»¡ºüºúºøºþºùº÷ºýºû»¢»£»¥»§»¤»¦";
+	sg_indexLetterH[12].m_py = "ua";	sg_indexLetterH[12].m_pyTable = "»¨»ª»©»¬»«»¯»®»­»°";
+	sg_indexLetterH[13].m_py = "uai";	sg_indexLetterH[13].m_pyTable = "»³»²»´»±»µ";
+	sg_indexLetterH[14].m_py = "uan";	sg_indexLetterH[14].m_pyTable = "»¶»¹»·»¸»º»Ã»Â»½»»»Á»¼»À»¾»¿";
+	sg_indexLetterH[15].m_py = "uang";	sg_indexLetterH[15].m_pyTable = "»Ä»Å»Ê»Ë»Æ»Ì»Í»È»Ç»É»Ð»Î»Ñ»Ï";
+	sg_indexLetterH[16].m_py = "ui";	sg_indexLetterH[16].m_pyTable = "»Ò»Ö»Ó»Ô»Õ»Ø»×»Ú»Ü»ã»á»ä»æ»å»â»ß»Þ»à»Ý»Ù»Û";
+	sg_indexLetterH[17].m_py = "un";	sg_indexLetterH[17].m_pyTable = "»è»ç»é»ë»ê»ì";
+	sg_indexLetterH[18].m_py = "uo";	sg_indexLetterH[18].m_pyTable = "»í»î»ð»ï»ò»õ»ñ»ö»ó»ô";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterH;
+	sg_headLetterIndex[index].m_tableSize = 19;
+	++index;
+	/*i*/
+	sg_indexLetterI[0].m_py = "";		sg_indexLetterI[0].m_pyTable = "";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterI;
+	sg_headLetterIndex[index].m_tableSize = 0;
+	++index;
+	/*j*/
+	sg_indexLetterJ[0].m_py = "i";		sg_indexLetterJ[0].m_pyTable = "¼¥»÷¼¢»ø»ú¼¡¼¦¼£¼§»ý»ù¼¨¼©»û»þ»ü¼¤¼°¼ª¼³¼¶¼´¼«¼±¼²¼¬¼¯¼µ¼­¼®¼¸¼º¼·¼¹¼Æ¼Ç¼¿¼Í¼Ë¼É¼¼¼Ê¼Á¼¾¼È¼Ã¼Ì¼Å¼Ä¼Â¼À¼»¼½½å";
+	sg_indexLetterJ[1].m_py = "ia";		sg_indexLetterJ[1].m_pyTable = "¼Ó¼Ð¼Ñ¼Ï¼Ò¼Î¼Ô¼Õ¼×¼Ö¼Ø¼Û¼Ý¼Ü¼Ù¼Þ¼ÚÐ®";
+	sg_indexLetterJ[2].m_py = "ian";	sg_indexLetterJ[2].m_pyTable = "¼é¼â¼á¼ß¼ä¼ç¼è¼æ¼à¼ã¼ê¼å¼ð¼ó¼í¼ë¼ñ¼õ¼ô¼ì¼ï¼ò¼î¼û¼þ½¨½¤½£¼ö¼ú½¡½§½¢½¥½¦¼ù¼ø¼ü¼ý";
+	sg_indexLetterJ[3].m_py = "iang";	sg_indexLetterJ[3].m_pyTable = "½­½ª½«½¬½©½®½²½±½°½¯½³½µ½´";
+	sg_indexLetterJ[4].m_py = "iao";	sg_indexLetterJ[4].m_pyTable = "½»½¼½¿½½½¾½º½·½¹½¶½¸½Ç½Æ½Ê½È½Ã½Å½Â½Á½Ë½É½Ð½Î½Ï½Ì½Ñ½Í¾õ½À";
+	sg_indexLetterJ[5].m_py = "ie";		sg_indexLetterJ[5].m_pyTable = "½×½Ô½Ó½Õ½Ò½Ö½Ú½Ù½Ü½à½á½Ý½Þ½Ø½ß½ã½â½é½ä½æ½ì½ç½ê½ë½è";
+	sg_indexLetterJ[6].m_py = "in";		sg_indexLetterJ[6].m_pyTable = "½í½ñ½ï½ð½ò½î½ó½ö½ô½÷½õ¾¡¾¢½ü½ø½ú½þ½ý½û½ù";
+	sg_indexLetterJ[7].m_py = "ing";	sg_indexLetterJ[7].m_pyTable = "¾©¾­¾¥¾£¾ª¾§¾¦¾¬¾¤¾«¾¨¾®¾±¾°¾¯¾»¾¶¾·¾º¾¹¾´¾¸¾³¾²¾µ";
+	sg_indexLetterJ[8].m_py = "iong";	sg_indexLetterJ[8].m_pyTable = "¾¼¾½";
+	sg_indexLetterJ[9].m_py = "iu";		sg_indexLetterJ[9].m_pyTable = "¾À¾¿¾¾¾Å¾Ã¾Ä¾Á¾Â¾Æ¾É¾Ê¾Ì¾Î¾Ç¾È¾Í¾Ë";
+	sg_indexLetterJ[10].m_py = "u";		sg_indexLetterJ[10].m_pyTable = "¾Ó¾Ð¾Ñ¾Ô¾Ò¾Ï¾Ö½Û¾Õ¾×¾Ú¾Ù¾Ø¾ä¾Þ¾Ü¾ß¾æ¾ã¾ç¾å¾Ý¾à¾â¾Û¾á";
+	sg_indexLetterJ[11].m_py = "uan";	sg_indexLetterJ[11].m_pyTable = "¾ê¾è¾é¾í¾ë¾î¾ì";
+	sg_indexLetterJ[12].m_py = "ue";	sg_indexLetterJ[12].m_pyTable = "¾ï¾ö¾÷¾ñ¾ø¾ó¾ò¾ô¾ð";
+	sg_indexLetterJ[13].m_py = "un";	sg_indexLetterJ[13].m_pyTable = "¾ü¾ý¾ù¾û¾ú¿¡¿¤¾þ¿£¿¥¿¢";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterJ;
+	sg_headLetterIndex[index].m_tableSize = 14;
+	++index;
+	/*k*/
+	sg_indexLetterK[0].m_py = "a";		sg_indexLetterK[0].m_pyTable = "¿§¿¦¿¨";
+	sg_indexLetterK[1].m_py = "ai";		sg_indexLetterK[1].m_pyTable = "¿ª¿«¿­¿®¿¬";
+	sg_indexLetterK[2].m_py = "an";		sg_indexLetterK[2].m_pyTable = "¼÷¿¯¿±¿°¿²¿³¿´";
+	sg_indexLetterK[3].m_py = "ang";	sg_indexLetterK[3].m_pyTable = "¿µ¿¶¿·¿¸¿º¿¹¿»";
+	sg_indexLetterK[4].m_py = "ao";		sg_indexLetterK[4].m_pyTable = "¿¼¿½¿¾¿¿";
+	sg_indexLetterK[5].m_py = "e";		sg_indexLetterK[5].m_pyTable = "¿À¿Á¿Â¿Æ¿Ã¿Å¿Ä¿Ç¿È¿É¿Ê¿Ë¿Ì¿Í¿Î";
+	sg_indexLetterK[6].m_py = "en";		sg_indexLetterK[6].m_pyTable = "¿Ï¿Ñ¿Ò¿Ð";
+	sg_indexLetterK[7].m_py = "eng";	sg_indexLetterK[7].m_pyTable = "¿Ô¿Ó";
+	sg_indexLetterK[8].m_py = "ong";	sg_indexLetterK[8].m_pyTable = "¿Õ¿×¿Ö¿Ø";
+	sg_indexLetterK[9].m_py = "ou";		sg_indexLetterK[9].m_pyTable = "¿Ù¿Ú¿Û¿Ü";
+	sg_indexLetterK[10].m_py = "u";		sg_indexLetterK[10].m_pyTable = "¿Ý¿Þ¿ß¿à¿â¿ã¿á";
+	sg_indexLetterK[11].m_py = "ua";	sg_indexLetterK[11].m_pyTable = "¿ä¿å¿æ¿è¿ç";
+	sg_indexLetterK[12].m_py = "uai";	sg_indexLetterK[12].m_pyTable = "¿é¿ì¿ë¿êØáëÚ";
+	sg_indexLetterK[13].m_py = "uan";	sg_indexLetterK[13].m_pyTable = "¿í¿î";
+	sg_indexLetterK[14].m_py = "uang";	sg_indexLetterK[14].m_pyTable = "¿ï¿ð¿ñ¿ö¿õ¿ó¿ò¿ô";
+	sg_indexLetterK[15].m_py = "ui";	sg_indexLetterK[15].m_pyTable = "¿÷¿ù¿ø¿ú¿ü¿û¿ý¿þÀ¢À£À¡";
+	sg_indexLetterK[16].m_py = "un";	sg_indexLetterK[16].m_pyTable = "À¤À¥À¦À§";
+	sg_indexLetterK[17].m_py = "uo";	sg_indexLetterK[17].m_pyTable = "À©À¨À«Àª";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterK;
+	sg_headLetterIndex[index].m_tableSize = 18;
+	++index;
+	/*l*/
+	sg_indexLetterL[0].m_py = "a";		sg_indexLetterL[0].m_pyTable = "À¬À­À²À®À°À¯À±";
+	sg_indexLetterL[1].m_py = "ai";		sg_indexLetterL[1].m_pyTable = "À´À³Àµ";
+	sg_indexLetterL[2].m_py = "an";		sg_indexLetterL[2].m_pyTable = "À¼À¹À¸À·À»À¶À¾À½ÀºÀÀÀ¿ÀÂÀÁÀÃÀÄ";
+	sg_indexLetterL[3].m_py = "ang";	sg_indexLetterL[3].m_pyTable = "ÀÉÀÇÀÈÀÅÀÆÀÊÀË";
+	sg_indexLetterL[4].m_py = "ao";		sg_indexLetterL[4].m_pyTable = "ÀÌÀÍÀÎÀÏÀÐÀÑÀÔÀÓÀÒ";
+	sg_indexLetterL[5].m_py = "e";		sg_indexLetterL[5].m_pyTable = "ÀÖÀÕÁË";
+	sg_indexLetterL[6].m_py = "ei";		sg_indexLetterL[6].m_pyTable = "À×ÀØÀÝÀÚÀÙÀÜÀßÀáÀàÀÛÀÞ";
+	sg_indexLetterL[7].m_py = "eng";	sg_indexLetterL[7].m_pyTable = "ÀâÀãÀä";
+	sg_indexLetterL[8].m_py = "i";		sg_indexLetterL[8].m_pyTable = "ÀåÀæÀêÀëÀòÀçÀìÁ§ÀèÀéÀñÀîÀïÁ¨ÀíÀðÁ¦ÀúÀ÷Á¢ÀôÀöÀûÀøÁ¤ÀýÁ¥ÀþÀóÀõÀùÁ£ÀüÁ¡";
+	sg_indexLetterL[9].m_py = "ian";	sg_indexLetterL[9].m_pyTable = "Á¬Á±Á¯Á°Á«ÁªÁ®Á­Á²Á³Á·Á¶ÁµÁ´";
+	sg_indexLetterL[10].m_py = "iang";	sg_indexLetterL[10].m_pyTable = "Á©Á¼Á¹ÁºÁ¸Á»Á½ÁÁÁÂÁ¾ÁÀÁ¿";
+	sg_indexLetterL[11].m_py = "iao";	sg_indexLetterL[11].m_pyTable = "ÁÊÁÉÁÆÁÄÁÅÁÈÁÎÁÃÁÇÁÍÁÏÁÌ";
+	sg_indexLetterL[12].m_py = "ie";	sg_indexLetterL[12].m_pyTable = "ÁÐÁÓÁÒÁÔÁÑ";
+	sg_indexLetterL[13].m_py = "in";	sg_indexLetterL[13].m_pyTable = "ÁÚÁÖÁÙÁÜÁÕÁØÁ×ÁÛÁÝÁßÁÞÁà";
+	sg_indexLetterL[14].m_py = "ing";	sg_indexLetterL[14].m_pyTable = "ÁæÁéÁëÁáÁèÁåÁêÁçÁâÁãÁäÁìÁîÁí";
+	sg_indexLetterL[15].m_py = "iu";	sg_indexLetterL[15].m_pyTable = "ÁïÁõÁ÷ÁôÁðÁòÁóÁñÁöÁøÁù";
+	sg_indexLetterL[16].m_py = "ong";	sg_indexLetterL[16].m_pyTable = "ÁúÁüÁýÁûÂ¡ÁþÂ¤Â¢Â£";
+	sg_indexLetterL[17].m_py = "ou";	sg_indexLetterL[17].m_pyTable = "Â¦Â¥Â§Â¨ÂªÂ©";
+	sg_indexLetterL[18].m_py = "u";		sg_indexLetterL[18].m_pyTable = "Â¶Â¬Â®Â«Â¯Â­Â±Â²Â°Â³Â½Â¼Â¸Â¹Â»ÂµÂ·Â¾ÂºÂ´";
+	sg_indexLetterL[19].m_py = "uan";	sg_indexLetterL[19].m_pyTable = "ÂÏÂÍÂÎÂÐÂÑÂÒ";
+	sg_indexLetterL[20].m_py = "ue";	sg_indexLetterL[20].m_pyTable = "ÂÓÂÔ";
+	sg_indexLetterL[21].m_py = "un";	sg_indexLetterL[21].m_pyTable = "ÂÕÂØÂ×ÂÙÂÚÂÖÂÛ";
+	sg_indexLetterL[22].m_py = "uo";	sg_indexLetterL[22].m_pyTable = "ÂÞÂÜÂßÂàÂáÂâÂÝÂãÂåÂçÂæÂä";
+	sg_indexLetterL[23].m_py = "v";		sg_indexLetterL[23].m_pyTable = "ÂËÂ¿ÂÀÂÂÂÃÂÁÂÅÂÆÂÄÂÉÂÇÂÊÂÌÂÈ";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterL;
+	sg_headLetterIndex[index].m_tableSize = 24;
+	++index;
+	/*m*/
+	sg_indexLetterM[0].m_py = "a";		sg_indexLetterM[0].m_pyTable = "ÂèÂéÂíÂêÂëÂìÂîÂðÂï";
+	sg_indexLetterM[1].m_py = "ai";		sg_indexLetterM[1].m_pyTable = "ÂñÂòÂõÂóÂôÂö";
+	sg_indexLetterM[2].m_py = "an";		sg_indexLetterM[2].m_pyTable = "ÂùÂøÂ÷ÂúÂüÃ¡ÂýÂþÂû";
+	sg_indexLetterM[3].m_py = "ang";	sg_indexLetterM[3].m_pyTable = "Ã¦Ã¢Ã¤Ã£Ã§Ã¥";
+	sg_indexLetterM[4].m_py = "ao";		sg_indexLetterM[4].m_pyTable = "Ã¨Ã«Ã¬Ã©ÃªÃ®Ã­Ã¯Ã°Ã³Ã±Ã²";
+	sg_indexLetterM[5].m_py = "e";		sg_indexLetterM[5].m_pyTable = "Ã´";
+	sg_indexLetterM[6].m_py = "ei";		sg_indexLetterM[6].m_pyTable = "Ã»Ã¶ÃµÃ¼Ã·Ã½ÃºÃ¸Ã¹Ã¿ÃÀÃ¾ÃÃÃÁÃÄÃÂ";
+	sg_indexLetterM[7].m_py = "en";		sg_indexLetterM[7].m_pyTable = "ÃÅÃÇÃÆ";
+	sg_indexLetterM[8].m_py = "eng";	sg_indexLetterM[8].m_pyTable = "ÃÈÃËÃÊÃÍÃÉÃÌÃÏÃÎ";
+	sg_indexLetterM[9].m_py = "i";		sg_indexLetterM[9].m_pyTable = "ÃÖÃÔÃÕÃÑÃÓÃÒÃ×ÃÐÃÚÃÙÃØÃÜÃÝÃÛ";
+	sg_indexLetterM[10].m_py = "ian";	sg_indexLetterM[10].m_pyTable = "ÃßÃàÃÞÃâÃãÃäÃáÃåÃæ";
+	sg_indexLetterM[11].m_py = "iao";	sg_indexLetterM[11].m_pyTable = "ÃçÃèÃéÃëÃìÃêÃîÃí";
+	sg_indexLetterM[12].m_py = "ie";	sg_indexLetterM[12].m_pyTable = "ÃðÃï";
+	sg_indexLetterM[13].m_py = "in";	sg_indexLetterM[13].m_pyTable = "ÃñÃóÃòÃöÃõÃô";
+	sg_indexLetterM[14].m_py = "ing";	sg_indexLetterM[14].m_pyTable = "ÃûÃ÷ÃùÃúÃøÃü";
+	sg_indexLetterM[15].m_py = "iu";	sg_indexLetterM[15].m_pyTable = "Ãý";
+	sg_indexLetterM[16].m_py = "o";		sg_indexLetterM[16].m_pyTable = "ºÑÃþÄ¡Ä£Ä¤Ä¦Ä¥Ä¢Ä§Ä¨Ä©Ä­Ä°ÄªÄ¯Ä®Ä«Ä¬";
+	sg_indexLetterM[17].m_py = "ou";	sg_indexLetterM[17].m_pyTable = "Ä²Ä±Ä³";
+	sg_indexLetterM[18].m_py = "u";		sg_indexLetterM[18].m_pyTable = "Ä¸Ä¶ÄµÄ·Ä´Ä¾Ä¿ÄÁÄ¼Ä¹Ä»ÄÀÄ½ÄºÄÂ";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterM;
+	sg_headLetterIndex[index].m_tableSize = 19;
+	++index;
+	/*n*/
+	sg_indexLetterN[0].m_py = "a";		sg_indexLetterN[0].m_pyTable = "ÄÃÄÄÄÇÄÉÄÈÄÆÄÅ";
+	sg_indexLetterN[1].m_py = "ai";		sg_indexLetterN[1].m_pyTable = "ÄËÄÌÄÊÄÎÄÍ";
+	sg_indexLetterN[2].m_py = "an";		sg_indexLetterN[2].m_pyTable = "ÄÐÄÏÄÑ";
+	sg_indexLetterN[3].m_py = "ang";	sg_indexLetterN[3].m_pyTable = "ÄÒ";
+	sg_indexLetterN[4].m_py = "ao";		sg_indexLetterN[4].m_pyTable = "ÄÓÄÕÄÔÄÖÄ×";
+	sg_indexLetterN[5].m_py = "e";		sg_indexLetterN[5].m_pyTable = "ÄØ";
+	sg_indexLetterN[6].m_py = "ei";		sg_indexLetterN[6].m_pyTable = "ÄÚÄÙ";
+	sg_indexLetterN[7].m_py = "en";		sg_indexLetterN[7].m_pyTable = "ÄÛ";
+	sg_indexLetterN[8].m_py = "eng";	sg_indexLetterN[8].m_pyTable = "ÄÜ";
+	sg_indexLetterN[9].m_py = "i";		sg_indexLetterN[9].m_pyTable = "ÄÝÄáÄàÄßÄÞÄãÄâÄæÄäÄçÄå";
+	sg_indexLetterN[10].m_py = "ian";	sg_indexLetterN[10].m_pyTable = "ÄéÄêÄíÄìÄëÄîÄè";
+	sg_indexLetterN[11].m_py = "iang";	sg_indexLetterN[11].m_pyTable = "ÄïÄð";
+	sg_indexLetterN[12].m_py = "iao";	sg_indexLetterN[12].m_pyTable = "ÄñÄò";
+	sg_indexLetterN[13].m_py = "ie";	sg_indexLetterN[13].m_pyTable = "ÄóÄùÄôÄöÄ÷ÄøÄõ";
+	sg_indexLetterN[14].m_py = "in";	sg_indexLetterN[14].m_pyTable = "Äú";
+	sg_indexLetterN[15].m_py = "ing";	sg_indexLetterN[15].m_pyTable = "ÄþÅ¡ÄüÄûÄýÅ¢";
+	sg_indexLetterN[16].m_py = "iu";	sg_indexLetterN[16].m_pyTable = "Å£Å¤Å¦Å¥";
+	sg_indexLetterN[17].m_py = "ong";	sg_indexLetterN[17].m_pyTable = "Å©Å¨Å§Åª";
+	sg_indexLetterN[18].m_py = "u";		sg_indexLetterN[18].m_pyTable = "Å«Å¬Å­";
+	sg_indexLetterN[19].m_py = "uan";	sg_indexLetterN[19].m_pyTable = "Å¯";
+	sg_indexLetterN[20].m_py = "ue";	sg_indexLetterN[20].m_pyTable = "Å±Å°";
+	sg_indexLetterN[21].m_py = "uo";	sg_indexLetterN[21].m_pyTable = "Å²ÅµÅ³Å´";
+	sg_indexLetterN[22].m_py = "v";		sg_indexLetterN[22].m_pyTable = "Å®";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterN;
+	sg_headLetterIndex[index].m_tableSize = 23;
+	++index;
+	/*o*/
+	sg_indexLetterO[0].m_py = "";		sg_indexLetterO[0].m_pyTable = "Å¶";
+	sg_indexLetterO[1].m_py = "u";		sg_indexLetterO[1].m_pyTable = "Å·Å¹Å¸Å»Å¼ÅºÅ½";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterO;
+	sg_headLetterIndex[index].m_tableSize = 2;
+	++index;
+	/*p*/
+	sg_indexLetterP[0].m_py = "a";		sg_indexLetterP[0].m_pyTable = "Å¿Å¾ÅÀ°ÒÅÃÅÁÅÂ";
+	sg_indexLetterP[1].m_py = "ai";		sg_indexLetterP[1].m_pyTable = "ÅÄÅÇÅÅÅÆÅÉÅÈ";
+	sg_indexLetterP[2].m_py = "an";		sg_indexLetterP[2].m_pyTable = "ÅËÅÊÅÌÅÍÅÐÅÑÅÎÅÏ";
+	sg_indexLetterP[3].m_py = "ang";	sg_indexLetterP[3].m_pyTable = "ÅÒÅÓÅÔÅÕÅÖ";
+	sg_indexLetterP[4].m_py = "ao";		sg_indexLetterP[4].m_pyTable = "Å×ÅÙÅØÅÚÅÛÅÜÅÝ";
+	sg_indexLetterP[5].m_py = "ei";		sg_indexLetterP[5].m_pyTable = "ÅÞÅßÅãÅàÅâÅáÅæÅåÅä";
+	sg_indexLetterP[6].m_py = "en";		sg_indexLetterP[6].m_pyTable = "ÅçÅè";
+	sg_indexLetterP[7].m_py = "eng";	sg_indexLetterP[7].m_pyTable = "ÅêÅéÅëÅóÅíÅïÅðÅîÅôÅìÅñÅòÅõÅö";
+	sg_indexLetterP[8].m_py = "i";		sg_indexLetterP[8].m_pyTable = "±ÙÅúÅ÷ÅûÅøÅüÅùÆ¤ÅþÆ£Æ¡ÅýÆ¢Æ¥Æ¦Æ¨Æ§Æ©";
+	sg_indexLetterP[9].m_py = "ian";	sg_indexLetterP[9].m_pyTable = "Æ¬Æ«ÆªÆ­";
+	sg_indexLetterP[10].m_py = "iao";	sg_indexLetterP[10].m_pyTable = "Æ¯Æ®Æ°Æ±";
+	sg_indexLetterP[11].m_py = "ie";	sg_indexLetterP[11].m_pyTable = "Æ²Æ³";
+	sg_indexLetterP[12].m_py = "in";	sg_indexLetterP[12].m_pyTable = "Æ´Æ¶ÆµÆ·Æ¸";
+	sg_indexLetterP[13].m_py = "ing";	sg_indexLetterP[13].m_pyTable = "Æ¹Æ½ÆÀÆ¾ÆºÆ»ÆÁÆ¿Æ¼";
+	sg_indexLetterP[14].m_py = "o";		sg_indexLetterP[14].m_pyTable = "ÆÂÆÃÆÄÆÅÆÈÆÆÆÉÆÇ";
+	sg_indexLetterP[15].m_py = "ou";	sg_indexLetterP[15].m_pyTable = "ÆÊ";
+	sg_indexLetterP[16].m_py = "u";		sg_indexLetterP[16].m_pyTable = "¸¬ÆÍÆËÆÌÆÎÆÐÆÏÆÑÆÓÆÔÆÒÆÖÆÕÆ×ÆØ";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterP;
+	sg_headLetterIndex[index].m_tableSize = 17;
+	++index;
+	/*q*/
+	sg_indexLetterQ[0].m_py = "i";		sg_indexLetterQ[0].m_pyTable = "ÆßÆãÆÞÆâÆàÆÜÆÝÆÚÆÛÆáÆîÆëÆäÆæÆçÆíÆêÆéÆèÆïÆåÆìÆòÆóÆñÆôÆðÆøÆýÆùÆúÆûÆüÆõÆöÆ÷";
+	sg_indexLetterQ[1].m_py = "ia";		sg_indexLetterQ[1].m_pyTable = "ÆþÇ¡Ç¢";
+	sg_indexLetterQ[2].m_py = "ian";	sg_indexLetterQ[2].m_pyTable = "Ç§ÇªÇ¤Ç¨Ç¥Ç£Ç¦Ç«Ç©Ç°Ç®Ç¯Ç¬Ç±Ç­Ç³Ç²Ç´Ç·ÇµÇ¶Ç¸";
+	sg_indexLetterQ[3].m_py = "iang";	sg_indexLetterQ[3].m_pyTable = "ÇºÇ¼Ç¹Ç»Ç¿Ç½Ç¾ÇÀ";
+	sg_indexLetterQ[4].m_py = "iao";	sg_indexLetterQ[4].m_pyTable = "ÇÄÇÃÇÂÇÁÇÇÇÈÇÅÇÆÇÉÇÎÇÍÇÏÇÌÇËÇÊ";
+	sg_indexLetterQ[5].m_py = "ie";		sg_indexLetterQ[5].m_pyTable = "ÇÐÇÑÇÒÇÓÇÔ";
+	sg_indexLetterQ[6].m_py = "in";		sg_indexLetterQ[6].m_pyTable = "Ç×ÇÖÇÕÇÛÇØÇÙÇÝÇÚÇÜÇÞÇß";
+	sg_indexLetterQ[7].m_py = "ing";	sg_indexLetterQ[7].m_pyTable = "ÇàÇâÇáÇãÇäÇåÇéÇçÇèÇæÇêÇëÇì";
+	sg_indexLetterQ[8].m_py = "iong";	sg_indexLetterQ[8].m_pyTable = "ÇîÇí";
+	sg_indexLetterQ[9].m_py = "iu";		sg_indexLetterQ[9].m_pyTable = "ÇðÇñÇïÇôÇóÇöÇõÇò";
+	sg_indexLetterQ[10].m_py = "u";		sg_indexLetterQ[10].m_pyTable = "ÇøÇúÇýÇüÇùÇûÇ÷ÇþÈ¡È¢È£È¥È¤";
+	sg_indexLetterQ[11].m_py = "uan";	sg_indexLetterQ[11].m_pyTable = "È¦È«È¨ÈªÈ­È¬È©È§È®È°È¯";
+	sg_indexLetterQ[12].m_py = "ue";	sg_indexLetterQ[12].m_pyTable = "È²È±È³È´È¸È·ÈµÈ¶";
+	sg_indexLetterQ[13].m_py = "un";	sg_indexLetterQ[13].m_pyTable = "È¹Èº";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterQ;
+	sg_headLetterIndex[index].m_tableSize = 14;
+	++index;
+	/*r*/
+	sg_indexLetterR[0].m_py = "an";		sg_indexLetterR[0].m_pyTable = "È»È¼È½È¾";
+	sg_indexLetterR[1].m_py = "ang";	sg_indexLetterR[1].m_pyTable = "È¿ÈÂÈÀÈÁÈÃ";
+	sg_indexLetterR[2].m_py = "ao";		sg_indexLetterR[2].m_pyTable = "ÈÄÈÅÈÆ";
+	sg_indexLetterR[3].m_py = "e";		sg_indexLetterR[3].m_pyTable = "ÈÇÈÈ";
+	sg_indexLetterR[4].m_py = "en";		sg_indexLetterR[4].m_pyTable = "ÈËÈÊÈÉÈÌÈÐÈÏÈÎÈÒÈÑÈÍ";
+	sg_indexLetterR[5].m_py = "eng";	sg_indexLetterR[5].m_pyTable = "ÈÓÈÔ";
+	sg_indexLetterR[6].m_py = "i";		sg_indexLetterR[6].m_pyTable = "ÈÕ";
+	sg_indexLetterR[7].m_py = "ong";	sg_indexLetterR[7].m_pyTable = "ÈÖÈÞÈ×ÈÙÈÝÈÜÈØÈÛÈÚÈß";
+	sg_indexLetterR[8].m_py = "ou";		sg_indexLetterR[8].m_pyTable = "ÈáÈàÈâ";
+	sg_indexLetterR[9].m_py = "u";		sg_indexLetterR[9].m_pyTable = "ÈçÈãÈåÈæÈäÈêÈéÈèÈëÈì";
+	sg_indexLetterR[10].m_py = "uan";	sg_indexLetterR[10].m_pyTable = "ÈîÈí";
+	sg_indexLetterR[11].m_py = "ui";	sg_indexLetterR[11].m_pyTable = "ÈïÈñÈð";
+	sg_indexLetterR[12].m_py = "un";	sg_indexLetterR[12].m_pyTable = "ÈòÈó";
+	sg_indexLetterR[13].m_py = "uo";	sg_indexLetterR[13].m_pyTable = "ÈôÈõ";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterR;
+	sg_headLetterIndex[index].m_tableSize = 14;
+	++index;
+	/*s*/
+	sg_indexLetterS[0].m_py = "a";		sg_indexLetterS[0].m_pyTable = "ÈöÈ÷Èø";
+	sg_indexLetterS[1].m_py = "ai";		sg_indexLetterS[1].m_pyTable = "ÈûÈùÈúÈü";
+	sg_indexLetterS[2].m_py = "an";		sg_indexLetterS[2].m_pyTable = "ÈýÈþÉ¡É¢";
+	sg_indexLetterS[3].m_py = "ang";	sg_indexLetterS[3].m_pyTable = "É£É¤É¥";
+	sg_indexLetterS[4].m_py = "ao";		sg_indexLetterS[4].m_pyTable = "É¦É§É¨É©";
+	sg_indexLetterS[5].m_py = "e";		sg_indexLetterS[5].m_pyTable = "É«É¬Éª";
+	sg_indexLetterS[6].m_py = "en";		sg_indexLetterS[6].m_pyTable = "É­";
+	sg_indexLetterS[7].m_py = "eng";	sg_indexLetterS[7].m_pyTable = "É®";
+	sg_indexLetterS[8].m_py = "ha";		sg_indexLetterS[8].m_pyTable = "É±É³É´É°É¯ÉµÉ¶É·ÏÃ";
+	sg_indexLetterS[9].m_py = "hai";	sg_indexLetterS[9].m_pyTable = "É¸É¹";
+	sg_indexLetterS[10].m_py = "han";	sg_indexLetterS[10].m_pyTable = "É½É¾É¼ÉÀÉºÉ¿ÉÁÉÂÉÇÉ»ÉÈÉÆÉÉÉÃÉÅÉÄÕ¤";
+	sg_indexLetterS[11].m_py = "hang";	sg_indexLetterS[11].m_pyTable = "ÉËÉÌÉÊÉÑÉÎÉÍÉÏÉÐ";
+	sg_indexLetterS[12].m_py = "hao";	sg_indexLetterS[12].m_pyTable = "ÉÓÉÒÉÕÉÔÉ×ÉÖÉØÉÙÉÛÉÜÉÚ";
+	sg_indexLetterS[13].m_py = "he";	sg_indexLetterS[13].m_pyTable = "ÉÝÉÞÉàÉßÉáÉèÉçÉäÉæÉâÉåÉã";
+	sg_indexLetterS[14].m_py = "hen";	sg_indexLetterS[14].m_pyTable = "ÉêÉìÉíÉëÉðÉïÉéÉîÉñÉòÉóÉôÉöÉõÉøÉ÷Ê²";
+	sg_indexLetterS[15].m_py = "heng";	sg_indexLetterS[15].m_pyTable = "ÉýÉúÉùÉüÊ¤ÉûÉþÊ¡Ê¥Ê¢Ê£";
+	sg_indexLetterS[16].m_py = "hi";	sg_indexLetterS[16].m_pyTable = "³×Ê¬Ê§Ê¦Ê­Ê«Ê©Ê¨ÊªÊ®Ê¯Ê±Ê¶ÊµÊ°Ê´Ê³Ê·Ê¸Ê¹Ê¼Ê»ÊºÊ¿ÊÏÊÀÊËÊÐÊ¾Ê½ÊÂÊÌÊÆÊÓÊÔÊÎÊÒÊÑÊÃÊÇÊÁÊÊÊÅÊÍÊÈÊÄÊÉËÆ";
+	sg_indexLetterS[17].m_py = "hou";	sg_indexLetterS[17].m_pyTable = "ÊÕÊÖÊØÊ×ÊÙÊÜÊÞÊÛÊÚÊÝ";
+	sg_indexLetterS[18].m_py = "hu";	sg_indexLetterS[18].m_pyTable = "ÊéÊãÊåÊàÊâÊáÊçÊèÊæÊäÊßÊëÊêÊìÊîÊòÊðÊóÊñÊíÊïÊõÊùÊøÊöÊ÷ÊúË¡ÊüÊýÊûÊþÊô";
+	sg_indexLetterS[19].m_py = "hua";	sg_indexLetterS[19].m_pyTable = "Ë¢Ë£";
+	sg_indexLetterS[20].m_py = "huai";	sg_indexLetterS[20].m_pyTable = "Ë¥Ë¤Ë¦Ë§";
+	sg_indexLetterS[21].m_py = "huan";	sg_indexLetterS[21].m_pyTable = "Ë©Ë¨";
+	sg_indexLetterS[22].m_py = "huang";	sg_indexLetterS[22].m_pyTable = "Ë«ËªË¬";
+	sg_indexLetterS[23].m_py = "hui";	sg_indexLetterS[23].m_pyTable = "Ë­Ë®Ë°Ë¯";
+	sg_indexLetterS[24].m_py = "hun";	sg_indexLetterS[24].m_pyTable = "Ë±Ë³Ë´Ë²";
+	sg_indexLetterS[25].m_py = "huo";	sg_indexLetterS[25].m_pyTable = "ËµË¸Ë·Ë¶";
+	sg_indexLetterS[26].m_py = "i";		sg_indexLetterS[26].m_pyTable = "Ë¿Ë¾Ë½Ë¼Ë¹Ë»ËºËÀËÈËÄËÂËÅËÇËÃËÁ";
+	sg_indexLetterS[27].m_py = "ong";	sg_indexLetterS[27].m_pyTable = "ËÉËËËÊËÏËÎËÐËÍËÌ";
+	sg_indexLetterS[28].m_py = "ou";	sg_indexLetterS[28].m_pyTable = "ËÔËÑËÒËÓ";
+	sg_indexLetterS[29].m_py = "u";		sg_indexLetterS[29].m_pyTable = "ËÕËÖË×ËßËàËØËÙËÚËÜËÝËÛ";
+	sg_indexLetterS[30].m_py = "uan";	sg_indexLetterS[30].m_pyTable = "ËáËâËã";
+	sg_indexLetterS[31].m_py = "ui";	sg_indexLetterS[31].m_pyTable = "ËäËçËåËæËèËêËîËìËéËíËë";
+	sg_indexLetterS[32].m_py = "un";	sg_indexLetterS[32].m_pyTable = "ËïËðËñ";
+	sg_indexLetterS[33].m_py = "uo";	sg_indexLetterS[33].m_pyTable = "ËôËóËòËõËùË÷ËöËø";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterS;
+	sg_headLetterIndex[index].m_tableSize = 34;
+	++index;
+	/*t*/
+	sg_indexLetterT[0].m_py = "a";		sg_indexLetterT[0].m_pyTable = "ËýËûËüËúËþÌ¡Ì¢Ì¤Ì£";
+	sg_indexLetterT[1].m_py = "ai";		sg_indexLetterT[1].m_pyTable = "Ì¥Ì¨Ì§Ì¦Ì«Ì­Ì¬Ì©Ìª";
+	sg_indexLetterT[2].m_py = "an";		sg_indexLetterT[2].m_pyTable = "Ì®Ì°Ì¯Ì²Ì±Ì³Ì¸ÌµÌ·Ì¶Ì´Ì¹Ì»ÌºÌ¾Ì¿Ì½Ì¼";
+	sg_indexLetterT[3].m_py = "ang";	sg_indexLetterT[3].m_pyTable = "ÌÀÌÆÌÃÌÄÌÁÌÂÌÅÌÇÌÈÌÊÌÉÌÌÌË";
+	sg_indexLetterT[4].m_py = "ao";		sg_indexLetterT[4].m_pyTable = "ÌÎÌÐÌÍÌÏÌÓÌÒÌÕÌÔÌÑÌÖÌ×";
+	sg_indexLetterT[5].m_py = "e";		sg_indexLetterT[5].m_pyTable = "ÌØ";
+	sg_indexLetterT[6].m_py = "eng";	sg_indexLetterT[6].m_pyTable = "ÌÛÌÚÌÜÌÙ";
+	sg_indexLetterT[7].m_py = "i";		sg_indexLetterT[7].m_pyTable = "ÌÞÌÝÌàÌßÌäÌáÌâÌãÌåÌëÌêÌéÌèÌæÌç";
+	sg_indexLetterT[8].m_py = "ian";	sg_indexLetterT[8].m_pyTable = "ÌìÌíÌïÌñÌðÌîÌóÌò";
+	sg_indexLetterT[9].m_py = "iao";	sg_indexLetterT[9].m_pyTable = "µ÷ÌôÌõÌöÌ÷Ìø";
+	sg_indexLetterT[10].m_py = "ie";	sg_indexLetterT[10].m_pyTable = "ÌùÌúÌû";
+	sg_indexLetterT[11].m_py = "ing";	sg_indexLetterT[11].m_pyTable = "ÌüÍ¡ÌýÌþÍ¢Í¤Í¥Í£Í¦Í§";
+	sg_indexLetterT[12].m_py = "ong";	sg_indexLetterT[12].m_pyTable = "Í¨Í¬Í®Í©Í­Í¯ÍªÍ«Í³Í±Í°Í²Í´";
+	sg_indexLetterT[13].m_py = "ou";	sg_indexLetterT[13].m_pyTable = "ÍµÍ·Í¶Í¸";
+	sg_indexLetterT[14].m_py = "u";		sg_indexLetterT[14].m_pyTable = "Í¹ÍºÍ»Í¼Í½Í¿Í¾ÍÀÍÁÍÂÍÃ";
+	sg_indexLetterT[15].m_py = "uan";	sg_indexLetterT[15].m_pyTable = "ÍÄÍÅ";
+	sg_indexLetterT[16].m_py = "ui";	sg_indexLetterT[16].m_pyTable = "ÍÆÍÇÍÈÍËÍÉÍÊ";
+	sg_indexLetterT[17].m_py = "un";	sg_indexLetterT[17].m_pyTable = "¶ÚÍÌÍÍÍÎ";
+	sg_indexLetterT[18].m_py = "uo";	sg_indexLetterT[18].m_pyTable = "ÍÐÍÏÍÑÍÔÍÓÍÕÍÒÍ×ÍÖÍØÍÙ";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterT;
+	sg_headLetterIndex[index].m_tableSize = 19;
+	++index;
+	/*u*/
+	sg_indexLetterU[0].m_py = "";		sg_indexLetterU[0].m_pyTable = "";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterU;
+	sg_headLetterIndex[index].m_tableSize = 0;
+	++index;
+	/*v*/
+	sg_indexLetterV[0].m_py = "";		sg_indexLetterV[0].m_pyTable = "";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterV;
+	sg_headLetterIndex[index].m_tableSize = 0;
+	++index;
+	/*w*/
+	sg_indexLetterW[0].m_py = "a";		sg_indexLetterW[0].m_pyTable = "ÍÛÍÞÍÚÍÝÍÜÍßÍà";
+	sg_indexLetterW[1].m_py = "ai";		sg_indexLetterW[1].m_pyTable = "ÍáÍâ";
+	sg_indexLetterW[2].m_py = "an";		sg_indexLetterW[2].m_pyTable = "ÍäÍåÍãÍèÍêÍæÍçÍéÍðÍìÍíÍñÍïÍîÍëÍòÍó";
+	sg_indexLetterW[3].m_py = "ang";	sg_indexLetterW[3].m_pyTable = "ÍôÍöÍõÍøÍùÍ÷ÍýÍüÍúÍû";
+	sg_indexLetterW[4].m_py = "ei";		sg_indexLetterW[4].m_pyTable = "Î£ÍþÎ¢Î¡ÎªÎ¤Î§Î¥Î¦Î¨Î©Î¬Î«Î°Î±Î²Î³Î­Î¯Î®ÎÀÎ´Î»Î¶Î·Î¸Î¾Î½Î¹Î¼ÎµÎ¿Îº";
+	sg_indexLetterW[5].m_py = "en";		sg_indexLetterW[5].m_pyTable = "ÎÂÎÁÎÄÎÆÎÅÎÃÎÇÎÉÎÈÎÊ";
+	sg_indexLetterW[6].m_py = "eng";	sg_indexLetterW[6].m_pyTable = "ÎÌÎËÎÍ";
+	sg_indexLetterW[7].m_py = "o";		sg_indexLetterW[7].m_pyTable = "ÎÎÎÐÎÑÎÏÎÒÎÖÎÔÎÕÎÓ";
+	sg_indexLetterW[8].m_py = "u";		sg_indexLetterW[8].m_pyTable = "ÎÚÎÛÎØÎ×ÎÝÎÜÎÙÎÞÎãÎâÎáÎßÎàÎåÎçÎéÎëÎäÎêÎæÎèÎðÎñÎìÎïÎóÎòÎîÎí";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterW;
+	sg_headLetterIndex[index].m_tableSize = 9;
+	++index;
+	/*x*/
+	sg_indexLetterX[0].m_py = "i";		sg_indexLetterX[0].m_pyTable = "Ï¦Ï«Î÷ÎüÏ£ÎôÎöÎùÏ¢ÎþÏ¤Ï§Ï©ÎøÎúÏ¬Ï¡ÏªÎýÏ¨ÎõÎûÏ¥Ï°Ï¯Ï®Ï±Ï­Ï´Ï²Ï·ÏµÏ¸Ï¶";
+	sg_indexLetterX[1].m_py = "ia";		sg_indexLetterX[1].m_pyTable = "ÏºÏ¹Ï»ÏÀÏ¿ÏÁÏ¾Ï½Ï¼ÏÂÏÅÏÄ";
+	sg_indexLetterX[2].m_py = "ian";	sg_indexLetterX[2].m_pyTable = "Ï³ÏÉÏÈÏËÏÆÏÇÏÊÏÐÏÒÏÍÏÌÏÑÏÏÏÎÏÓÏÔÏÕÏØÏÖÏßÏÞÏÜÏÝÏÚÏÛÏ×ÏÙ";
+	sg_indexLetterX[3].m_py = "iang";	sg_indexLetterX[3].m_pyTable = "ÏçÏàÏãÏáÏæÏäÏåÏâÏêÏéÏèÏíÏìÏëÏòÏïÏîÏóÏñÏð";
+	sg_indexLetterX[4].m_py = "iao";	sg_indexLetterX[4].m_pyTable = "ÏüÏûÏôÏõÏúÏöÏùÏýÐ¡ÏþÐ¢Ð¤ÏøÐ§Ð£Ð¦Ð¥";
+	sg_indexLetterX[5].m_py = "ie";		sg_indexLetterX[5].m_pyTable = "Ð©Ð¨ÐªÐ«Ð­Ð°Ð²Ð±Ð³Ð¯Ð¬Ð´Ð¹ÐºÐ¶Ð¼ÐµÐ»Ð¸Ð·";
+	sg_indexLetterX[6].m_py = "in";		sg_indexLetterX[6].m_pyTable = "ÐÄÐÃÐ¾ÐÁÐÀÐ¿ÐÂÐ½ÐÅÐÆ";
+	sg_indexLetterX[7].m_py = "ing";	sg_indexLetterX[7].m_pyTable = "ÐËÐÇÐÊÐÉÐÈÐÌÐÏÐÎÐÍÐÑÐÓÐÕÐÒÐÔ";
+	sg_indexLetterX[8].m_py = "iong";	sg_indexLetterX[8].m_pyTable = "Ð×ÐÖÐÙÐÚÐØÐÛÐÜ";
+	sg_indexLetterX[9].m_py = "iu";		sg_indexLetterX[9].m_pyTable = "ËÞÐÝÐÞÐßÐàÐãÐåÐäÐâÐá";
+	sg_indexLetterX[10].m_py = "u";		sg_indexLetterX[10].m_pyTable = "ÐçÐëÐéÐêÐèÐæÐìÐíÐñÐòÐðÐôÐ÷ÐøÐïÐöÐõÐîÓõ";
+	sg_indexLetterX[11].m_py = "uan";	sg_indexLetterX[11].m_pyTable = "ÐùÐûÐúÐþÐüÐýÑ¡Ñ¢Ñ¤Ñ£";
+	sg_indexLetterX[12].m_py = "ue";	sg_indexLetterX[12].m_pyTable = "Ï÷Ñ¥Ñ¦Ñ¨Ñ§Ñ©Ñª";
+	sg_indexLetterX[13].m_py = "un";	sg_indexLetterX[13].m_pyTable = "Ñ«Ñ¬Ñ°Ñ²Ñ®Ñ±Ñ¯Ñ­ÑµÑ¶Ñ´Ñ¸Ñ·Ñ³";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterX;
+	sg_headLetterIndex[index].m_tableSize = 14;
+	++index;
+	/*y*/
+	sg_indexLetterY[0].m_py = "a";		sg_indexLetterY[0].m_pyTable = "Ñ¾Ñ¹Ñ½ÑºÑ»Ñ¼ÑÀÑ¿ÑÁÑÂÑÄÑÃÑÆÑÅÑÇÑÈ";
+	sg_indexLetterY[1].m_py = "an";		sg_indexLetterY[1].m_pyTable = "ÑÊÑÌÑÍÑÉÑËÑÓÑÏÑÔÑÒÑØÑ×ÑÐÑÎÑÖÑÑÑÕÑÙÑÜÑÚÑÛÑÝÑáÑåÑâÑäÑçÑÞÑéÑèÑßÑæÑãÑà";
+	sg_indexLetterY[2].m_py = "ang";	sg_indexLetterY[2].m_pyTable = "ÑëÑêÑíÑìÑïÑòÑôÑîÑðÑñÑóÑöÑøÑõÑ÷ÑùÑú";
+	sg_indexLetterY[3].m_py = "ao";		sg_indexLetterY[3].m_pyTable = "½ÄÑýÑüÑûÒ¢Ò¦Ò¤Ò¥Ò¡Ò£ÑþÒ§Ò¨Ò©ÒªÒ«Ô¿";
+	sg_indexLetterY[4].m_py = "e";		sg_indexLetterY[4].m_pyTable = "Ò¬Ò­Ò¯Ò®Ò²Ò±Ò°ÒµÒ¶Ò·Ò³Ò¹Ò´ÒºÒ¸";
+	sg_indexLetterY[5].m_py = "i";		sg_indexLetterY[5].m_pyTable = "Ò»ÒÁÒÂÒ½ÒÀÒ¿Ò¼Ò¾ÒÇÒÄÒÊÒËÒÌÒÈÒÆÒÅÒÃÒÉÒÍÒÒÒÑÒÔÒÓÒÏÒÐÒÎÒåÒÚÒäÒÕÒéÒàÒÙÒìÒÛÒÖÒëÒØÒ×ÒïÒèÒßÒæÒêÒîÒÝÒâÒçÒÞÒáÒãÒíÒÜ";
+	sg_indexLetterY[6].m_py = "in";		sg_indexLetterY[6].m_pyTable = "ÒòÒõÒöÒðÒñÒôÒóÒ÷ÒúÒùÒøÒüÒýÒûÒþÓ¡";
+	sg_indexLetterY[7].m_py = "ing";	sg_indexLetterY[7].m_pyTable = "Ó¦Ó¢Ó¤Ó§Ó£Ó¥Ó­Ó¯Ó«Ó¨Ó©ÓªÓ¬Ó®Ó±Ó°Ó³Ó²";
+	sg_indexLetterY[8].m_py = "o";		sg_indexLetterY[8].m_pyTable = "Ó´";
+	sg_indexLetterY[9].m_py = "ong";	sg_indexLetterY[9].m_pyTable = "Ó¶ÓµÓ¸Ó¹ÓºÓ·ÓÀÓ½Ó¾ÓÂÓ¿ÓÁÓ¼Ó»ÓÃ";
+	sg_indexLetterY[10].m_py = "ou";	sg_indexLetterY[10].m_pyTable = "ÓÅÓÇÓÄÓÆÓÈÓÉÓÌÓÊÓÍÓËÓÎÓÑÓÐÓÏÓÖÓÒÓ×ÓÓÓÕÓÔ";
+	sg_indexLetterY[11].m_py = "u";		sg_indexLetterY[11].m_pyTable = "ÓØÓÙÓåÓÚÓèÓàÓÛÓãÓáÓéÓæÓçÓäÓâÓÞÓÜÓÝÓßÓëÓîÓìÓðÓêÓíÓïÓñÔ¦ÓóÓýÓôÓüÓøÔ¡Ô¤ÓòÓûÓ÷Ô¢ÓùÔ£ÓöÓúÓþÔ¥";
+	sg_indexLetterY[12].m_py = "uan";	sg_indexLetterY[12].m_pyTable = "Ô©Ô§Ô¨ÔªÔ±Ô°Ô«Ô­Ô²Ô¬Ô®ÔµÔ´Ô³Ô¯Ô¶Ô·Ô¹ÔºÔ¸";
+	sg_indexLetterY[13].m_py = "ue";	sg_indexLetterY[13].m_pyTable = "Ô»Ô¼ÔÂÔÀÔÃÔÄÔ¾ÔÁÔ½";
+	sg_indexLetterY[14].m_py = "un";	sg_indexLetterY[14].m_pyTable = "ÔÆÔÈÔÇÔÅÔÊÔÉÔÐÔËÔÎÔÍÔÏÔÌ";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterY;
+	sg_headLetterIndex[index].m_tableSize = 15;
+	++index;
+	/*z*/
+	sg_indexLetterZ[0].m_py = "a";		sg_indexLetterZ[0].m_pyTable = "ÔÑÔÓÔÒÕ¦";
+	sg_indexLetterZ[1].m_py = "ai";		sg_indexLetterZ[1].m_pyTable = "ÔÖÔÕÔÔÔ×ÔØÔÙÔÚ×Ð";
+	sg_indexLetterZ[2].m_py = "an";		sg_indexLetterZ[2].m_pyTable = "ÔÛÔÜÔÝÔÞ";
+	sg_indexLetterZ[3].m_py = "ang";	sg_indexLetterZ[3].m_pyTable = "ÔßÔàÔá";
+	sg_indexLetterZ[4].m_py = "ao";		sg_indexLetterZ[4].m_pyTable = "ÔâÔãÔäÔçÔæÔéÔèÔåÔîÔíÔìÔëÔïÔê";
+	sg_indexLetterZ[5].m_py = "e";		sg_indexLetterZ[5].m_pyTable = "ÔòÔñÔóÔð";
+	sg_indexLetterZ[6].m_py = "ei";		sg_indexLetterZ[6].m_pyTable = "Ôô";
+	sg_indexLetterZ[7].m_py = "en";		sg_indexLetterZ[7].m_pyTable = "Ôõ";
+	sg_indexLetterZ[8].m_py = "eng";	sg_indexLetterZ[8].m_pyTable = "ÔöÔ÷Ôù";
+	sg_indexLetterZ[9].m_py = "ha";		sg_indexLetterZ[9].m_pyTable = "ÔûÔüÔúÔýÔþÕ¢Õ¡Õ£Õ§Õ©Õ¨Õ¥×õ";
+	sg_indexLetterZ[10].m_py = "hai";	sg_indexLetterZ[10].m_pyTable = "Õ«ÕªÕ¬µÔÕ­Õ®Õ¯";
+	sg_indexLetterZ[11].m_py = "han";	sg_indexLetterZ[11].m_pyTable = "Õ´Õ±Õ³Õ²Õ°Õ¶Õ¹ÕµÕ¸Õ·Õ¼Õ½Õ»Õ¾ÕÀÕ¿Õº";
+	sg_indexLetterZ[12].m_py = "hang";	sg_indexLetterZ[12].m_pyTable = "³¤ÕÅÕÂÕÃÕÄÕÁÕÇÕÆÕÉÕÌÕÊÕÈÕÍÕËÕÏÕÎ";
+	sg_indexLetterZ[13].m_py = "hao";	sg_indexLetterZ[13].m_pyTable = "ÕÐÕÑÕÒÕÓÕÙÕ×ÕÔÕÕÕÖÕØ×¦";
+	sg_indexLetterZ[14].m_py = "he";	sg_indexLetterZ[14].m_pyTable = "ÕÚÕÛÕÜÕÝÕÞÕßÕàÕâÕãÕá×Å";
+	sg_indexLetterZ[15].m_py = "hen";	sg_indexLetterZ[15].m_pyTable = "ÕêÕëÕìÕäÕæÕèÕåÕçÕéÕïÕíÕîÕóÕñÕòÕðÖ¡";
+	sg_indexLetterZ[16].m_py = "heng";	sg_indexLetterZ[16].m_pyTable = "ÕùÕ÷ÕúÕõÕøÕöÕôÕüÕûÕýÖ¤Ö£ÕþÖ¢";
+	sg_indexLetterZ[17].m_py = "hi";	sg_indexLetterZ[17].m_pyTable = "Ö®Ö§Ö­Ö¥Ö¨Ö¦ÖªÖ¯Ö«Ö¬Ö©Ö´Ö¶Ö±ÖµÖ°Ö²Ö³Ö¹Ö»Ö¼Ö·Ö½Ö¸ÖºÖÁÖ¾ÖÆÖÄÖÎÖËÖÊÖÅÖ¿ÖÈÖÂÖÀÖÌÖÏÖÇÖÍÖÉÖÃ";
+	sg_indexLetterZ[18].m_py = "hong";	sg_indexLetterZ[18].m_pyTable = "ÖÐÖÒÖÕÖÑÖÓÖÔÖ×ÖÖÖÙÖÚÖØ";
+	sg_indexLetterZ[19].m_py = "hou";	sg_indexLetterZ[19].m_pyTable = "ÖÝÖÛÖßÖÜÖÞÖàÖáÖâÖãÖäÖæÖçÖåÖè";
+	sg_indexLetterZ[20].m_py = "hu";	sg_indexLetterZ[20].m_pyTable = "ÖìÖïÖêÖéÖîÖíÖëÖñÖòÖðÖ÷ÖôÖóÖöÖõ×¡Öú×¢Öü×¤Öù×£ÖøÖûÖþÖý";
+	sg_indexLetterZ[21].m_py = "hua";	sg_indexLetterZ[21].m_pyTable = "×¥";
+	sg_indexLetterZ[22].m_py = "huai";	sg_indexLetterZ[22].m_pyTable = "×§";
+	sg_indexLetterZ[23].m_py = "huan";	sg_indexLetterZ[23].m_pyTable = "×¨×©×ª×«×­";
+	sg_indexLetterZ[24].m_py = "huang";	sg_indexLetterZ[24].m_pyTable = "×±×¯×®×°×³×´´±×²";
+	sg_indexLetterZ[25].m_py = "hui";	sg_indexLetterZ[25].m_pyTable = "×·×µ×¶×¹×º×¸";
+	sg_indexLetterZ[26].m_py = "hun";	sg_indexLetterZ[26].m_pyTable = "×»×¼";
+	sg_indexLetterZ[27].m_py = "huo";	sg_indexLetterZ[27].m_pyTable = "×¿×¾×½×À×Æ×Â×Ç×Ã×Ä×Á";
+	sg_indexLetterZ[28].m_py = "i";		sg_indexLetterZ[28].m_pyTable = "×Î×È×É×Ë×Ê×Í×Ì×Ñ×Ó×Ï×Ò×Ö×Ô×Õ";
+	sg_indexLetterZ[29].m_py = "ong";	sg_indexLetterZ[29].m_pyTable = "×Ú×Û×Ø×Ù×××Ü×Ý";
+	sg_indexLetterZ[30].m_py = "ou";	sg_indexLetterZ[30].m_pyTable = "×Þ×ß×à×á";
+	sg_indexLetterZ[31].m_py = "u";		sg_indexLetterZ[31].m_pyTable = "×â×ã×ä×å×ç×è×é×æ";
+	sg_indexLetterZ[32].m_py = "uan";	sg_indexLetterZ[32].m_pyTable = "×¬×ë×ê";
+	sg_indexLetterZ[33].m_py = "ui";	sg_indexLetterZ[33].m_pyTable = "×ì×î×ï×í";
+	sg_indexLetterZ[34].m_py = "un";	sg_indexLetterZ[34].m_pyTable = "×ð×ñ";
+	sg_indexLetterZ[35].m_py = "uo";	sg_indexLetterZ[35].m_pyTable = "×ò×ó×ô×÷×ø×ù×ö";
+	sg_headLetterIndex[index].m_pyIndex = sg_indexLetterZ;
+	sg_headLetterIndex[index].m_tableSize = 36;
+	++index;
+#if PINYIN_TEST > 0
+	util_Printf((char *)"PinYin Initial Success\n");
+#endif
+}
+
+/***************»ñÈ¡ÏÂÒ»¸öÊäÈë·¨*******************
+²ÎÊýËµÃ÷:
+a_inputType :µ±Ç°µÄÊäÈë·¨
+·µ»ØÖµËµÃ÷:ÏÂÒ»¸ö¿ÉÓÃµÄÊäÈë·¨
+***********************************************************/
+InputType PY_GetNextInputType(const InputType a_inputType)
+{
+	InputType newInputType = a_inputType;
+	do
+	{
+		if(newInputType == INPUT_TYPE_QUWEI)
+		{
+			newInputType = INPUT_TYPE_PINYIN;
+		}
+		else
+		{
+			newInputType = (InputType)(newInputType + 1);
+		}
+	}
+	while(PY_CheckInputType(newInputType) == false);
+#if PINYIN_TEST > 0
+	util_Printf((char *)"Old InputType = %d\n", a_inputType);
+	util_Printf((char *)"New InputType = %d\n", newInputType);
+#endif
+	return newInputType;
+}
+
+/*************¼ì²éÊäÈë·¨ÊÇ·ñ¿ÉÓÃ*****************
+²ÎÊýËµÃ÷:
+a_inputType :ÐèÒª¼ì²éµÄÊäÈë·¨
+·µ»ØÖµËµÃ÷:
+true :ÊäÈë·¨¿ÉÓÃ
+false :ÊäÈë·¨²»¿ÉÓÃ
+***********************************************************/
+UCHAR PY_CheckInputType(const InputType a_inputType)
+{
+	UCHAR check = false;
+	if(((sg_inputFlag & PY_INPUT_CHINESE) != 0)
+		&& (a_inputType == INPUT_TYPE_PINYIN))
+	{
+		check = true;
+	}
+	else if(((sg_inputFlag & PY_INPUT_LOWER_CASE) != 0)
+		&& (a_inputType == INPUT_TYPE_LOWER_CASE))
+	{
+		check = true;
+	}
+	else if(((sg_inputFlag & PY_INPUT_UPPER_CASE) != 0)
+		&& (a_inputType == INPUT_TYPE_UPPER_CASE))
+	{
+		check = true;
+	}
+	else if(((sg_inputFlag & PY_INPUT_NUMBER) != 0)
+		&& (a_inputType == INPUT_TYPE_NUMBER))
+	{
+		check = true;
+	}
+	else if(((sg_inputFlag & PY_INPUT_QUWEI) != 0)
+		&& (a_inputType == INPUT_TYPE_QUWEI))
+	{
+		check = true;
+	}
+#if PINYIN_TEST > 0
+	util_Printf((char *)"InputType = %d ", a_inputType);
+	if(check != false)
+	{
+		util_Printf((char *)"can use\n", a_inputType);
+	}
+	else
+	{
+		util_Printf((char *)"can't use\n", a_inputType);
+	}
+#endif
+	return check;
+}
+
+/**********»ñÈ¡µÚÒ»¸ö¿ÉÓÃµÄÊäÈë·¨**************
+²ÎÊýËµÃ÷:
+
+·µ»ØÖµËµÃ÷:µÚÒ»¸ö¿ÉÓÃµÄÊäÈë·¨
+***********************************************************/
+InputType PY_GetFirstInputType(void)
+{
+	InputType firstInputType = INPUT_TYPE_PINYIN;
+
+	for(firstInputType = INPUT_TYPE_PINYIN; PY_CheckInputType(firstInputType) == false; )
+	{
+		if(firstInputType == INPUT_TYPE_QUWEI)
+		{
+			firstInputType = INPUT_TYPE_PINYIN;
+		}
+		else
+		{
+			firstInputType = (InputType)(firstInputType + 1);
+		}
+	}
+#if PINYIN_TEST > 0
+	util_Printf((char *)"FirstInputType = %d\n", firstInputType);
+#endif
+	return firstInputType;
+}
+
+/***************¼ì²éÊäÈëµÄÆ´Òô*********************
+²ÎÊýËµÃ÷:
+a_input :´ý¼ì²éµÄÆ´Òô×Ö·û´®
+·µ»ØÖµËµÃ÷:
+INPUT_NOT_FOUND :Ã»ÓÐÈ«Æ¥Åä»ò²¿·ÖÆ¥ÅäµÄÆ´Òô
+INPUT_FOUND :È«Æ¥ÅäµÄÆ´Òô
+INPUT_INCLUDE :²¿·ÖÆ¥ÅäµÄÆ´Òô
+***********************************************************/
+InputCheck PY_Check(const unsigned char *a_input)
+{
+	const PinYinIndex *cpHZ;
+	unsigned int index;
+	unsigned int maxIndex;
+	unsigned int inputLen = strlen((const char *)a_input);
+	InputCheck result = INPUT_NOT_FOUND;
+
+#if PINYIN_TEST > 0
+	util_Printf((char *)"Check PinYin = %s\n", a_input);
+#endif
+
+    if(inputLen != 0
+	&& a_input[0] >= 'a'
+	&& a_input[0] <= 'z')
+    {
+	    cpHZ = sg_headLetterIndex[a_input[0] - 'a'].m_pyIndex;/*²éÊ××ÖÄ¸Ë÷Òý*/
+		maxIndex = sg_headLetterIndex[a_input[0] - 'a'].m_tableSize;/*ÉèÖÃÖ¸Õë½çÏÞ*/
+
+		for(index = 0; index < maxIndex; ++index, ++cpHZ)/*Ë÷Òý±í²»³¬½ç*/
+	 	{
+	 		//×ÖÄ¸´®²¿·ÖÆ¥Åä
+			if(strncmp(cpHZ->m_py, (const char*)&a_input[1], inputLen - 1) == 0)
+			{
+				//×ÖÄ¸´®È«Æ¥Åä
+				if(strcmp(cpHZ->m_py, (const char*)&a_input[1]) == 0)
+				{
+					result = INPUT_FOUND;
+				}
+				else
+				{
+					result = INPUT_INCLUDE;
+				}
+				break;
+			}
+	    }
+    }
+#if PINYIN_TEST > 0
+	util_Printf((char *)"Check PinYin result = %d\n", result);
+#endif
+    return result;/*ÎÞ¹û¶øÖÕ*/
+}
+
+/*****»ñÈ¡ÊäÈëµÄÆ´Òô¶ÔÓ¦µÄÖÐÎÄ×Ö±í*********
+²ÎÊýËµÃ÷:
+a_input :´ý¼ì²éµÄÆ´Òô×Ö·û´®
+·µ»ØÖµËµÃ÷:
+NULL :Ã»ÓÐÈ«Æ¥ÅäµÄÆ´Òô
+ÆäËû:¶ÔÓ¦µÄÖÐÎÄ×Ö±í
+***********************************************************/
+const unsigned char *PY_Ime(const unsigned char *a_input)
+{
+	const PinYinIndex *cpHZ;
+	unsigned int index;
+	unsigned int maxIndex;
+	const unsigned char *result = NULL;
+
+#if PINYIN_TEST > 0
+	util_Printf((char *)"IME PinYin = %s\n", a_input);
+#endif
+
+	//Èç¹ûÊäÈë¿Õ×Ö·û·µ»Ø0
+    if(strlen((const char *)a_input) != 0
+	&& a_input[0] >= 'a'
+	&& a_input[0] <= 'z')
+	{
+	    cpHZ = sg_headLetterIndex[a_input[0] - 'a'].m_pyIndex;/*²éÊ××ÖÄ¸Ë÷Òý*/
+		maxIndex = sg_headLetterIndex[a_input[0] - 'a'].m_tableSize;/*ÉèÖÃÖ¸Õë½çÏÞ*/
+
+		for(index = 0; index < maxIndex; ++index, ++cpHZ)/*Ë÷Òý±í²»³¬½ç*/
+		{
+	    	if(strcmp(cpHZ->m_py,(const char*)&a_input[1]) == 0)/*×ÖÄ¸´®È«Æ¥Åä*/
+	    	{
+				result = (const unsigned char *)(cpHZ->m_pyTable);
+	    	}
+		}
+	}
+#if PINYIN_TEST > 0
+	if(result == NULL)
+	{
+		util_Printf((char *)"No such pinyin\n");
+	}
+	else
+	{
+		util_Printf((char *)"PinYin Chinese Table = %s\n", result);
+	}
+#endif
+    return result;/*ÎÞ¹û¶øÖÕ*/
+}
+
+/*****************ÏÔÊ¾ÊäÈëµÄ×Ö·û*******************
+²ÎÊýËµÃ÷:
+ucLine :×Ö·û´®ÏÔÊ¾µÄÐÐÊý
+a_input :ÐèÏÔÊ¾×Ö·û´®
+·µ»ØÖµËµÃ÷:
+
+***********************************************************/
+void PY_Display(unsigned char ucLine,	const unsigned char * aucInBuff)
+{
+	unsigned int uiLen;
+	unsigned char aucBuf[MAX_DISPLAY + 1];
+	unsigned char ucIndex;
+	unsigned char ucDisplayIndex;
+	unsigned char ucGb2312Count;
+
+	uiLen = strlen((char  *)aucInBuff);
+	memset(aucBuf, 0x00, sizeof(aucBuf));
+
+#if PINYIN_TEST > 0
+	util_Printf((char *)"Input Buffer = %s\n", aucInBuff);
+#endif
+
+	if(uiLen < MAX_DISPLAY)
+	{
+		strcpy((char *)aucBuf, (const char *)aucInBuff);
+	}
+	else
+	{
+		//ÖÐÓ¢ÎÄ»ìºÏÏÔÊ¾,¼ì²éÊÇ·ñÓÐ°ë¸öÖÐÎÄ×Ö·û
+		ucGb2312Count = 0;
+		for(ucIndex = 1; ucIndex < MAX_DISPLAY; ++ucIndex)
+		{
+			if(aucInBuff[uiLen - ucIndex] > MAX_SIGNED_CHAR)
+			{
+				++ucGb2312Count;
+			}
+		}
+#if PINYIN_TEST > 0
+		util_Printf((char *)"GB2312 Count = %d\n", ucGb2312Count);
+#endif
+		if((ucGb2312Count & 0x01) == 0x01)
+		{
+			ucDisplayIndex = MAX_DISPLAY - 2;
+		}
+		else
+		{
+			ucDisplayIndex = MAX_DISPLAY - 1;
+		}
+		strncpy((char *)aucBuf, (const char *)&aucInBuff[uiLen - ucDisplayIndex], ucDisplayIndex);
+	}
+	//ÓÉÓÚÖÐÎÄ×Ö¿âµÄÏÂ»®ÏßÓÐÎÊÌâ£¬²»Ê¹ÓÃ£¬ÓÃÓ¢ÎÄµÄÏÂ»®Ïß´úÌæ
+#if 0
+	strcat((char *)aucBuf, "_");
+#endif
+
+	//Os__clr_display(ucLine);
+	//Os__GB2312_display(ucLine, 0, aucBuf);
+	Os__display(ucLine, strlen((const char*)aucBuf), (unsigned char *)"_");
+
+#if PINYIN_TEST > 0
+	util_Printf((char *)"Display In Screen = %s_\n", aucBuf);
+#endif
+}
+
+/*****************°´¼ü»ñÈ¡º¯Êý*******************
+²ÎÊýËµÃ÷:
+a_ucWaitTime :ÊäÈëµÄ×ÜÊ±¼ä,µ¥Î»10ºÁÃë
+·µ»ØÖµËµÃ÷:
+NULL :µÈ´ý°´¼ü³¬Ê±
+ÆäËû:ÓÃ»§°´¼ü
+±¸×¢:ÓëÆÕÍ¨UTIL_GetKeyº¯ÊýÓÐËùÇø±ð,
+            ¶ÔÓÚ³¬Ê±µÄ·µ»ØÖµºÍ²ÎÊýµÄº¬ÒåÓÐÇø±ð
+***********************************************************/
+unsigned char PY_GetKey(unsigned int a_ucWaitTime)
+{
+	DRV_OUT *pdKey;
+
+	pdKey = Os__get_key();
+	do
+	{
+		--a_ucWaitTime;
+		Os__xdelay(1);
+	}
+	while((pdKey->gen_status == DRV_RUNNING) && (a_ucWaitTime != 0));
+
+	if(a_ucWaitTime == 0)
+	{
+		Os__abort_drv(drv_mmi);
+		return NULL;
+	}
+
+#if PINYIN_TEST > 0
+	util_Printf((char *)"PinYin get key = %02x\n", pdKey->xxdata[1]);
+#endif
+
+	return pdKey->xxdata[1];
+}
+
+/*****************ÏÔÊ¾ÊäÈëµÄ×Ö·û*******************
+²ÎÊýËµÃ÷:
+pucInData :ÊäÈëµÄÖÐÎÄ×Ö±í
+pucOutData :ÓÃ»§Ñ¡ÔñµÄÖÐÎÄ×Ö
+uiTimeout :ÊäÈëµÄ×ÜÊ±¼ä,µ¥Î»10ºÁÃë
+·µ»ØÖµËµÃ÷:
+ERR_CANCEL :ÓÃ»§ÊäÈëÈ¡Ïû
+ERR_END :ÊäÈë³¬Ê±
+SUCCESS :Ñ¡Ôñ³É¹¦
+±¸×¢:ÖÐÎÄ×Ö±íÏÔÊ¾ÔÚµÚ3ÐÐ,
+            Ñ¡ÔñµÄÐòºÅÏÔÊ¾ÔÚµÚ4ÐÐµÄÉÏ°ëÐÐ
+***********************************************************/
+unsigned char PY_ChooseBuffer	(const unsigned char *pucInData,unsigned char *pucOutData)
+{
+	unsigned char    ucBuffIndex;
+	unsigned char    ucChooseIndex;
+	unsigned char    ucIndex;
+	unsigned char    ucKey;
+	unsigned int    uiChineseSize;
+	unsigned char    aucDisplayBuf[MAX_DISPLAY + 1];
+	UCHAR choosed = false;
+	unsigned char aucDisplayNumber[MAX_DISPLAY / 2 + 1];
+	const unsigned int uiInLen = strlen((const char*)pucInData);
+
+	//Ê¹ÓÃ»æÍ¼º¯ÊýÇå³ýµÚ4ÐÐµÄÉÏ°ëÐÐ
+	memset(aucDisplayNumber, 0, sizeof(aucDisplayNumber));
+	ASC_DrawAscString(48, 0, 8, aucDisplayNumber);
+
+	ucBuffIndex = 0;
+	while(choosed == false)
+	{
+		//ÏÔÊ¾ÖÐÎÄ×Ö±í
+		memset(aucDisplayBuf, 0x00, sizeof(aucDisplayBuf));
+		strncpy((char *)aucDisplayBuf, (const char *)(&pucInData[ucBuffIndex]), MAX_DISPLAY);
+		//Os__clr_display(2);
+#if PINYIN_TEST > 0
+		util_Printf((char *)"Chinese table can choose = %s\n", aucDisplayBuf);
+		util_Printf((char *)"Chinese table index = %d\n", ucBuffIndex);
+#endif
+		//Os__GB2312_display(2, 0, aucDisplayBuf);
+
+		//ÏÔÊ¾¿ÉÑ¡ÔñµÄÐòºÅ
+		uiChineseSize = strlen((const char *)aucDisplayBuf) / 2;
+		for(ucIndex = 0; ucIndex < uiChineseSize; ++ucIndex)
+		{
+			aucDisplayNumber[ucIndex] = ucIndex + '1';
+		}
+		aucDisplayNumber[ucIndex] = 0;
+		ASC_DrawAscString(48, 5, 16, aucDisplayNumber);
+
+		//µÈ´ý°´¼ü
+		ucKey = PY_GetKey(sg_uiTrueTimeOut);
+		if(ucKey == NULL)
+		{
+			ucKey = KEY_CLEAR;
+		}
+
+		switch(ucKey)
+		{
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+			ucChooseIndex = ucKey - '1';
+			if(ucChooseIndex < uiChineseSize)
+			{
+				memcpy(pucOutData, &aucDisplayBuf[ucChooseIndex  * 2], 2);
+				pucOutData[2] = 0;
+#if PINYIN_TEST > 0
+				util_Printf((char *)"Choose a chinese char = %s\n", pucOutData);
+				util_Printf((char *)"Chinese char index = %d\n", ucChooseIndex * 2);
+#endif
+				choosed = true;
+			}
+			break;
+		case KEY_F4:
+			//ÏòÏÂ·­Ò³
+			if(uiInLen > ucBuffIndex + MAX_DISPLAY)
+			{
+				ucBuffIndex += MAX_DISPLAY;
+			}
+			break ;
+		case KEY_F3:
+			//ÏòÉÏ·­Ò³
+			if(ucBuffIndex >= MAX_DISPLAY)
+			{
+				ucBuffIndex -= MAX_DISPLAY;
+			}
+			break ;
+		case KEY_CLEAR:
+			choosed = true;
+			break;
+		default:
+			break;
+		}
+	}
+	memset(aucDisplayNumber, 0, sizeof(aucDisplayNumber));
+	ASC_DrawAscString(48, 0, 8, aucDisplayNumber);
+	if(ucKey == KEY_CLEAR)
+	{
+		return ERR_CANCEL;
+	}
+	else
+	{
+		return SUCCESS;
+	}
+}
+
+/*************ÊäÈëµ¥¸ö×ÖÄ¸ºÍÊý×Ö*****************
+²ÎÊýËµÃ÷:
+pucBuf :ÓÃ»§ÊäÈëµÄµ¥¸ö×Ö·û
+·µ»ØÖµËµÃ÷:
+KEY_ENTER :È·ÈÏ²åÈë×Ö·û
+KEY_BCKSP :É¾³ýÓÃ»§ÊäÈëµÄ×îºóÒ»¸ö×Ö·û
+SUCCESS :ÓÃ»§Ï£ÍûÍË³ö²¢±£´æÒÑÊäÈëµÄ×Ö·û
+KEY_CLEAR :ÓÃ»§°´È¡Ïû¼ü,
+                     É¾³ýÒÑÊäÈë×Ö·û,¸öÊýÎª0ÔòÍË³ö²¢ÇÒ²»±£´æ
+KEY_PAPER_FEED :ÇÐ»»ÊäÈë·¨
+±¸×¢:ÈôÎªÓ¢ÎÄÊäÈë,Ôò½«ÓÃ»§¿ÉÑ¡µÄ×Ö·û
+            ÏÔÊ¾ÔÚµÚ4ÐÐµÄÏÂ°ëÐÐ
+***********************************************************/
+unsigned char PY_InputLetter(unsigned char *pucBuf)
+{
+	static const unsigned char aucUpperCaseLeterTab[][21] =
+	{{"0,.-!\"%\'()/:;<=>?*"},
+	{"1QZ# +-"},
+	{"2ABC"},
+	{"3DEF"},
+	{"4GHI"},
+	{"5JKL"},
+	{"6MNO"},
+	{"7PRS"},
+	{"8TUV"},
+	{"9WXY"}};
+
+	static const unsigned char aucLowerCaseLeterTab[][21] =
+	{{"0,.-!\"%\'()/:;<=>?*"},
+	{"1qz# +-"},
+	{"2abc"},
+	{"3def"},
+	{"4ghi"},
+	{"5jkl"},
+	{"6mno"},
+	{"7prs"},
+	{"8tuv"},
+	{"9wxy"}};
+
+	static const unsigned char aucNumberTab[][2] =
+	{{"0"},
+	{"1"},
+	{"2"},
+	{"3"},
+	{"4"},
+	{"5"},
+	{"6"},
+	{"7"},
+	{"8"},
+	{"9"},
+	{"0"}};
+	static const unsigned char aucSymbolTab[] =
+	{"  "};//{",.-!\"%\'()+/:;<=>?"};
+	const unsigned char *(aucKeyTab[11]);
+
+	//ÏÔÊ¾ÊäÈë·¨Ãû³Æ
+	unsigned char aucDisp[5];
+	//µ±Ç°ÊäÈëµÄ×Ö·û
+	unsigned char ucCurrentInput;
+	unsigned char ucKey;
+	unsigned char ucLastKey;
+	unsigned char ucEnd;
+	unsigned int uiTimeout;
+	unsigned char index;
+	unsigned char indexFont;
+	unsigned char indexChar;
+	unsigned char aucAscFont[ASC_SIZE + 1];
+	//³õÊ¼»¯±äÁ¿
+	memset(&aucDisp[0],0,sizeof(aucDisp));
+	pucBuf[0] = 0;
+	pucBuf[1] = 0;
+	ucCurrentInput = 0;
+	ucLastKey = 0;
+	ucEnd = FALSE;
+	//panmin
+	#if 1
+	sg_ucPreviousKey = 0;
+	sg_ucPreviousChar = 0;
+	sg_ucKeyTabOffset=0;
+	#endif
+
+	util_Printf("µ±Ç°Öµ:%02x\n",sg_ucPreviousKey);
+	//¸ù¾ÝÊäÈë·¨Ñ¡Ôñ×Ö·û´®±í
+	switch(sg_inputType)
+	{
+		case INPUT_TYPE_UPPER_CASE:
+			for(index = 0; index < 10; ++index)
+			{
+				aucKeyTab[index] = aucUpperCaseLeterTab[index];
+			}
+			aucKeyTab[index] = aucSymbolTab;
+			strcpy((char *)aucDisp,"ABC:");
+			break;
+		case INPUT_TYPE_LOWER_CASE:
+			for(index = 0; index < 10; ++index)
+			{
+				aucKeyTab[index] = aucLowerCaseLeterTab[index];
+			}
+			aucKeyTab[index] = aucSymbolTab;
+			strcpy((char *)aucDisp,"abc:");
+			break;
+		case INPUT_TYPE_NUMBER:
+			for(index = 0; index < 11; ++index)
+			{
+				aucKeyTab[index] = aucNumberTab[index];
+			}
+			strcpy((char *)aucDisp,"123:");
+			break;
+		default:
+			return KEY_CLEAR;
+			break;
+	}
+	//ÏÔÊ¾µ±Ç°ÊäÈë·¨
+	ASC_DrawAscString(56, 0, 6, aucDisp);
+
+	//»Ö¸´ÓÃ»§ÉÏÒ»´ÎµÄ°´¼ü
+	if(sg_ucPreviousChar != 0 && sg_inputType != INPUT_TYPE_NUMBER)
+	{
+		ucCurrentInput = sg_ucPreviousChar;
+		ucLastKey = sg_ucPreviousKey;
+
+		util_Printf((char *)"In sg_ucPreviousChar = %c\n", sg_ucPreviousChar);
+		util_Printf((char *)"In sg_ucPreviousKey = %c\n", sg_ucPreviousKey);
+
+	}
+
+	do
+	{
+		//ÏÔÊ¾ÓÃ»§¿ÉÑ¡ÔñµÄ×Ö·û£¬
+		//µ±Ç°ÓÃ»§Í£ÁôµÄ×Ö·ûÓÃºÚµ×°××ÖÏÔÊ¾
+		//util_Printf((char *)"ucflag3 = %02x\n", ucflag);
+
+		//µÈ´ý1Ãë°´¼ü(¿ÉÐÞ¸ÄÍ£ÁôÊ±¼ä)
+		uiTimeout = LETTER_INPUT_INTERVAL;
+		ucKey = PY_GetKey(sg_uiTrueTimeOut);
+		//×ÜÊäÈëÊ±¼ä³¬Ê±
+		if(sg_uiTrueTimeOut == 0)
+		{
+			sg_ucPreviousKey = 0;
+			sg_ucPreviousChar = 0;
+			sg_ucKeyTabOffset=0;
+
+			pucBuf[0] = 0;
+			ucKey = KEY_CLEAR;
+			break;
+		}
+
+		if(ucKey == NULL)
+		{
+			//³¬Ê±Ôò°Ñµ±Ç°µÄÑ¡Ôñ½á¹û±£´æ²¢ÍË³ö
+			sg_ucPreviousKey = 0;
+			sg_ucPreviousChar = 0;
+			sg_ucKeyTabOffset=0;
+
+			pucBuf[0] = ucCurrentInput;
+			ucKey = KEY_ENTER;
+			break;
+		}
+
+		if((ucKey >= '0') && (ucKey <= '9'))
+		{
+			if(sg_inputType != INPUT_TYPE_NUMBER)
+			{
+#if PINYIN_TEST > 0
+				util_Printf((char *)"Different key in letter\n");
+#endif
+				sg_ucKeyTabOffset = 0;
+				ucLastKey = ucKey;
+				//²»Í¬°´¼ü,ÇÒÒÑÊäÈë¹ý×Ö·û,
+				//±£´æ±¾´Î×Ö·û,²åÈëÉÏ´Î×Ö·û
+				sg_ucPreviousKey = ucKey;
+
+				ASC_DrawAscString(56,24,6,(const unsigned char*)"");
+				if(sg_ucPreviousKey != 0)
+				{
+					indexChar = sg_ucPreviousKey - '0';
+#if PINYIN_TEST > 0
+					util_Printf((char *)"Char table = %s\n", aucKeyTab[indexChar]);
+					if(ucCurrentInput != 0)
+					{
+						util_Printf((char *)"Current char = %c\n", ucCurrentInput);
+					}
+#endif
+					for(index = 0; aucKeyTab[indexChar][index] != 0; ++index)
+					{
+						 ASC_GetAscFont(aucKeyTab[indexChar][index], aucAscFont);
+						if(sg_ucKeyTabOffset == index)
+						{
+							for(indexFont = 0; indexFont < ASC_SIZE; indexFont += 2)
+							{
+								aucAscFont[indexFont] = (~aucAscFont[indexFont]);
+							}
+						}
+						Os__graph_display
+							(
+							56,
+							index * 6 + 24,
+							aucAscFont,
+							ASC_SIZE
+							);
+					}
+				}
+
+				util_Printf("¼ü888Öµ:%02x\n",ucKey);
+				if((ucKey >= '0') && (ucKey <= '9'))
+				{
+					sg_ucPreviousChar = aucKeyTab[sg_ucPreviousKey - '0'][0];
+					//pucBuf[0] = sg_ucPreviousChar;
+					// sg_ucKeyTabOffset++;
+				}
+				util_Printf("¼üÖµ:%02x,%d\n",sg_ucPreviousChar,sg_ucKeyTabOffset);
+				//ucKey = KEY_ENTER;
+				//ucEnd = TRUE;
+				ucEnd = false;
+			}
+			else
+			{
+				//Êý×ÖÊäÈë·¨ÏÂµÄÊý×Ö°´¼ü×ÜÊÇÍË³ö(ÎªÁËÖ±½ÓÏÔÊ¾)
+				pucBuf[0] = aucKeyTab[ucKey - '0'][0];
+				ucKey = KEY_ENTER;
+				ucEnd = TRUE;
+			}
+		}
+		else if(ucKey == KEY_00_PT)
+		{
+			if(sg_inputType != INPUT_TYPE_NUMBER)
+			{
+				ASC_DrawAscString(56,24,6,(const unsigned char*)"");
+				
+				util_Printf("µ±Ç°Öµ:%02x,%02x,%02x\n",sg_ucPreviousChar,sg_ucKeyTabOffset,sg_ucPreviousKey);
+				if(sg_ucPreviousChar != 0)
+				{
+					//00°´¼ü,ÇÐ»»µ½ÏÂ¸öºÍ¿ÉÑ¡×Ö·û
+					util_Printf("¿ÉÑ¡:%d\n",strlen((char *)aucKeyTab[sg_ucPreviousKey-'0']));
+					if(sg_ucKeyTabOffset < strlen((char *)aucKeyTab[sg_ucPreviousKey-'0']))
+					{
+						sg_ucKeyTabOffset++;
+					}
+					else
+					{
+						sg_ucKeyTabOffset = 0;
+					}
+
+					util_Printf((char *)"Same key in letter, offset = %d\n", sg_ucKeyTabOffset);
+				}
+
+				util_Printf("µ±Ç°°´¼ü:%02x\n",sg_ucPreviousKey);
+				if(sg_ucPreviousKey != 0)
+				{
+					indexChar = sg_ucPreviousKey-'0';
+#if PINYIN_TEST > 0
+					util_Printf((char *)"9999Char table = %s\n", aucKeyTab[indexChar]);
+					if(ucCurrentInput != 0)
+					{
+						util_Printf((char *)"888Current char = %c\n", ucCurrentInput);
+					}
+#endif
+
+					for(index = 0; aucKeyTab[indexChar][index] != 0; ++index)
+					{
+						 ASC_GetAscFont(aucKeyTab[indexChar][index], aucAscFont);
+						if(sg_ucKeyTabOffset == index)
+						{
+							for(indexFont = 0; indexFont < ASC_SIZE; indexFont += 2)
+							{
+								aucAscFont[indexFont] = (~aucAscFont[indexFont]);
+							}
+						}
+						Os__graph_display
+							(
+							56,
+							index * 6 + 24,
+							aucAscFont,
+							ASC_SIZE
+							);
+					}
+				}
+				
+			}
+			else
+			{
+				strcpy((char *)pucBuf, "00");
+				ucKey = KEY_ENTER;
+				ucEnd = TRUE;
+			}
+		}
+		else
+		{
+			//´¦Àí¸÷ÖÖ¹¦ÄÜ¼ü
+			ucLastKey = ucKey;
+			switch(ucKey)
+			{
+				case KEY_ENTER:
+					util_Printf((char *)"ENTER, offset = %d\n", sg_ucKeyTabOffset);
+					util_Printf("LstK=%02x\n",ucLastKey);
+					if (ucLastKey==KEY_ENTER && (!sg_ucPreviousKey))
+					{
+						sg_ucPreviousKey = 0;
+						sg_ucPreviousChar = 0;
+						sg_ucKeyTabOffset=0;
+						return(SUCCESS);
+					}
+					// if (sg_ucKeyTabOffset)
+						// --sg_ucKeyTabOffset;
+					ucCurrentInput = aucKeyTab[sg_ucPreviousKey - '0'][sg_ucKeyTabOffset];
+					util_Printf("°ËÃæ:%02x\n",ucCurrentInput);
+					if (ucCurrentInput !=0)
+					{
+						pucBuf[0] = ucCurrentInput;
+					}
+					else
+						ucKey = SUCCESS;
+					sg_ucPreviousKey = 0;
+					sg_ucPreviousChar = 0;
+					sg_ucKeyTabOffset=0;
+					memset(aucKeyTab,0,sizeof(aucKeyTab));
+					ucEnd = TRUE;
+					break;
+				case KEY_CLEAR:
+				case KEY_BCKSP:
+					sg_ucPreviousKey = 0;
+					sg_ucPreviousChar = 0;
+					sg_ucKeyTabOffset=0;
+					ucEnd = TRUE;
+					break;
+				case KEY_PAPER_FEED:
+					ucEnd = TRUE;
+					break;
+				default :
+					break;
+			}
+		}
+	}while(ucEnd == FALSE);
+
+	return(ucKey);
+}
+
+/*****²åÈëÓÃ»§ÊäÈëµÄÆ´Òô×Ö·û£¬²¢¼ì²é******
+²ÎÊýËµÃ÷:
+pucInput :´ý²åÈëµÄÆ´Òô
+ucInputOffset :²åÈëµÄÆ«ÒÆÁ¿
+pucKeyTab :¿É²åÈëµÄ×Ö·û±í
+pucKeyTabOffset :×Ö·û±íµÄÆðÊ¼Æ«ÒÆÁ¿,
+                           ¸Ä±äºóµÄÆ«ÒÆÁ¿ÐèÒª±»Ê¹ÓÃ,ÓÃÖ¸Õë´«ËÍ
+·µ»ØÖµËµÃ÷:Í¬PY_CheckµÄ·µ»ØÖµËµÃ÷
+***********************************************************/
+InputCheck PY_InsertPinYin(	unsigned char *pucInput,	const unsigned char ucInputOffset,	const unsigned char *pucKeyTab,	unsigned char *pucKeyTabOffset)
+{
+	unsigned char index;
+	InputCheck inputCheck;
+	int maxKeyLen = strlen((char *)pucKeyTab);
+	//´Ó×Ö·û±íµÄÆðÊ¼Æ«ÒÆÁ¿¿ªÊ¼½«×Ö·ûÖð¸ö²åÈë¼ì²é
+	for(index = 0; index < maxKeyLen; ++index)
+	{
+#if PINYIN_TEST > 0
+		util_Printf((char *)"KeyTabOffset = %d\n", *pucKeyTabOffset);
+#endif
+		pucInput[ucInputOffset] = pucKeyTab[*pucKeyTabOffset];
+		inputCheck = PY_Check(pucInput);
+		if(inputCheck == INPUT_NOT_FOUND)
+		{
+			if(((*pucKeyTabOffset) + 1) < maxKeyLen)
+			{
+				++(*pucKeyTabOffset);
+			}
+			else
+			{
+				(*pucKeyTabOffset) = 0;
+			}
+		}
+		else
+		{
+			break;
+		}
+	}
+	return inputCheck;
+}
+
+/***************Æ´ÒôÊäÈëµ¥¸öÖÐÎÄ×Ö*******************
+²ÎÊýËµÃ÷:
+pucBuf :ÓÃ»§ÊäÈëµÄµ¥¸öÖÐÎÄ×Ö
+·µ»ØÖµËµÃ÷:
+KEY_ENTER :È·ÈÏ²åÈë×Ö·û
+KEY_BCKSP :É¾³ýÓÃ»§ÊäÈëµÄ×îºóÒ»¸ö×Ö·û
+SUCCESS :ÓÃ»§Ï£ÍûÍË³ö²¢±£´æÒÑÊäÈëµÄ×Ö·û
+KEY_CLEAR :ÓÃ»§°´È¡Ïû¼ü,
+                     É¾³ýÒÑÊäÈë×Ö·û,¸öÊýÎª0ÔòÍË³ö²¢ÇÒ²»±£´æ
+KEY_PAPER_FEED :ÇÐ»»ÊäÈë·¨
+±¸×¢:ÓÃ»§ÊäÈëµÄÆ´ÒôÏÔÊ¾ÔÚµÚ4ÐÐµÄÏÂ°ëÐÐ
+***********************************************************/
+unsigned char PY_InputChinese(unsigned char *pucBuf)
+{
+	const unsigned char aucKeyTab[][7] =
+	{
+		{"qz"},
+		{"abc"},
+		{"def"},
+		{"ghi"},
+		{"jkl"},
+		{"mno"},
+		{"prs"},
+		{"tuv"},
+		{"wxy"},
+	};
+	unsigned char   aucDisp[24];
+	unsigned char   aucInput[20];
+	unsigned char   ucKey;
+	unsigned char   ucLastKey;
+	unsigned char   ucKeyTabOffset;
+	unsigned char   ucEnd;
+	unsigned char   ucChooseResult;
+	unsigned char   ucRedraw;
+	unsigned char   ucCount;
+	unsigned char   ucOffset;
+	unsigned int uiLastTime;
+	InputCheck inputCheck;
+	const unsigned char *pucChinese;
+	unsigned int maxKeyLen;
+	unsigned char ucLastChar;
+
+	memset(&aucDisp[0],0,sizeof(aucDisp));
+	memset(&aucInput[0],0,sizeof(aucInput));
+	ucLastKey = 0;
+	ucEnd = FALSE;
+	ucRedraw = TRUE;
+	uiLastTime = sg_uiTrueTimeOut;
+	ucCount = 0;
+
+	do
+	{
+		if(ucRedraw == TRUE)
+		{
+			//ÏÔÊ¾Æ´Òô
+			//Os__clr_display(2);
+			memset(&aucDisp[0],0,sizeof(aucDisp));
+
+			strcpy((char *)aucDisp, "PinYin:");
+			strcat((char *)aucDisp, (const char *)aucInput);
+#if PINYIN_TEST > 0
+			util_Printf((char *)"Input PinYin = %s\n", aucDisp);
+#endif
+			strcat((char *)aucDisp, "_");
+			ASC_DrawAscString(56, 0, 6, aucDisp);
+			pucChinese = PY_Ime(aucInput);
+			if(pucChinese != NULL)
+			{
+				//ÈôÓÐÆ¥ÅäµÄÆ´ÒôÔòÏÔÊ¾ÖÐÎÄ
+				memset(&aucDisp[0],0,sizeof(aucDisp));
+				strncpy((char *)aucDisp, (const char*)pucChinese, 16);
+				//Os__GB2312_display(2,0,aucDisp);
+			}
+			ucRedraw = FALSE;
+		}
+
+		//µÈ´ý°´¼ü
+		uiLastTime = sg_uiTrueTimeOut;
+		ucKey = PY_GetKey(sg_uiTrueTimeOut);
+		if(ucKey == NULL)
+		{
+			ucKey = KEY_CLEAR;
+			break;
+		}
+
+		if((ucKey >= '1') && (ucKey <= '9'))
+		{
+			if(ucLastKey != ucKey)
+			{
+				//²»Í¬°´¼ü³¢ÊÔ²åÈëÐÂ×Ö·û
+				ucKeyTabOffset = 0;
+				inputCheck = PY_InsertPinYin(aucInput, ucCount, aucKeyTab[ucKey - '1'], &ucKeyTabOffset);
+#if PINYIN_TEST > 0
+				util_Printf((char *)"Different key = %c\n", ucKey);
+#endif
+				if(inputCheck == INPUT_NOT_FOUND)
+				{
+					//ËùÓÐµÄ×Ö·û¾ù²»¿É²åÈë
+					ucLastKey = 0;
+					ucRedraw = FALSE;
+					ucKeyTabOffset = 0;
+				}
+				else
+				{
+					//ÕÒµ½µÚÒ»¸ö¿É²åÈëµÄ×Ö·û
+					ucLastKey = ucKey;
+					ucRedraw = TRUE;
+					++ucCount;
+				}
+				aucInput[ucCount] = 0;
+			}
+			else
+			{
+				if((uiLastTime - sg_uiTrueTimeOut) < PINYIN_INPUT_INTERVAL)
+				{
+					if(ucCount)
+					{
+						ucOffset = ucCount - 1;
+					}
+					else
+					{
+						ucOffset = 0;
+					}
+					maxKeyLen = strlen((char *)aucKeyTab[ucKey - '1']) - 1;
+					if(ucKeyTabOffset < maxKeyLen)
+					{
+						++ucKeyTabOffset;
+					}
+					else
+					{
+						ucKeyTabOffset = 0;
+					}
+					ucLastChar = aucInput[ucOffset];
+					//ÔÚÕâÖÖÇé¿öÖÐ×ÜÊÇ´æÔÚÒ»¸ö¿É²åÈëµÄ×Ö·û
+					//ËùÒÔ²»¶ÔinputCheck×öÅÐ¶Ï
+					inputCheck = PY_InsertPinYin(aucInput, ucOffset, aucKeyTab[ucKey - '1'], &ucKeyTabOffset);
+#if PINYIN_TEST > 0
+					util_Printf((char *)"Same key = %c\n",ucKey);
+#endif
+					//Ö»ÓÐÒ»ÖÖ×éºÏÊ±½«Ê±¼äÔö¼Ó,
+					//Ä¿µÄÊÇ½«ÏàÍ¬°´¼ü×ª±ä×÷ÎªÏÂÒ»¸ö°´¼ü
+					if(ucLastChar == aucInput[ucOffset])
+					{
+						uiLastTime = sg_uiTrueTimeOut + PINYIN_INPUT_INTERVAL;
+					}
+					else
+					{
+						ucRedraw = TRUE;
+					}
+				}
+				if((uiLastTime - sg_uiTrueTimeOut) >= PINYIN_INPUT_INTERVAL)
+				{
+					//´¦Àí·½·¨Í¬Á½´Î²»Í¬°´¼ü
+					ucKeyTabOffset = 0;
+					inputCheck = PY_InsertPinYin(aucInput, ucCount, aucKeyTab[ucKey - '1'], &ucKeyTabOffset);
+#if PINYIN_TEST > 0
+					util_Printf((char *)"Same key = %c, timeout\n",ucKey);
+#endif
+					if(inputCheck == INPUT_NOT_FOUND)
+					{
+						ucLastKey = 0;
+						ucRedraw = FALSE;
+						ucKeyTabOffset = 0;
+					}
+					else
+					{
+						ucLastKey = ucKey;
+						ucRedraw = TRUE;
+						++ucCount;
+					}
+					aucInput[ucCount] = 0;
+				}
+			}
+		}
+		else
+		{
+			//´¦Àí¸÷ÖÖ¹¦ÄÜ¼ü
+			ucLastKey = ucKey;
+			switch(ucKey)
+			{
+			case KEY_ENTER:
+				if(ucCount == 0)
+				{
+					ucKey = SUCCESS;
+					ucEnd = TRUE;
+				}
+				else if((pucChinese = PY_Ime(aucInput)) != NULL)
+				{
+					ucChooseResult = PY_ChooseBuffer(pucChinese,pucBuf);
+					if(sg_uiTrueTimeOut == 0)
+					{
+						ucEnd = TRUE;
+						ucKey = KEY_CLEAR;
+					}
+					else if(ucChooseResult == SUCCESS)
+					{
+						ucEnd = TRUE;
+					}
+				}
+				else
+				{
+					Os__beep();
+				}
+				break;
+			case KEY_CLEAR:
+
+				if(ucCount)
+				{
+					ucCount = 0;
+					ucLastKey = 0;
+					memset(&aucInput[0],0,sizeof(aucInput));
+					memset(&aucDisp[0],0,sizeof(aucDisp));
+					ucRedraw = TRUE;
+				}
+				else
+				{
+					ucEnd = TRUE;
+				}
+				break;
+			case KEY_BCKSP:
+				if(ucCount)
+				{
+					ucCount--;
+					aucInput[ucCount] = 0;
+					ucRedraw = TRUE;
+				}
+				else
+				{
+					ucEnd = TRUE;
+				}
+
+				break;
+			case KEY_PAPER_FEED:
+				ucEnd = TRUE;
+				break;
+			default :
+				break;
+			}
+		}
+	}
+	while(ucEnd == FALSE);
+
+	return(ucKey);
+}
+
+#if SI_JIAO > 0
+/***************ÇøÎ»ÂëÊäÈëµ¥¸öÖÐÎÄ×Ö*******************
+²ÎÊýËµÃ÷:
+pucBuf :ÓÃ»§ÊäÈëµÄµ¥¸öÖÐÎÄ×Ö
+·µ»ØÖµËµÃ÷:
+KEY_ENTER :È·ÈÏ²åÈë×Ö·û
+KEY_BCKSP :É¾³ýÓÃ»§ÊäÈëµÄ×îºóÒ»¸ö×Ö·û
+SUCCESS :ÓÃ»§Ï£ÍûÍË³ö²¢±£´æÒÑÊäÈëµÄ×Ö·û
+KEY_CLEAR :ÓÃ»§°´È¡Ïû¼ü,
+                     É¾³ýÒÑÊäÈë×Ö·û,¸öÊýÎª0ÔòÍË³ö²¢ÇÒ²»±£´æ
+KEY_PAPER_FEED :ÇÐ»»ÊäÈë·¨
+±¸×¢:ÓÃ»§ÊäÈëµÄÇøÎ»ÂëÏÔÊ¾ÔÚµÚ4ÐÐµÄÏÂ°ëÐÐ
+***********************************************************/
+unsigned char PY_InputSiJiao(unsigned char *pucBuf)
+{
+	unsigned char aucDispBuf[5];
+	unsigned char ucKey;
+	unsigned char ucEnd;
+	unsigned char ucCount;
+	unsigned long qm;
+	unsigned long wm;
+
+	ucEnd = FALSE;
+	ucCount = 0;
+	memset(aucDispBuf, 0, sizeof(aucDispBuf));
+
+	do
+	{
+		ASC_DrawAscString(56, 0, 6, (const unsigned char*)"QuWei:");
+		ASC_DrawAscString(56, 36, 6, aucDispBuf);
+		ASC_DrawAscString(56, 36 + ucCount * 6, 6, (const unsigned char*)"_");
+		ucKey = PY_GetKey(sg_uiTrueTimeOut);
+		switch(ucKey)
+		{
+		case KEY_ENTER:
+			if(ucCount >= 4)
+			{
+				qm = asc_long(&aucDispBuf[0], 2);
+				wm = asc_long(&aucDispBuf[2], 2);
+				qm = qm + 0xA0;
+				wm = wm + 0xA0;
+				long_tab(&pucBuf[0], 1, &qm);
+				long_tab(&pucBuf[1], 1, &wm);
+				pucBuf[2] = 0;
+				ucCount = 0;
+				ucEnd = TRUE;
+			}
+			else if(ucCount == 0)
+			{
+				ucKey = SUCCESS;
+				ucEnd = TRUE;
+			}
+			break;
+		case KEY_BCKSP:
+			if(ucCount != 0)
+			{
+				--ucCount;
+				aucDispBuf[ucCount] = 0x00;
+			}
+			else
+			{
+				ucEnd = TRUE;
+			}
+			break;
+		case KEY_CLEAR:
+			if(ucCount != 0)
+			{
+				ucCount = 0;
+				memset(aucDispBuf, 0, sizeof(aucDispBuf));
+			}
+			else
+			{
+				ucEnd = TRUE;
+			}
+			break;
+		case KEY_PAPER_FEED:
+			ucEnd = TRUE;
+			break;
+		default:
+			if((ucKey >= '0')
+			&& (ucKey <= '9'))
+			{
+				if(//³¬³ö·¶Î§
+				(ucCount >= 4)
+				//Ç°Á½Î»²»¿ÉÒÔÍ¬Ê±Îª0
+				|| ((ucCount == 1)
+					&& (aucDispBuf[ucCount - 1] == '0')
+					&& (ucKey == '0'))
+				//ºóÁ½Î»²»¿ÉÒÔÍ¬Ê±Îª0
+				|| ((ucCount == 3)
+					&& (aucDispBuf[ucCount - 1] == '0')
+					&& (ucKey == '0')))
+				{
+					Os__beep();
+				}
+				else
+				{
+					aucDispBuf[ucCount] = ucKey;
+					ucCount++;
+				}
+			}
+			break;
+		}
+	}
+	while(ucEnd == FALSE);
+
+	return(ucKey);
+}
+#endif
+
+unsigned char PY_Input(unsigned char *pucBuf)
+{
+	static const unsigned char aucUpperCaseLeterTab[][21] =
+	{{"0!\"%\'()./:;<=>?*,"},
+	{"1QZ# +-"},
+	{"2ABC"},
+	{"3DEF"},
+	{"4GHI"},
+	{"5JKL"},
+	{"6MNO"},
+	{"7PRS"},
+	{"8TUV"},
+	{"9WXY"}};
+
+	static const unsigned char aucLowerCaseLeterTab[][21] =
+	{{"0!\"%\'()./:;<=>?*,"},
+	{"1qz# +-"},
+	{"2abc"},
+	{"3def"},
+	{"4ghi"},
+	{"5jkl"},
+	{"6mno"},
+	{"7prs"},
+	{"8tuv"},
+	{"9wxy"}};
+
+	static const unsigned char aucNumberTab[][2] =
+	{{"0"},
+	{"1"},
+	{"2"},
+	{"3"},
+	{"4"},
+	{"5"},
+	{"6"},
+	{"7"},
+	{"8"},
+	{"9"},
+	{"0"}};
+	static const unsigned char aucSymbolTab[] =
+	{"!\"%\'()+-./:;<=>?"};
+	const unsigned char *(aucKeyTab[11]);
+
+	//ÏÔÊ¾ÊäÈë·¨Ãû³Æ
+	unsigned char aucDisp[5];
+	//µ±Ç°ÊäÈëµÄ×Ö·û
+	unsigned char ucCurrentInput;
+	unsigned char ucKey;
+	unsigned char ucLastKey;
+	unsigned char ucEnd;
+	unsigned int uiTimeout;
+	unsigned char index;
+	unsigned char indexFont;
+	unsigned char indexChar;
+	unsigned char aucAscFont[ASC_SIZE + 1];
+	unsigned char ucflag=0;
+	//³õÊ¼»¯±äÁ¿
+	memset(&aucDisp[0],0,sizeof(aucDisp));
+	pucBuf[0] = 0;
+	pucBuf[1] = 0;
+	ucCurrentInput = 0;
+	ucLastKey = 0;
+	ucEnd = FALSE;
+	//panmin
+	#if 1
+	sg_ucPreviousKey = 0;
+	sg_ucPreviousChar = 0;
+	sg_ucKeyTabOffset=0;
+	#endif
+	//¸ù¾ÝÊäÈë·¨Ñ¡Ôñ×Ö·û´®±í
+	switch(sg_inputType)
+	{
+	case INPUT_TYPE_UPPER_CASE:
+		for(index = 0; index < 10; ++index)
+		{
+			aucKeyTab[index] = aucUpperCaseLeterTab[index];
+		}
+		aucKeyTab[index] = aucSymbolTab;
+		strcpy((char *)aucDisp,"ABC:");
+		break;
+	case INPUT_TYPE_LOWER_CASE:
+		for(index = 0; index < 10; ++index)
+		{
+			aucKeyTab[index] = aucLowerCaseLeterTab[index];
+		}
+		aucKeyTab[index] = aucSymbolTab;
+		strcpy((char *)aucDisp,"abc:");
+		break;
+	case INPUT_TYPE_NUMBER:
+		for(index = 0; index < 11; ++index)
+		{
+			aucKeyTab[index] = aucNumberTab[index];
+		}
+		strcpy((char *)aucDisp,"123:");
+		break;
+	default:
+		return KEY_CLEAR;
+		break;
+	}
+	//ÏÔÊ¾µ±Ç°ÊäÈë·¨
+	ASC_DrawAscString(56, 0, 6, aucDisp);
+
+	//»Ö¸´ÓÃ»§ÉÏÒ»´ÎµÄ°´¼ü
+	if(sg_ucPreviousChar != 0 && sg_inputType != INPUT_TYPE_NUMBER)
+	{
+		ucCurrentInput = sg_ucPreviousChar;
+		ucLastKey = sg_ucPreviousKey;
+#if PINYIN_TEST > 0
+		util_Printf((char *)"In sg_ucPreviousChar = %c\n", sg_ucPreviousChar);
+		util_Printf((char *)"In sg_ucPreviousKey = %c\n", sg_ucPreviousKey);
+#endif
+	}
+
+	do
+	{
+		//ÏÔÊ¾ÓÃ»§¿ÉÑ¡ÔñµÄ×Ö·û£¬
+		//µ±Ç°ÓÃ»§Í£ÁôµÄ×Ö·ûÓÃºÚµ×°××ÖÏÔÊ¾
+		util_Printf((char *)"ucflag3 = %02x\n", ucflag);
+
+
+
+		//µÈ´ý1Ãë°´¼ü(¿ÉÐÞ¸ÄÍ£ÁôÊ±¼ä)
+		uiTimeout = LETTER_INPUT_INTERVAL;
+		ucKey = PY_GetKey(sg_uiTrueTimeOut);
+		//×ÜÊäÈëÊ±¼ä³¬Ê±
+		if(sg_uiTrueTimeOut == 0)
+		{
+			sg_ucPreviousKey = 0;
+			sg_ucPreviousChar = 0;
+				sg_ucKeyTabOffset=0;
+
+			pucBuf[0] = 0;
+			ucKey = KEY_CLEAR;
+			break;
+		}
+
+		if(ucKey == NULL)
+		{
+			//³¬Ê±Ôò°Ñµ±Ç°µÄÑ¡Ôñ½á¹û±£´æ²¢ÍË³ö
+			sg_ucPreviousKey = 0;
+			sg_ucPreviousChar = 0;
+				sg_ucKeyTabOffset=0;
+
+			pucBuf[0] = ucCurrentInput;
+			ucKey = KEY_ENTER;
+			break;
+		}
+
+		if((ucKey >= '0') && (ucKey <= '9'))
+		{
+			if(sg_inputType != INPUT_TYPE_NUMBER)
+			{
+				{
+#if PINYIN_TEST > 0
+					util_Printf((char *)"Different key in letter\n");
+#endif
+#if 0
+					sg_ucKeyTabOffset = 0;
+					ucLastKey = ucKey;
+					{
+						//²»Í¬°´¼ü,ÇÒÒÑÊäÈë¹ý×Ö·û,
+						//±£´æ±¾´Î×Ö·û,²åÈëÉÏ´Î×Ö·û
+						sg_ucPreviousKey = ucKey;
+
+						sg_ucPreviousChar = aucKeyTab[ucKey - '0'][sg_ucKeyTabOffset];
+						pucBuf[0] = sg_ucPreviousChar;
+						ucKey = KEY_ENTER;
+						ucEnd = TRUE;
+					}
+#else
+						sg_ucKeyTabOffset = 0;
+					ucLastKey = ucKey;
+					{
+						//²»Í¬°´¼ü,ÇÒÒÑÊäÈë¹ý×Ö·û,
+						//±£´æ±¾´Î×Ö·û,²åÈëÉÏ´Î×Ö·û
+						sg_ucPreviousKey = ucKey;
+						util_Printf((char *)"ucKey = %02x\n", ucKey);
+						ASC_DrawAscString(56,24,6,(const unsigned char*)"");
+						if(sg_ucPreviousKey != 0)
+						{
+							indexChar = sg_ucPreviousKey - '0';
+#if PINYIN_TEST > 0
+							util_Printf((char *)"Char table = %s\n", aucKeyTab[indexChar]);
+							if(ucCurrentInput != 0)
+							{
+								util_Printf((char *)"Current char = %c\n", ucCurrentInput);
+							}
+#endif
+							for(index = 0; aucKeyTab[indexChar][index] != 0; ++index)
+							{
+								 ASC_GetAscFont(aucKeyTab[indexChar][index], aucAscFont);
+								if(sg_ucKeyTabOffset == index)
+								{
+									for(indexFont = 0; indexFont < ASC_SIZE; indexFont += 2)
+									{
+										aucAscFont[indexFont] = (~aucAscFont[indexFont]);
+									}
+								}
+								Os__graph_display
+									(
+									56,
+									index * 6 + 24,
+									aucAscFont,
+									ASC_SIZE
+									);
+							}
+						}
+/*
+						switch(ucflag)
+						{
+						case 0:
+							ucflag=1;
+						break;
+						case 1:
+							ucflag=2;
+						break;
+						case 2:
+							ucflag=1;
+						break;
+						default :
+						break;
+						}
+						util_Printf((char *)"ucflag = %02x\n", ucflag);
+						if(ucflag==1)
+							{
+							continue;
+							}
+							*/
+						while (1)
+						{
+							ucKey = PY_GetKey(sg_uiTrueTimeOut);
+							if((ucKey >= '0') && (ucKey <= '9')||(ucKey==KEY_CLEAR))
+							{
+								break;
+							}
+						}
+						if(ucKey==KEY_CLEAR)
+							{
+							return ERR_CANCEL;
+							}
+						{
+						sg_ucPreviousChar = aucKeyTab[sg_ucPreviousKey - '0'][ucKey-'1'];
+
+						pucBuf[0] = sg_ucPreviousChar;
+						}
+						ucKey = KEY_ENTER;
+						ucEnd = TRUE;
+					}
+#endif
+
+				}
+
+			}
+			else
+			{
+				//Êý×ÖÊäÈë·¨ÏÂµÄÊý×Ö°´¼ü×ÜÊÇÍË³ö(ÎªÁËÖ±½ÓÏÔÊ¾)
+				pucBuf[0] = aucKeyTab[ucKey - '0'][0];
+				ucKey = KEY_ENTER;
+				ucEnd = TRUE;
+			}
+		}
+		else if(ucKey == KEY_00_PT)
+		{
+			if(sg_inputType != INPUT_TYPE_NUMBER)
+			{
+			#if 1
+		#if PINYIN_TEST > 0
+					util_Printf((char *)"sg_ucPreviousChar= %d\n", sg_ucPreviousChar);
+		#endif
+				if(sg_ucPreviousChar != 0)
+				{
+					//00°´¼ü,ÇÐ»»µ½ÏÂ¸öºÍ¿ÉÑ¡×Ö·û
+					if(sg_ucKeyTabOffset < strlen((char *)aucKeyTab[sg_ucPreviousKey-'0']) - 1)
+					{
+						sg_ucKeyTabOffset++;
+					}
+					else
+					{
+						sg_ucKeyTabOffset = 0;
+					}
+#if PINYIN_TEST > 0
+					util_Printf((char *)"Same key in letter, offset = %d\n", sg_ucKeyTabOffset);
+#endif
+					ucCurrentInput = aucKeyTab[sg_ucPreviousKey - '0'][sg_ucKeyTabOffset];
+					pucBuf[0] = ucCurrentInput;
+					ucEnd = TRUE;
+				}
+			#endif
+			}
+			else
+			{
+				strcpy((char *)pucBuf, "00");
+				ucKey = KEY_ENTER;
+				ucEnd = TRUE;
+			}
+		}
+		else
+		{
+			//´¦Àí¸÷ÖÖ¹¦ÄÜ¼ü
+			ucLastKey = ucKey;
+			switch(ucKey)
+			{
+			case KEY_ENTER:
+				ucKey = SUCCESS;
+				sg_ucPreviousKey = 0;
+				sg_ucPreviousChar = 0;
+				sg_ucKeyTabOffset=0;
+				ucEnd = TRUE;
+				break;
+			case KEY_CLEAR:
+			case KEY_BCKSP:
+				sg_ucPreviousKey = 0;
+				sg_ucPreviousChar = 0;
+				sg_ucKeyTabOffset=0;
+				ucEnd = TRUE;
+				break;
+			case KEY_PAPER_FEED:
+				ucEnd = TRUE;
+				break;
+			default :
+				break;
+			}
+		}
+	util_Printf((char *)"ucflag2 = %02x\n", ucflag);
+
+	}
+	while(ucEnd == FALSE);
+#if PINYIN_TEST > 0
+	if(sg_ucPreviousChar != 0)
+	{
+		util_Printf((char *)"Out sg_ucPreviousChar = %c\n", sg_ucPreviousChar);
+		util_Printf((char *)"Out sg_ucPreviousKey = %c\n", sg_ucPreviousKey);
+		util_Printf((char *)"Out sg_ucKeyTabOffset = %d\n", sg_ucKeyTabOffset);
+	}
+#endif
+	return(ucKey);
+}
+#endif

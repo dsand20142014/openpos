@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/">
+        <file>pic/2mg41ef.png</file>
+        <file>pic/2010510181353908.png</file>
+        <file>pic/App_Store.png</file>
+        <file>pic/App_Store_alt.png</file>
+        <file>pic/Authenticator.png</file>
+        <file>pic/Calculator.png</file>
+        <file>pic/Calendar.png</file>
+        <file>pic/Calendar_alt.png</file>
+        <file>pic/Camera.png</file>
+        <file>pic/Clock.png</file>
+        <file>pic/Clock_alt.png</file>
+    </qresource>
+</RCC>

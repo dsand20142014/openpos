@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/resource">
+        <file>ico/logo.png</file>
+        <file>ico/connect.png</file>
+        <file>ico/disconnect.png</file>
+        <file>ico/conico.png</file>
+        <file>ico/warning.png</file>
+        <file>ico/sync.png</file>
+        <file>ico/shake.png</file>
+        <file>ico/wipe.png</file>
+        <file>ico/select.png</file>
+    </qresource>
+</RCC>

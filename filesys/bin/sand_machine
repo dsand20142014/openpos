@@ -1,0 +1,2 @@
+#!/bin/sh
+cat /proc/cmdline | cut -d' ' -f 2 | cut -d'=' -f 2

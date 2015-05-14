@@ -1,0 +1,232 @@
+Description: 	i.MX25 GPIO test application
+Author: 	Andre SIlva
+contact: 	andre.silva@freescale.com
+
+
+Building & Installation:
+-----------------------
+
+This application can easly be built by using make command over ltib shell:
+
+0) ./ltib -m shell
+1) tar -xvzf gpio_test-1.0.tar.gz
+2) cd gptio_test-1.0
+3) make
+4) cp gpio_test.ko ../ltib/rootfs/libs/modules/<kernel_version>/misc
+
+you can copy gpio_test.ko to another directory as well.
+
+
+or Using LTIB commands (needs to use a spec file):
+
+setting up packages and spec file
+
+0) cd ../ltib
+1) mkdir ../ltib/dist/lfs-5.1/gpio_test
+2) cp gpio_test.spec ../ltib/dist/lfs-5.1/gpio_test
+3) cp gpio_test-1.0.tar.gz /opt/freescale/pkg
+
+using ltib commands
+
+4) ./ltib -p gpio_test.spec -m prep
+5) ./ltib -p gpio_test.spec -m scbuild
+6) ./ltib -p gpio_test.spec -m scdeploy
+
+the module will be placed at ../ltib/rootfs/libs/modules/<kernel_version>/misc
+
+
+Loading Module
+--------------
+
+1) insmod /lib/modules/<kernel_version>/misc/gpio_test.ko
+
+
+Unloading Module
+--------------
+
+1) rmmod /lib/modules/<kernel_version>/misc/gpio_test.ko
+
+
+
+NOTE: Make sure of what PIN you are going to use in order to not damage your board.
+
+
+Usage Example
+-------------
+
+Writing 1 on the MX25_PIN_D13:
+
+#insmod gpio_test.ko option="WRITE" pin_name="D13" value=1
+
+Writing 0 on the MX25_PIN_GPIO_F:
+
+#insmod gpio_test.ko option="WRITE" pin_name="GPIO_F" value=0
+
+
+Reading MX25_PIN_D13 state condition:
+
+#insmod gpio_test.ko option="READ" pin_name="D13"
+
+Reading MX25_PIN_GPIO_F state condition:
+
+#insmod gpio_test.ko option="READ" pin_name="GPIO_F"
+
+
+Below you can find all PINs available as parameter (got from mx25_pins.h), named accordingly to their primary function:
+
+"A10"
+"A13"
+"A14"
+"A15"
+"A16"	
+"A17"	
+"A18"	
+"A19"	
+"A20"	
+"A21"	
+"A22"	
+"A23"
+"A24"
+"A25"
+"EB0"
+"EB1"
+"OE"
+"CS0"
+"CS1"
+"CS4"
+"CS5"
+"NF_CE0"
+"ECB"
+"LBA"
+"BCLK"
+"RW"
+"NFWE_B"
+"NFRE_B"
+"NFALE"
+"NFCLE"
+"NFWP_B"
+"NFRB"
+"D15"
+"D14"
+"D13"
+"D12"
+"D11"
+"D10"
+"D9"
+"D8"
+"D7"
+"D6"
+"D5"
+"D4"
+"D3"
+"D2"
+"D1"
+"D0"
+"LD0"
+"LD1"
+"LD2"
+"LD3"
+"LD4"
+"LD5"
+"LD6"
+"LD7"
+"LD8"
+"LD9"
+"LD10"
+"LD11"
+"LD12"
+"LD13"
+"LD14"
+"LD15"
+"HSYNC"
+"VSYNC"
+"LSCLK"
+"OE_ACD"
+"CONTRAST"
+"PWM"
+"CSI_D2"
+"CSI_D3"
+"CSI_D4"
+"CSI_D5"
+"CSI_D6"
+"CSI_D7"
+"CSI_D8"
+"CSI_D9"
+"CSI_MCLK"
+"CSI_VSYNC"
+"CSI_HSYNC"
+"CSI_PIXCLK"
+"I2C1_CLK"
+"I2C1_DAT"
+"CSPI1_MOSI"
+"CSPI1_MOSO"
+"CSPI1_SS0"
+"CSPI1_SS1"
+"CSPI1_SCLK"
+"CSPI1_RDY"
+"UART1_RXD"
+"UART1_TXD"
+"UART1_RTS"
+"UART1_CTS"
+"UART2_RXD"
+"UART2_TXD"
+"UART2_RTS"
+"UART2_CTS"
+"SD1_CMD"
+"SD1_CLK"
+"SD1_DATA0"
+"SD1_DATA1"
+"SD1_DATA2"
+"SD1_DATA3"
+"KPP_ROW0"
+"KPP_ROW1"
+"KPP_ROW2"
+"KPP_ROW3"
+"KPP_COL0"
+"KPP_COL1"
+"KPP_COL2"
+"KPP_COL3"
+"FEC_MDC"
+"FEC_MDIO"
+"FEC_TDATA0"
+"FEC_TDATA1"
+"FEC_TX_EN"
+"FEC_RDATA0"
+"FEC_RDATA1"
+"FEC_RX_DV"
+"FEC_TX_CLK"
+"RTCK"
+"DE_B"
+"TDO"
+"GPIO_A"
+"GPIO_B"
+"GPIO_C"
+"GPIO_D"
+"GPIO_E"
+"GPIO_F"
+"EXT_ARMCLK"
+"UPLL_BYPCLK"
+"VSTBY_REQ"
+"VSTBY_ACK"
+"POWER_FAIL"
+"CLK0"
+"BOOT_MODE0"
+"BOOT_MODE1"
+"CTL_GRP_DVS_MISC"
+"CTL_GRP_DSE_FEC"
+"CTL_GRP_DVS_JTAG"
+"CTL_GRP_DSE_NFC"
+"CTL_GRP_DSE_CSI"
+"CTL_GRP_DSE_WEIM"
+"CTL_GRP_DSE_DDR"
+"CTL_GRP_DVS_CRM"
+"CTL_GRP_DSE_KPP"
+"CTL_GRP_DSE_SDHC1"
+"CTL_GRP_DSE_LCD"
+"CTL_GRP_DSE_UART"
+"CTL_GRP_DVS_NFC"
+"CTL_GRP_DVS_CSI"
+"CTL_GRP_DSE_CSPI1"
+"CTL_GRP_DDRTYPE"
+"CTL_GRP_DVS_SDHC1"
+"CTL_GRP_DVS_LCD"

@@ -1,0 +1,8 @@
+
+	arm-none-linux-gnueabi-gcc -c SRK.CA4.SAND.wtls.c -o SRK.CA4.SAND.wtls.o
+	arm-none-linux-gnueabi-ld SRK.CA4.SAND.wtls.o -Ttext 0x83f0d090 -o SRK.CA4.sand.wtls.elf
+	arm-none-linux-gnueabi-objcopy -O binary SRK.CA4.SAND.wtls.elf SRK.CA4.SAND.wtls.bin
+
+
+
+

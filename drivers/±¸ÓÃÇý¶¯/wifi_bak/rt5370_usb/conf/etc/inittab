@@ -1,0 +1,10 @@
+# see busybox-1.00rc2/examples/inittab for more examples
+::sysinit:/etc/rc.d/rcS
+#::respawn:/sbin/getty -L ttymxc4 115200 vt100
+ttymxc4::respawn:/bin/sh
+::ctrlaltdel:/sbin/reboot
+#::shutdown:/etc/rc.d/rcS stop
+::restart:/sbin/init
+
+::shutdown:/bin/umount -a -r
+::shutdown:/sbin/swapoff -a

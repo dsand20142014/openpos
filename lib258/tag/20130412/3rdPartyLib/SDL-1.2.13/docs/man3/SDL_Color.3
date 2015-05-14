@@ -1,0 +1,17 @@
+strict __format, _G_va_list __arg)
+     __THROWNL __attribute__ ((__format__ (__printf__, 3, 0)));
+__END_NAMESPACE_C99
+#endif
+
+#ifdef __USE_GNU
+/* Write formatted output to a string dynamically allocated with `malloc'.
+   Store the address of the string in *PTR.  */
+extern int vasprintf (char **__restrict __ptr, __const char *__restrict __f,
+		      _G_va_list __arg)
+     __THROWNL __attribute__ ((__format__ (__printf__, 2, 0))) __wur;
+extern int __asprintf (char **__restrict __ptr,
+		       __const char *__restrict __fmt, ...)
+     __THROWNL __attribute__ ((__format__ (__printf__, 2, 3))) __wur;
+extern int asprintf (char **__restrict __ptr,
+		     __const char *__restrict __fmt, ...)
+     __THROWNL __attribute__ ((__format__ (__printf__, 2, 3))) __wur

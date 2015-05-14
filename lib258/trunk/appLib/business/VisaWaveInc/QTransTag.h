@@ -1,0 +1,64 @@
+#ifndef		_QTRANSTAG_H
+#define		_QTRANSTAG_H
+
+#ifndef		QTRANSTAG_DATA
+#define		QTRANSTAG_DATA		extern
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include	<QTypeDef.h>
+#include	<QDef.h>
+#include	<QTag.h>
+
+#define		QMAXTRANSTAGNUMS		200
+#define		QMAXTRANSTAGBUFFLEN			2048
+
+
+#define		QTRANSTAGERR_SUCCESS		0x00
+#define		QTRANSTAGERR_PARAM			0x01
+#define		QTRANSTAGERR_OVERFLOW		0x02
+#define		QTRANSTAGERR_REDUNDANT		0x03
+#define		QTRANSTAGERR_TAGNOTFIND	0x04
+
+
+typedef		enum {QALLPHASETAG,QPSEPHASETAG,QENTRYPHASETAG,QADFPHASETAG,QINITAPPPHASETAG,
+				  QRECORDPHASETAG,QDATAAUTHPHASETAG,QFIRSTGACPHASETAG,QSECONDGACPHASETAG,QISSUREPHASETAG}QTAGPHASE;
+
+typedef		struct
+{
+	unsigned char 	aucTag[2];
+	unsigned short 	uiLen;
+	unsigned char   *pTagValue;
+	QTAGPHASE		enTagPhase;
+}QTRANSTAGDATA;
+
+typedef		struct
+{
+	USHORT					uiTagNums;
+	QTRANSTAGDATA			QTransTagData[QMAXTRANSTAGNUMS];
+	unsigned short			uiTagBuffLen;
+	unsigned char 			aucTagBuff[QMAXTRANSTAGBUFFLEN];   //TAG BUFF 
+}QTRANSTAG;
+
+
+QTRANSTAG_DATA	QTRANSTAG 	QTransTag;
+
+void	QTRANSTAG_Init(void);
+UCHAR	QTRANSTAG_CopyQICDataInfo(QICDATAINFO *pQICDataInfo,QTAGPHASE enTagPhase);
+QTRANSTAGDATA * QTRANSTAG_SearchTag(QTAGPHASE enTagPhase,unsigned char *paucTag);
+UCHAR QTRANSTAG_SetTag(QTAGPHASE enTagPhase,unsigned char *paucTag,unsigned char *pValue,USHORT uiValueLen);
+QDATAPROPERTY *	QTRANSTAG_TagMeaning(PUCHAR paucTag);
+UCHAR	QTRANSTAG_ICTransDataPack(PUCHAR  pTransDOL,UCHAR ucTransDOLLen,PUCHAR  pTransData,USHORT *puiTransDATALen);
+UCHAR	QTRANSTAG_DDOLProcess(PUCHAR pDDOL,UCHAR ucQDDOLLen,PUCHAR pDDOLData,PUCHAR pucDDOLDataLen);
+BOOL	QTRANSTAG_CheckTDOL(PUCHAR pCDOL,UCHAR ucCDOLLen);
+UCHAR	QTRANSTAG_TDOLProcess(PUCHAR  pCDOL,UCHAR ucCDOLLen);
+UCHAR	QTRANSTAG_CDOLProcess(PUCHAR pCDOL,UCHAR ucCDOLLen,PUCHAR pCDOLData,PUCHAR pucCDOLDataLen);
+UCHAR	QTRANSTAG_DOLProcess(PUCHAR  pDOL,UCHAR ucDOLLen,PUCHAR  pDOLData,UCHAR *pucDOLDATALen);
+UCHAR	QTRANSTAG_GetTagValue(QTAGPHASE enTagPhase,PUCHAR pucTag,PUCHAR pucBuff,USHORT * puiBuffLen);
+
+#ifdef __cplusplus
+}
+#endif
+#endif

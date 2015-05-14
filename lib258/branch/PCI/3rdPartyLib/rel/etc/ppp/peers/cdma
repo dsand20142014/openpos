@@ -1,0 +1,26 @@
+#/etc/ppp/peers/cdma
+#this is ppp script for use China telecom's CDMA data service
+
+ttyUSB0
+
+115200
+
+crtscts
+
+connect '/usr/sbin/chat -v -f /etc/ppp/chat/cdma-chat-script'
+
+debug
+
+nodetach
+
+persist
+
+usepeerdns
+
+ipcp-accept-local
+
+ipcp-accept-remote
+
+defaultroute
+
+user "card"

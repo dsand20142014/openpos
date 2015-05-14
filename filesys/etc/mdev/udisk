@@ -1,0 +1,8 @@
+env > /dev/ttymxc4
+if [ $ACTION = add ]; then
+mkdir -p /mnt/usb
+mount /dev/$MDEV /mnt/usb -o utf8=1
+else
+umount -l /mnt/usb
+rm -rf /mnt/usb
+fi

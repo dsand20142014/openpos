@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SMT_For_Customer</class>
+ <widget class="QMainWindow" name="SMT_For_Customer">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>476</width>
+    <height>262</height>
+   </rect>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>476</width>
+    <height>262</height>
+   </size>
+  </property>
+  <property name="maximumSize">
+   <size>
+    <width>476</width>
+    <height>262</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string>SMT_For_Customer</string>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="resource.qrc">
+    <normaloff>:/resource/ico/logo.png</normaloff>:/resource/ico/logo.png</iconset>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <widget class="QGroupBox" name="grpBoxAttribut">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>76</y>
+      <width>461</width>
+      <height>81</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>应用信息</string>
+    </property>
+    <widget class="QWidget" name="">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>20</y>
+       <width>441</width>
+       <height>52</height>
+      </rect>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout">
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout">
+        <item>
+         <widget class="QLabel" name="labelAppName">
+          <property name="text">
+           <string>应用名称：</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="lineEditAppName">
+          <property name="enabled">
+           <bool>true</bool>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelAppID">
+          <property name="text">
+           <string>应用编号：</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="lineEditAppID">
+          <property name="enabled">
+           <bool>true</bool>
+          </property>
+          <property name="maxLength">
+           <number>5</number>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <item>
+         <widget class="QLabel" name="labelAppVersion">
+          <property name="text">
+           <string>应用版本：</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="lineEditAppVersion">
+          <property name="enabled">
+           <bool>true</bool>
+          </property>
+          <property name="maxLength">
+           <number>32767</number>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelAppSize">
+          <property name="text">
+           <string>应用大小：</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLineEdit" name="lineEditAppSize">
+          <property name="enabled">
+           <bool>true</bool>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+          <property name="maxLength">
+           <number>32767</number>
+          </property>
+          <property name="readOnly">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </widget>
+   <widget class="QLabel" name="labelAppPath">
+    <property name="geometry">
+     <rect>
+      <x>21</x>
+      <y>50</y>
+      <width>60</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>应用路径：</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="lineEditAppPath">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>79</x>
+      <y>49</y>
+      <width>391</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="readOnly">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButtonAppPath">
+    <property name="geometry">
+     <rect>
+      <x>410</x>
+      <y>9</y>
+      <width>61</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>打开文件</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="labelCom">
+    <property name="geometry">
+     <rect>
+      <x>21</x>
+      <y>14</y>
+      <width>60</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>端口选择：</string>
+    </property>
+   </widget>
+   <widget class="QComboBox" name="comboBoxCom">
+    <property name="geometry">
+     <rect>
+      <x>80</x>
+      <y>11</y>
+      <width>101</width>
+      <height>20</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QLabel" name="labelComState">
+    <property name="geometry">
+     <rect>
+      <x>196</x>
+      <y>14</y>
+      <width>141</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>476</width>
+     <height>23</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title">
+     <string>文件</string>
+    </property>
+    <addaction name="actionConnect"/>
+    <addaction name="actionDisconnect"/>
+    <addaction name="separator"/>
+    <addaction name="actionExit"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>编辑</string>
+    </property>
+    <addaction name="actionSync"/>
+   </widget>
+   <widget class="QMenu" name="menuAbout">
+    <property name="title">
+     <string>关于</string>
+    </property>
+    <addaction name="actionVersion"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuAbout"/>
+  </widget>
+  <widget class="QToolBar" name="mainToolBar">
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionConnect"/>
+   <addaction name="actionDisconnect"/>
+   <addaction name="separator"/>
+   <addaction name="actionSync"/>
+  </widget>
+  <widget class="QStatusBar" name="statusBar"/>
+  <action name="actionConnect">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/ico/connect.png</normaloff>:/resource/ico/connect.png</iconset>
+   </property>
+   <property name="text">
+    <string>打开串口</string>
+   </property>
+  </action>
+  <action name="actionDisconnect">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/ico/disconnect.png</normaloff>:/resource/ico/disconnect.png</iconset>
+   </property>
+   <property name="text">
+    <string>关闭串口</string>
+   </property>
+  </action>
+  <action name="actionSync">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/ico/sync.png</normaloff>:/resource/ico/sync.png</iconset>
+   </property>
+   <property name="text">
+    <string>下载应用</string>
+   </property>
+  </action>
+  <action name="actionVersion">
+   <property name="text">
+    <string>版本说明</string>
+   </property>
+  </action>
+  <action name="actionExit">
+   <property name="text">
+    <string>退出软件</string>
+   </property>
+  </action>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <tabstops>
+  <tabstop>comboBoxCom</tabstop>
+  <tabstop>pushButtonAppPath</tabstop>
+  <tabstop>lineEditAppPath</tabstop>
+  <tabstop>lineEditAppName</tabstop>
+  <tabstop>lineEditAppID</tabstop>
+  <tabstop>lineEditAppVersion</tabstop>
+  <tabstop>lineEditAppSize</tabstop>
+ </tabstops>
+ <resources>
+  <include location="resource.qrc"/>
+ </resources>
+ <connections/>
+</ui>

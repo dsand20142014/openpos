@@ -1,0 +1,1388 @@
+#include <include.h>
+#include <global.h>
+#include <xdata.h>
+
+unsigned char aucRecordBuf[45000];//1M临时空间
+unsigned int  iOldRecordNum;
+unsigned int  iNewRecordNum;
+unsigned int	uiReSize;
+unsigned int	iCTNum[3][8];
+
+unsigned char SortFile(unsigned char ucFileIndex,unsigned char *pRec,unsigned int uiRecordNum)
+{
+	unsigned int  i;
+	unsigned char ucResult;
+	Uart_Printf("Enter SortFile\n");
+	for(i=0;i<300;i++)
+	{
+		Uart_Printf("%02x ",*(pRec+i));
+	}
+	Uart_Printf("\n");
+	switch(ucFileIndex)
+	{
+		case DataSaveZoneCtrls:
+			for(i=0;i<uiRecordNum;i++)
+			{
+				if(!memcmp(pRec+1+i*(xDATA_ZoneCtrlsSize+1),"\x30",1))
+				{
+					ucResult=Zone_InsertCode(pRec+1+i*(xDATA_ZoneCtrlsSize+1)+1);//添加区域码
+					if(ucResult!=SUCCESS)
+						return ucResult;
+				}else
+				{
+					ucResult=Zone_DeleteCode(pRec+1+i*(xDATA_ZoneCtrlsSize+1)+1);//删除区域码
+				}
+			}
+			break;	
+			
+		case DataSaveCardTables:
+			for(i=0;i<uiRecordNum;i++)
+			{
+				if(!memcmp(pRec+1+i*(xDATA_CardTablesSize+1),"\x30",1))
+				{
+					ucResult=CardTable_InsertCode(pRec+1+i*(xDATA_CardTablesSize+1)+1);//添加区域码
+					if(ucResult!=SUCCESS)
+						return ucResult;
+				}else
+				{
+					ucResult=CardTable_DeleteCode(pRec+1+i*(xDATA_CardTablesSize+1)+1);//删除区域码
+				}
+			}
+			break;	
+			
+		case DataSaveBlackFeilds:
+			for(i=0;i<uiRecordNum;i++)
+			{
+				if(!memcmp(pRec+1+i*(xDATA_BlackFeildsSize+1),"\x30",1))
+				{
+					ucResult=Black_InsertCode(pRec+1+i*(xDATA_BlackFeildsSize+1)+1);//添加区域码
+					if(ucResult!=SUCCESS)
+						return ucResult;
+				}else
+				{
+					ucResult=Black_DeleteCode(pRec+1+i*(xDATA_BlackFeildsSize+1)+1);//删除区域码
+				}
+			}
+			break;	
+		case DataSaveRate:
+			for(i=0;i<uiRecordNum;i++)
+			{
+				if(!memcmp(pRec+1+i*(xDATA_RateSize+1),"\x30",1))
+				{
+					ucResult=Rate_InsertCode(pRec+1+i*(xDATA_RateSize+1)+1);//添加区域码
+					if(ucResult!=SUCCESS)
+						return ucResult;
+				}else
+				{
+					ucResult=Rate_DeleteCode(pRec+1+i*(xDATA_RateSize+1)+1);//删除区域码
+				}
+			}
+			break;	
+		default:
+			return FILE_NOEXIST;
+	}
+	return SUCCESS;
+}
+
+unsigned char XDATA_AppendRecords(unsigned char ucFileIndex,/*文件名称*/
+								 unsigned char *pRecord,/*下发记录的缓冲区*/
+								 unsigned int uiRecordSize,/*每个记录的大小*/
+								 unsigned int uiRecordNum/*下发记录的个数*/)
+{
+	int iFileHandle;
+	int iFileSize;
+	int iReadSize;
+	int iWriteSize;
+	int iI;
+	int iRecordPerTime;
+	int iMinNum;
+	int iFileErrNo;
+	unsigned char ucResult;
+	
+	iFileHandle = 0;
+	iFileSize = 0;
+	iReadSize = 0;
+	iWriteSize = 0;
+	iOldRecordNum = 0;
+	iI = 0;
+	iRecordPerTime = 0;
+	iNewRecordNum = 0;
+	iMinNum = 0;
+	memset(&iCTNum,0,sizeof(iCTNum));
+	
+	iFileHandle = OSAPP_OpenFile((char *)FileInfo[ucFileIndex].aucFileName,O_WRITE);
+	
+	if( iFileHandle < 0 )
+	{
+		OSAPP_FileClose(iFileHandle);
+		return(OSAPP_FileGetLastError());
+	}
+	
+	iFileSize = OSAPP_FileSize((char *)FileInfo[ucFileIndex].aucFileName);
+	if( iFileSize >= 0 )
+	{
+		memset(aucRecordBuf,0,sizeof(aucRecordBuf));
+		if( iFileSize > 0 )
+		{
+			if(OSAPP_FileSeek(iFileHandle,0,SEEK_SET)==0)
+				iReadSize = OSAPP_FileRead(iFileHandle,aucRecordBuf,iFileSize);
+			else
+			{
+				OSAPP_FileClose(iFileHandle);
+				return(OSAPP_FileGetLastError());
+			}
+			if( iReadSize == iFileSize )
+			{
+				switch(ucFileIndex)
+				{
+					case DataSaveZoneCtrls:
+						iOldRecordNum=DataSave0.ChangeParamData.uiZoneCodeNum;
+						break;	
+						
+					case DataSaveCardTables:
+						iOldRecordNum=DataSave0.ChangeParamData.uiCardTableNum;
+						Uart_Printf("DataSave0.ChangeParamData.uiCTNum:\n");
+						for(iI=0;iI<24;iI++)
+						{
+							Uart_Printf("%d ",DataSave0.ChangeParamData.uiCTNum[iI/8][iI%8]);
+							if(iI==7||iI==15||iI==23)
+								Uart_Printf("\n");
+						}
+						memcpy(&iCTNum,&DataSave0.ChangeParamData.uiCTNum,sizeof(iCTNum));
+						break;	
+						
+					case DataSaveBlackFeilds:
+						iOldRecordNum=DataSave0.ChangeParamData.uiBlackFeildNum;
+						break;	
+					case DataSaveRate:
+						iOldRecordNum=DataSave0.ChangeParamData.uiRateTableNum;
+						break;	
+					default:
+						return FILE_NOEXIST;
+				}
+				//iOldRecordNum = iFileSize / uiRecordSize;
+			}
+			else
+			{
+				//读文件大小不一致是否处理？
+				OSAPP_FileClose(iFileHandle);
+				return(OSAPP_FileGetLastError());
+			}
+			/*if( OSAPP_FileTrunc(iFileHandle,0) != 0 )
+			{
+				
+				OSAPP_FileClose(iFileHandle);
+				return(OSAPP_FileGetLastError());
+			}*/
+		}
+		else
+			iOldRecordNum=0;
+		
+		uiReSize = uiRecordSize;
+		ucResult=SortFile(ucFileIndex,pRecord,uiRecordNum);
+		if(ucResult!=SUCCESS)
+		{
+			OSAPP_FileClose(iFileHandle);
+			return(ucResult);
+		}
+		switch(ucFileIndex)
+		{
+			case DataSaveZoneCtrls:
+				iNewRecordNum=iOldRecordNum;
+				DataSave0.ChangeParamData.uiZoneCodeNum=iNewRecordNum;
+				ucResult=XDATA_Write_Vaild_File(DataSaveChange);
+				break;	
+				
+			case DataSaveCardTables:
+				iNewRecordNum=iOldRecordNum;
+				DataSave0.ChangeParamData.uiCardTableNum=iNewRecordNum;
+				memcpy(&DataSave0.ChangeParamData.uiCTNum,&iCTNum,sizeof(iCTNum));
+				Uart_Printf("DataSave0.ChangeParamData.uiCTNum:\n");
+				for(iI=0;iI<24;iI++)
+				{
+					Uart_Printf("%d ",DataSave0.ChangeParamData.uiCTNum[iI/8][iI%8]);
+					if(iI==7||iI==15||iI==23)
+						Uart_Printf("\n");
+				}
+				ucResult=XDATA_Write_Vaild_File(DataSaveChange);
+				break;	
+				
+			case DataSaveBlackFeilds:
+				iNewRecordNum=iOldRecordNum;
+				DataSave0.ChangeParamData.uiBlackFeildNum=iNewRecordNum;
+				ucResult=XDATA_Write_Vaild_File(DataSaveChange);
+				break;	
+			case DataSaveRate:
+				iNewRecordNum=iOldRecordNum;
+				DataSave0.ChangeParamData.uiRateTableNum=iNewRecordNum;
+				ucResult=XDATA_Write_Vaild_File(DataSaveChange);
+				break;	
+			default:
+				return FILE_NOEXIST;
+		}		
+		if(ucResult!=SUCCESS)
+		{
+			OSAPP_FileClose(iFileHandle);
+			return(ucResult);
+		}
+		iRecordPerTime = 512/uiRecordSize;
+		for(iI=0;iI<iNewRecordNum;)
+		{
+			//确定当前可以写的记录个数
+			iMinNum = min(iNewRecordNum-iI,iRecordPerTime);
+			
+			if( OSAPP_FileSeek(iFileHandle,iI*uiRecordSize,SEEK_SET) == 0 )
+			{
+				iWriteSize = OSAPP_FileWrite(iFileHandle,&aucRecordBuf[iI*uiRecordSize],
+												uiRecordSize*iMinNum);
+				if( iWriteSize != uiRecordSize*iMinNum )
+				{
+					//写文件大小不一致是否处理？
+					OSAPP_FileClose(iFileHandle);
+					return(OSAPP_FileGetLastError());
+				}
+			}
+			else
+			{
+				//文件位置定位是否处理？
+				OSAPP_FileClose(iFileHandle);
+				return(OSAPP_FileGetLastError());
+			}
+			iI += iMinNum;
+		}
+	}
+	else
+	{
+		OSAPP_FileClose(iFileHandle);
+		return(OSAPP_FileGetLastError());
+	}
+	OSAPP_FileClose(iFileHandle);
+	return(SUCCESS);
+}
+
+
+unsigned char Zone_InsertCode(unsigned char *ZoneCode)
+{
+	int instpos;
+	unsigned char aucBuf[60];
+	int i;
+
+#ifdef TEST
+		Uart_Printf("you enter insert zonecode\n");
+		Uart_Printf("uiZoneCodeNum=%d\n",iOldRecordNum);
+#endif		
+	//检测区位码空间是否已满
+	if((iOldRecordNum+1)>MAX_ZONE_NUM)
+		return	ERR_MAXZONE;
+	if(iOldRecordNum==0)
+	{
+		instpos=0;
+	}else
+	{
+		instpos=Zone_SearchIns(ZoneCode);
+#ifdef TEST
+		Uart_Printf("instpos=%d\n",instpos);
+#endif		
+	}
+	if(instpos!=-1)
+	{
+		//向后移动
+		if(instpos!=iOldRecordNum)
+			Zone_MoveBackward(instpos,iOldRecordNum-1);
+			
+		memcpy(&aucRecordBuf[instpos*uiReSize],ZoneCode,uiReSize);
+
+#ifdef TEST
+		Uart_Printf("\n");
+		Uart_Printf("\nInsert Zone Position:%d",instpos);
+		Uart_Printf("\nZone Code:");
+		for(i=0;i<50;i++)
+		{
+			Uart_Printf("%02x ",ZoneCode[i]);
+		}
+#endif 
+		iOldRecordNum++;
+	}
+	return SUCCESS;
+}
+
+
+int Zone_SearchIns(unsigned char *InData)
+{
+	   int FirstPos,LastPos,MidPos,CmpFlag;
+	unsigned char aucCmpZone[4];
+	
+	FirstPos=0;
+	LastPos = iOldRecordNum-1;
+	
+	//先检查表头
+	memset(aucCmpZone,0,sizeof(aucCmpZone));
+	memcpy(aucCmpZone,&aucRecordBuf[0],4);
+	CmpFlag=memcmp(InData,aucCmpZone,4);
+	if(CmpFlag<0)
+		return FirstPos;
+	if(CmpFlag==0)
+	{
+		memcpy(&aucRecordBuf[0],InData,uiReSize);	
+		
+		return -1;
+	}
+		
+	//检查表尾
+	memset(aucCmpZone,0,sizeof(aucCmpZone));
+	memcpy(aucCmpZone,&aucRecordBuf[LastPos*uiReSize],4);
+	CmpFlag=memcmp(InData,aucCmpZone,4);
+	if(CmpFlag>0)
+		return LastPos+1;
+	if(CmpFlag==0)
+	{
+		memcpy(&aucRecordBuf[LastPos*uiReSize],InData,uiReSize);	
+		
+		return -1;
+	}
+	
+	//二分查找	
+	while(FirstPos<=LastPos)
+	{
+		MidPos=(FirstPos+LastPos)/2;
+		memset(aucCmpZone,0,sizeof(aucCmpZone));
+		memcpy(aucCmpZone,&aucRecordBuf[MidPos*uiReSize],4);
+		CmpFlag=memcmp(InData,aucCmpZone,4);
+		if(CmpFlag>0)
+			FirstPos=MidPos+1;
+		else if(CmpFlag<0)
+			LastPos=MidPos-1;
+		if(CmpFlag==0)
+		{
+			memcpy(&aucRecordBuf[MidPos*uiReSize],InData,uiReSize);	
+			
+			return -1;
+		}
+	}
+	return LastPos+1;
+}
+
+void Zone_MoveBackward(int StartPos,int EndPos)
+{
+	int i;
+	for(i=EndPos;i>=StartPos;i--)
+	{
+		memcpy(&aucRecordBuf[(i+1)*uiReSize],&aucRecordBuf[i*uiReSize],uiReSize);
+	}
+	return;
+}
+
+unsigned char Zone_DeleteCode(unsigned char *ZoneCode)
+{
+	int delpos;
+#ifdef TEST
+		Uart_Printf("you enter Delelte zonecode\n");
+		Uart_Printf("uiZoneCodeNum=%d\n",iOldRecordNum);
+#endif		
+	if(iOldRecordNum==0)
+		return SUCCESS;
+	
+	delpos=Zone_SearchDel(ZoneCode);
+#ifdef TEST
+		Uart_Printf("delpos=%d\n",delpos);
+#endif		
+	if(delpos!=-1)
+	{
+		if(delpos!=iOldRecordNum-1)
+			Zone_MoveForward(delpos+1,iOldRecordNum-1);
+		
+		iOldRecordNum--;
+	}
+	return SUCCESS;
+}
+
+int Zone_SearchDel(unsigned char *InData)
+{
+	  int FirstPos,LastPos,MidPos,CmpFlag;
+	unsigned char aucCmpZone[4];
+	
+	FirstPos=0;
+	LastPos=iOldRecordNum-1;
+	
+	//先检查表头
+	memset(aucCmpZone,0,sizeof(aucCmpZone));
+	memcpy(aucCmpZone,&aucRecordBuf[0],4);
+	CmpFlag=memcmp(InData,aucCmpZone,4);
+	if(CmpFlag==0)
+		return FirstPos;
+	if(CmpFlag<0)
+		return -1;
+	
+	//检查表尾
+	memset(aucCmpZone,0,sizeof(aucCmpZone));
+	memcpy(aucCmpZone,&aucRecordBuf[LastPos*uiReSize],4);	
+	CmpFlag=memcmp(InData,aucCmpZone,4);
+	if(CmpFlag==0)	
+		return LastPos;
+	if(CmpFlag>0)
+		return -1;
+		
+	//二分查找
+	while(FirstPos<=LastPos)
+	{
+		MidPos=(FirstPos+LastPos)/2;
+		memset(aucCmpZone,0,sizeof(aucCmpZone));
+		memcpy(aucCmpZone,&aucRecordBuf[MidPos*uiReSize],4);	
+		CmpFlag=memcmp(InData,aucCmpZone,4);
+		if(CmpFlag<0)
+			LastPos=MidPos-1;
+		else if(CmpFlag>0)
+			FirstPos=MidPos+1;
+		else if(CmpFlag==0)
+			return MidPos;
+	}
+	return -1;
+}
+
+void Zone_MoveForward(int StartPos,int EndPos)
+{
+	int  i;
+	for(i=StartPos;i<=EndPos;i++)
+	{
+		memcpy(&aucRecordBuf[(i-1)*uiReSize],&aucRecordBuf[i*uiReSize],uiReSize);
+	}
+	return;
+}
+
+
+
+
+unsigned char CardTable_InsertCode(unsigned char *ZoneCode)
+{
+	int instpos;
+	unsigned char aucBuf[60];
+	int i;
+
+	if(ZoneCode[13]<0x05||ZoneCode[13]>0x12)
+	{
+		Uart_Printf("card table lenth err:%02x\n",ZoneCode[13]);
+		return SUCCESS;
+	}
+#ifdef TEST
+		Uart_Printf("you enter insert zonecode\n");
+		Uart_Printf("uiZoneCodeNum=%d\n",iOldRecordNum);
+#endif		
+	//检测区位码空间是否已满
+	if((iOldRecordNum+1)>MAX_CARDTABLE_NUM)
+		return	ERR_MAXCARDTABLE;
+	if(iOldRecordNum==0)
+	{
+		instpos=0;
+	}else
+	{
+		instpos=CardTable_SearchIns(ZoneCode);
+#ifdef TEST
+		Uart_Printf("instpos=%d\n",instpos);
+#endif		
+	}
+	if(instpos!=-1)
+	{
+		//向后移动
+		if(instpos!=iOldRecordNum)
+			CardTable_MoveBackward(instpos,iOldRecordNum-1);
+			
+		memcpy(&aucRecordBuf[instpos*uiReSize],ZoneCode,uiReSize);
+
+#ifdef TEST
+		Uart_Printf("\n");
+		Uart_Printf("\nInsert CardTablePosition:%d",instpos);
+		Uart_Printf("\nCardTable Code:");
+		for(i=0;i<6;i++)
+		{
+			Uart_Printf("%02x ",ZoneCode[i]);
+		}
+		memset(aucBuf,0,sizeof(aucBuf));
+		memcpy(aucBuf,ZoneCode+6,8);
+#endif 
+		iOldRecordNum++;
+		iCTNum[ZoneCode[0]-1][bcd_long(&ZoneCode[13],2)-5]++;
+	}
+	return SUCCESS;
+}
+
+int CardTable_SearchIns(unsigned char *InData)
+{
+	 int FirstPos,LastPos,MidPos,CmpFlag;
+	unsigned char aucCmpCardBinO[18],aucCmpCardBin[18];
+	
+	FirstPos=0;
+	LastPos=iOldRecordNum-1;
+	
+	//检查卡表头
+	memset(aucCmpCardBin,0,sizeof(aucCmpCardBin));
+	aucCmpCardBin[0]=aucRecordBuf[0];
+	aucCmpCardBin[1]=aucRecordBuf[13];
+	memcpy(&aucCmpCardBin[2],&aucRecordBuf[7],6);
+	memcpy(&aucCmpCardBin[8],&aucRecordBuf[3],3);
+
+	aucCmpCardBinO[0]=InData[0];
+	aucCmpCardBinO[1]=InData[13];
+	memcpy(&aucCmpCardBinO[2],&InData[7],6);
+	memcpy(&aucCmpCardBinO[8],&InData[3],3);
+
+	CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,11);
+	if(CmpFlag<0)
+		return FirstPos;
+	if(CmpFlag==0)
+	{
+		memcpy(&aucRecordBuf[0],InData,uiReSize);	
+		
+		return -1;
+	}
+		
+	//检查卡表尾
+	memset(aucCmpCardBin,0,sizeof(aucCmpCardBin));	
+	aucCmpCardBin[0]=aucRecordBuf[LastPos*uiReSize];
+	aucCmpCardBin[1]=aucRecordBuf[LastPos*uiReSize+13];
+	memcpy(&aucCmpCardBin[2],&aucRecordBuf[LastPos*uiReSize+7],6);
+	memcpy(&aucCmpCardBin[8],&aucRecordBuf[LastPos*uiReSize+3],3);
+
+	aucCmpCardBinO[0]=InData[0];
+	aucCmpCardBinO[1]=InData[13];
+	memcpy(&aucCmpCardBinO[2],&InData[7],6);
+	memcpy(&aucCmpCardBinO[8],&InData[3],3);
+
+	CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,11);
+	if(CmpFlag>0)
+		return LastPos+1;
+	if(CmpFlag==0)
+	{
+		memcpy(&aucRecordBuf[LastPos*uiReSize],InData,uiReSize);	
+		
+		return -1;
+	}
+		
+	//二分法查找
+	while(FirstPos<=LastPos)
+	{
+		MidPos = (FirstPos+LastPos)/2;
+		memset(aucCmpCardBin,0,sizeof(aucCmpCardBin));	
+		aucCmpCardBin[0]=aucRecordBuf[MidPos*uiReSize];
+		aucCmpCardBin[1]=aucRecordBuf[MidPos*uiReSize+13];
+		memcpy(&aucCmpCardBin[2],&aucRecordBuf[MidPos*uiReSize+7],6);
+		memcpy(&aucCmpCardBin[8],&aucRecordBuf[MidPos*uiReSize+3],3);
+
+		aucCmpCardBinO[0]=InData[0];
+		aucCmpCardBinO[1]=InData[13];
+		memcpy(&aucCmpCardBinO[2],&InData[7],6);
+		memcpy(&aucCmpCardBinO[8],&InData[3],3);
+
+		CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,11);
+		if(CmpFlag>0)
+			FirstPos=MidPos+1;
+		else if(CmpFlag<0)
+			LastPos=MidPos-1;
+		if(CmpFlag==0)
+		{
+			memcpy(&aucRecordBuf[MidPos*uiReSize],InData,uiReSize);	
+			
+			return -1;
+		}
+		
+	}
+	return (LastPos+1);
+}
+
+void CardTable_MoveBackward(int StartPos,int EndPos)
+{
+	int i;
+	for(i=EndPos;i>=StartPos;i--)
+	{
+		memcpy(&aucRecordBuf[(i+1)*uiReSize],&aucRecordBuf[i*uiReSize],uiReSize);
+	}
+	return;
+}
+
+unsigned char CardTable_DeleteCode(unsigned char *ZoneCode)
+{
+	int delpos;
+#ifdef TEST
+		Uart_Printf("you enter Delelte CardTable\n");
+		Uart_Printf("uiZoneCodeNum=%d\n",iOldRecordNum);
+#endif		
+	if(iOldRecordNum==0)
+		return SUCCESS;
+	
+	delpos=CardTable_SearchDel(ZoneCode);
+#ifdef TEST
+		Uart_Printf("delpos=%d\n",delpos);
+#endif		
+	if(delpos!=-1)
+	{
+		if(delpos!=iOldRecordNum-1)
+			CardTable_MoveForward(delpos+1,iOldRecordNum-1);
+		
+		iOldRecordNum--;
+		iCTNum[ZoneCode[0]-1][bcd_long(&ZoneCode[13],2)-5]--;
+	}
+	return SUCCESS;
+}
+
+
+int CardTable_SearchDel(unsigned char *InData)
+{
+	int FirstPos,LastPos,MidPos,CmpFlag;
+	unsigned char aucCmpCardBin[18],aucCmpCardBinO[18];
+	
+	FirstPos=0;
+	LastPos = iOldRecordNum-1;
+
+
+	
+	//检查卡表头
+	memset(aucCmpCardBin,0,sizeof(aucCmpCardBin));
+	aucCmpCardBin[0]=aucRecordBuf[0];
+	aucCmpCardBin[1]=aucRecordBuf[13];
+	memcpy(&aucCmpCardBin[2],&aucRecordBuf[7],6);
+	memcpy(&aucCmpCardBin[8],&aucRecordBuf[3],3);
+
+	aucCmpCardBinO[0]=InData[0];
+	aucCmpCardBinO[1]=InData[13];
+	memcpy(&aucCmpCardBinO[2],&InData[7],6);
+	memcpy(&aucCmpCardBinO[8],&InData[3],3);
+
+	CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,11);
+Uart_Printf("\nCmpFlag111===%d\n",CmpFlag);
+	if(CmpFlag<0)
+		return -1;
+	if(CmpFlag==0)
+		return FirstPos;
+		
+	//检查卡表尾
+	memset(aucCmpCardBin,0,sizeof(aucCmpCardBin));	
+	aucCmpCardBin[0]=aucRecordBuf[LastPos*uiReSize];
+	aucCmpCardBin[1]=aucRecordBuf[LastPos*uiReSize+13];
+	memcpy(&aucCmpCardBin[2],&aucRecordBuf[LastPos*uiReSize+7],6);
+	memcpy(&aucCmpCardBin[8],&aucRecordBuf[LastPos*uiReSize+3],3);
+
+	aucCmpCardBinO[0]=InData[0];
+	memcpy(&aucCmpCardBinO[1],&InData[7],6);
+	aucCmpCardBinO[7]=InData[13];
+	memcpy(&aucCmpCardBinO[8],&InData[3],3);
+
+	CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,11);
+Uart_Printf("\nCmpFlag222===%d\n",CmpFlag);
+	if(CmpFlag>0)
+		return -1;
+	if(CmpFlag==0)
+		return LastPos;	
+	
+	//二分法查找
+	while(FirstPos<=LastPos)
+	{
+		MidPos=(FirstPos+LastPos)/2;
+		memset(aucCmpCardBin,0,sizeof(aucCmpCardBin));	
+		aucCmpCardBin[0]=aucRecordBuf[MidPos*uiReSize];
+		aucCmpCardBin[1]=aucRecordBuf[MidPos*uiReSize+13];
+		memcpy(&aucCmpCardBin[2],&aucRecordBuf[MidPos*uiReSize+7],6);
+		memcpy(&aucCmpCardBin[8],&aucRecordBuf[MidPos*uiReSize+3],3);
+
+		aucCmpCardBinO[0]=InData[0];
+		aucCmpCardBinO[1]=InData[13];
+		memcpy(&aucCmpCardBinO[2],&InData[7],6);
+		memcpy(&aucCmpCardBinO[8],&InData[3],3);
+
+		CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,11);
+Uart_Printf("\nCmpFlag3333===%d\n",CmpFlag);
+		if(CmpFlag<0)
+			LastPos=MidPos-1;
+		else if(CmpFlag>0)
+			FirstPos=MidPos+1;
+		else if(CmpFlag==0)
+			return MidPos;
+	}
+	return -1;
+}
+
+void CardTable_MoveForward(int StartPos,int EndPos)
+{
+	int  i;
+	for(i=StartPos;i<=EndPos;i++)
+	{
+		memcpy(&aucRecordBuf[(i-1)*uiReSize],&aucRecordBuf[i*uiReSize],uiReSize);
+	}
+	return;
+}
+
+unsigned char Black_InsertCode(unsigned char *BlackCode)
+{
+	int instpos;
+	unsigned char aucBuf[60];
+	int i;
+
+#ifdef TEST
+		Uart_Printf("you enter insert Blackcode\n");
+		Uart_Printf("uiBlackNum=%d\n",iOldRecordNum);
+#endif		
+	//检测区位码空间是否已满
+	if((iOldRecordNum+1)>MAX_BLACK_NUM)
+		return	ERR_MAXBLACK;
+	if(iOldRecordNum==0)
+	{
+		instpos=0;
+	}else
+	{
+		instpos=Black_SearchIns(BlackCode);
+#ifdef TEST
+		Uart_Printf("instpos=%d\n",instpos);
+#endif		
+	}
+	if(instpos!=-1)
+	{
+		//向后移动
+		if(instpos!=iOldRecordNum)
+			Black_MoveBackward(instpos,iOldRecordNum-1);
+			
+		memcpy(&aucRecordBuf[instpos*uiReSize],BlackCode,uiReSize);
+
+		iOldRecordNum++;
+	}
+	return SUCCESS;
+}
+
+
+int Black_SearchIns(unsigned char *InData)
+{
+	   int FirstPos,LastPos,MidPos,CmpFlag;
+	unsigned char aucCmpCardBin[10],aucCmpCardBinO[10];
+	
+	FirstPos=0;
+	LastPos = iOldRecordNum-1;
+	
+	//先检查表头
+	aucCmpCardBin[0]=aucRecordBuf[0];
+	memcpy(&aucCmpCardBin[1],&aucRecordBuf[5],8);
+	aucCmpCardBinO[0]=InData[0];
+	memcpy(&aucCmpCardBinO[1],&InData[5],8);
+	CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,9);
+	if(CmpFlag<0)
+		return FirstPos;
+	if(CmpFlag==0)
+	{
+		memcpy(&aucRecordBuf[0],InData,uiReSize);	
+		
+		return -1;
+	}
+		
+	//检查表尾
+	aucCmpCardBin[0]=aucRecordBuf[LastPos*uiReSize];
+	memcpy(&aucCmpCardBin[1],&aucRecordBuf[LastPos*uiReSize+5],8);
+	aucCmpCardBinO[0]=InData[0];
+	memcpy(&aucCmpCardBinO[1],&InData[5],8);
+	CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,9);
+	if(CmpFlag>0)
+		return LastPos+1;
+	if(CmpFlag==0)
+	{
+		memcpy(&aucRecordBuf[LastPos*uiReSize],InData,uiReSize);	
+		
+		return -1;
+	}
+	
+	//二分查找	
+	while(FirstPos<=LastPos)
+	{
+		MidPos=(FirstPos+LastPos)/2;
+		aucCmpCardBin[0]=aucRecordBuf[MidPos*uiReSize];
+		memcpy(&aucCmpCardBin[1],&aucRecordBuf[MidPos*uiReSize+5],8);
+		aucCmpCardBinO[0]=InData[0];
+		memcpy(&aucCmpCardBinO[1],&InData[5],8);
+		CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,9);
+		if(CmpFlag>0)
+			FirstPos=MidPos+1;
+		else if(CmpFlag<0)
+			LastPos=MidPos-1;
+		if(CmpFlag==0)
+		{
+			memcpy(&aucRecordBuf[MidPos*uiReSize],InData,uiReSize);	
+			
+			return -1;
+		}
+	}
+	return LastPos+1;
+}
+
+void Black_MoveBackward(int StartPos,int EndPos)
+{
+	int i;
+	for(i=EndPos;i>=StartPos;i--)
+	{
+		memcpy(&aucRecordBuf[(i+1)*uiReSize],&aucRecordBuf[i*uiReSize],uiReSize);
+	}
+	return;
+}
+
+unsigned char Black_DeleteCode(unsigned char *ZoneCode)
+{
+	int delpos;
+#ifdef TEST
+		Uart_Printf("you enter Delelte zonecode\n");
+		Uart_Printf("uiZoneCodeNum=%d\n",iOldRecordNum);
+#endif		
+	if(iOldRecordNum==0)
+		return SUCCESS;
+	
+	delpos=Black_SearchDel(ZoneCode);
+#ifdef TEST
+		Uart_Printf("delpos=%d\n",delpos);
+#endif		
+	if(delpos!=-1)
+	{
+		if(delpos!=iOldRecordNum-1)
+			Black_MoveForward(delpos+1,iOldRecordNum-1);
+		
+		iOldRecordNum--;
+	}
+	return SUCCESS;
+}
+
+int Black_SearchDel(unsigned char *InData)
+{
+	  int FirstPos,LastPos,MidPos,CmpFlag;
+	unsigned char aucCmpCardBin[10],aucCmpCardBinO[10];
+	
+	FirstPos=0;
+	LastPos=iOldRecordNum-1;
+	
+	//先检查表头
+	aucCmpCardBin[0]=aucRecordBuf[0];
+	memcpy(&aucCmpCardBin[1],&aucRecordBuf[5],8);
+	aucCmpCardBinO[0]=InData[0];
+	memcpy(&aucCmpCardBinO[1],&InData[5],8);
+	CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,9);
+	if(CmpFlag==0)
+		return FirstPos;
+	if(CmpFlag<0)
+		return -1;
+	
+	//检查表尾
+	aucCmpCardBin[0]=aucRecordBuf[LastPos*uiReSize];
+	memcpy(&aucCmpCardBin[1],&aucRecordBuf[LastPos*uiReSize+5],8);
+	aucCmpCardBinO[0]=InData[0];
+	memcpy(&aucCmpCardBinO[1],&InData[5],8);
+	CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,9);
+	if(CmpFlag==0)	
+		return LastPos;
+	if(CmpFlag>0)
+		return -1;
+		
+	//二分查找
+	while(FirstPos<=LastPos)
+	{
+		MidPos=(FirstPos+LastPos)/2;
+		aucCmpCardBin[0]=aucRecordBuf[MidPos*uiReSize];
+		memcpy(&aucCmpCardBin[1],&aucRecordBuf[MidPos*uiReSize+5],8);
+		aucCmpCardBinO[0]=InData[0];
+		memcpy(&aucCmpCardBinO[1],&InData[5],8);
+		CmpFlag=memcmp(aucCmpCardBinO,aucCmpCardBin,9);
+		if(CmpFlag<0)
+			LastPos=MidPos-1;
+		else if(CmpFlag>0)
+			FirstPos=MidPos+1;
+		else if(CmpFlag==0)
+			return MidPos;
+	}
+	return -1;
+}
+
+void Black_MoveForward(int StartPos,int EndPos)
+{
+	int  i;
+	for(i=StartPos;i<=EndPos;i++)
+	{
+		memcpy(&aucRecordBuf[(i-1)*uiReSize],&aucRecordBuf[i*uiReSize],uiReSize);
+	}
+	return;
+}
+
+
+unsigned char Rate_InsertCode(unsigned char *ZoneCode)
+{
+	int instpos;
+	unsigned char aucBuf[60];
+	int i;
+
+#ifdef TEST
+		Uart_Printf("you enter insert Rate_InsertCode\n");
+		Uart_Printf("uiRateCodeNum=%d\n",iOldRecordNum);
+#endif		
+	//检测空间是否已满
+	if((iOldRecordNum+1)>MAX_RATE_NUM)
+		return	ERR_MAXRATE;
+	if(iOldRecordNum==0)
+	{
+		instpos=0;
+	}else
+	{
+		instpos=Rate_SearchIns(ZoneCode);
+#ifdef TEST
+		Uart_Printf("instpos=%d\n",instpos);
+#endif		
+	}
+	if(instpos!=-1)
+	{
+		//向后移动
+		if(instpos!=iOldRecordNum)
+			Rate_MoveBackward(instpos,iOldRecordNum-1);
+			
+		memcpy(&aucRecordBuf[instpos*uiReSize],ZoneCode,uiReSize);
+
+#ifdef TEST
+		Uart_Printf("\n");
+		Uart_Printf("\nInsert Rate Position:%d",instpos);
+		Uart_Printf("\nRate Code:");
+		for(i=0;i<21;i++)
+		{
+			Uart_Printf("%02x ",ZoneCode[i]);
+		}
+#endif 
+		iOldRecordNum++;
+	}
+	return SUCCESS;
+}
+
+
+int Rate_SearchIns(unsigned char *InData)
+{
+	   int FirstPos,LastPos,MidPos,CmpFlag;
+	unsigned char aucCmpZone[6],aucBuf[10];
+	
+	FirstPos=0;
+	LastPos = iOldRecordNum-1;
+	
+	//先检查表头
+	memset(aucCmpZone,0,sizeof(aucCmpZone));
+	memcpy(aucCmpZone,&aucRecordBuf[0],5);
+	CmpFlag=memcmp(InData,aucCmpZone,5);
+	if(CmpFlag<0)
+		return FirstPos;
+	if(CmpFlag==0)
+	{
+		memcpy(&aucRecordBuf[0],InData,uiReSize);	
+		return -1;
+	}
+		
+	//检查表尾
+	memset(aucCmpZone,0,sizeof(aucCmpZone));
+	memcpy(aucCmpZone,&aucRecordBuf[LastPos*uiReSize],5);
+	CmpFlag=memcmp(InData,aucCmpZone,5);
+	if(CmpFlag>0)
+		return LastPos+1;
+	if(CmpFlag==0)
+	{
+		memcpy(&aucRecordBuf[LastPos*uiReSize],InData,uiReSize);	
+		
+		return -1;
+	}
+	
+	//二分查找	
+	while(FirstPos<=LastPos)
+	{
+		MidPos=(FirstPos+LastPos)/2;
+		memset(aucCmpZone,0,sizeof(aucCmpZone));
+		memcpy(aucCmpZone,&aucRecordBuf[MidPos*uiReSize],5);
+		CmpFlag=memcmp(InData,aucCmpZone,5);
+		if(CmpFlag>0)
+			FirstPos=MidPos+1;
+		else if(CmpFlag<0)
+			LastPos=MidPos-1;
+		if(CmpFlag==0)
+		{
+			memcpy(&aucRecordBuf[MidPos*uiReSize],InData,uiReSize);	
+			
+			return -1;
+		}
+	}
+	return LastPos+1;
+}
+
+void Rate_MoveBackward(int StartPos,int EndPos)
+{
+	int i;
+	for(i=EndPos;i>=StartPos;i--)
+	{
+		memcpy(&aucRecordBuf[(i+1)*uiReSize],&aucRecordBuf[i*uiReSize],uiReSize);
+	}
+	return;
+}
+
+void Rate_MoveForward(int StartPos,int EndPos)
+{
+	int  i;
+	for(i=StartPos;i<=EndPos;i++)
+	{
+		memcpy(&aucRecordBuf[(i-1)*uiReSize],&aucRecordBuf[i*uiReSize],uiReSize);
+	}
+	return;
+}
+
+unsigned char Rate_DeleteCode(unsigned char *ZoneCode)
+{
+	int delpos;
+#ifdef TEST
+		Uart_Printf("you enter Rate_DeleteCode\n");
+		Uart_Printf("uiZoneCodeNum=%d\n",iOldRecordNum);
+#endif		
+	if(iOldRecordNum==0)
+		return SUCCESS;
+	
+	delpos=Rate_SearchDel(ZoneCode);
+#ifdef TEST
+		Uart_Printf("delpos=%d\n",delpos);
+#endif		
+	if(delpos!=-1)
+	{
+		if(delpos!=iOldRecordNum-1)
+			Rate_MoveForward(delpos+1,iOldRecordNum-1);
+		
+		iOldRecordNum--;
+	}
+	return SUCCESS;
+}
+
+int Rate_SearchDel(unsigned char *InData)
+{
+	  int FirstPos,LastPos,MidPos,CmpFlag;
+	unsigned char aucCmpZone[6];
+	
+	FirstPos=0;
+	LastPos=iOldRecordNum-1;
+	
+	//先检查表头
+	memset(aucCmpZone,0,sizeof(aucCmpZone));
+	memcpy(aucCmpZone,&aucRecordBuf[0],5);
+	CmpFlag=memcmp(InData,aucCmpZone,5);
+	if(CmpFlag==0)
+		return FirstPos;
+	if(CmpFlag<0)
+		return -1;
+	
+	//检查表尾
+	memset(aucCmpZone,0,sizeof(aucCmpZone));
+	memcpy(aucCmpZone,&aucRecordBuf[LastPos*uiReSize],5);	
+	CmpFlag=memcmp(InData,aucCmpZone,5);
+	if(CmpFlag==0)	
+		return LastPos;
+	if(CmpFlag>0)
+		return -1;
+		
+	//二分查找
+	while(FirstPos<=LastPos)
+	{
+		MidPos=(FirstPos+LastPos)/2;
+		memset(aucCmpZone,0,sizeof(aucCmpZone));
+		memcpy(aucCmpZone,&aucRecordBuf[MidPos*uiReSize],5);	
+		CmpFlag=memcmp(InData,aucCmpZone,5);
+		if(CmpFlag<0)
+			LastPos=MidPos-1;
+		else if(CmpFlag>0)
+			FirstPos=MidPos+1;
+		else if(CmpFlag==0)
+			return MidPos;
+	}
+	return -1;
+}
+
+unsigned char ZoneKey_Insert(uchar *aucIndata)
+{
+	int i,ioffset,j;
+	uchar ucKeyArrey,ucResult=SUCCESS;
+	ioffset=0;
+	Uart_Printf("aucIndata:\n");
+	for(j=0;j<72;j++)
+		Uart_Printf("%02x ",aucIndata[j]);
+	Uart_Printf("\n");
+	for(i=0;i<15;i++)
+	{
+		if(aucIndata[0]=='1')
+		{
+			if(!memcmp(DataSave0.ChangeParamData.aucIssueKeyIndex[i],&aucIndata[1],3))
+			{
+				memset(DataSave0.ChangeParamData.aucIssueKeyIndex[i],0,3);
+				XDATA_Write_Vaild_File(DataSaveChange);
+			}
+		}
+		else
+		{
+			Uart_Printf("Issuekeyindex[%d]:",i);
+			for(j=0;j<3;j++)
+				Uart_Printf("%02x ",DataSave0.ChangeParamData.aucIssueKeyIndex[i][j]);
+			Uart_Printf("\n");
+			if(!memcmp(DataSave0.ChangeParamData.aucIssueKeyIndex[i],"\x00\x00\x00",3)
+			||(!memcmp(DataSave0.ChangeParamData.aucIssueKeyIndex[i],&aucIndata[1],3)))
+			{
+				Uart_Printf("enter i=%d\n",i);
+				memcpy(DataSave0.ChangeParamData.aucIssueKeyIndex[i],&aucIndata[1],3);
+				XDATA_Write_Vaild_File(DataSaveChange);
+				ucKeyArrey=KEYARRAY_PURSECARD5+i;
+				Uart_Printf("uckeyarray=%02x,\n",ucKeyArrey);
+				if(aucIndata[4]==CARD_CPU)
+				{
+					ucResult=LoadKey(&aucIndata[6],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_PURCHASEKEY);
+					ucResult=LoadKey(&aucIndata[14],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_PURCHASEKEY+1);
+					ucResult=CheckKeyVeriCode(&aucIndata[22],ucKeyArrey,
+											KEYINDEX_PURSECARD0_PURCHASEKEY);
+					if(ucResult!=SUCCESS)
+					{
+					Uart_Printf("CheckKeyVeriCodeErr6\n");
+						return ucResult;	
+					}
+					/*ucResult=LoadKey(&aucIndata[132],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_APPCTRLKEY);
+                                      ucResult=LoadKey(&aucIndata[140],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_APPCTRLKEY+1);
+					ucResult=CheckKeyVeriCode(&aucIndata[148],ucKeyArrey,
+											KEYINDEX_PURSECARD0_APPCTRLKEY);
+					if(ucResult!=SUCCESS)
+					{
+					Uart_Printf("CheckKeyVeriCodeErr7\n");
+						return ucResult;	
+					}
+					ucResult=LoadKey(&aucIndata[150],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_APPMACKEY);
+                                      ucResult=LoadKey(&aucIndata[158],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_APPMACKEY+1);
+					ucResult=CheckKeyVeriCode(&aucIndata[166],ucKeyArrey,
+											KEYINDEX_PURSECARD0_APPMACKEY);
+					if(ucResult!=SUCCESS)
+					{
+					Uart_Printf("CheckKeyVeriCodeErr8\n");
+						return ucResult;	
+					}*/
+					ucResult=LoadKey(&aucIndata[186],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_UPDATEKEY);
+                                      ucResult=LoadKey(&aucIndata[194],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_UPDATEKEY+1);
+					ucResult=CheckKeyVeriCode(&aucIndata[202],ucKeyArrey,
+											KEYINDEX_PURSECARD0_UPDATEKEY);
+					if(ucResult!=SUCCESS)
+					{
+					Uart_Printf("CheckKeyVeriCodeErr9\n");
+						return ucResult;	
+					}			
+				}
+				else	
+				{
+					//卡校验密钥1
+					ucResult=LoadKey(&aucIndata[6],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_CRCKEY);
+                                      ucResult=LoadKey(&aucIndata[14],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_CRCKEY+1);
+										 
+                                         //比对校验码	
+					ucResult=CheckKeyVeriCode(&aucIndata[22],ucKeyArrey,
+											KEYINDEX_PURSECARD1_CRCKEY);
+					if(ucResult!=SUCCESS)
+					{
+				Uart_Printf("CheckKeyVeriCodeErra\n");
+						return ucResult;	
+					}
+					
+					//信息扇区KeyA密钥
+					ucResult=LoadKey(&aucIndata[24],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_MESSAGEKEYA);
+					ucResult=LoadKey(&aucIndata[32],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_MESSAGEKEYA+1);
+					
+                                         //比对校验码	
+					ucResult=CheckKeyVeriCode(&aucIndata[40],ucKeyArrey,
+											KEYINDEX_PURSECARD1_MESSAGEKEYA);
+					if(ucResult!=SUCCESS)
+					{
+				Uart_Printf("CheckKeyVeriCodeErrb\n");
+						return ucResult;	
+					}
+					//消费KeyA密钥
+					ucResult=LoadKey(&aucIndata[42],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_PURCHASEKEY);
+					ucResult=LoadKey(&aucIndata[50],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_PURCHASEKEY+1);
+					
+                                         //比对校验码	
+					ucResult=CheckKeyVeriCode(&aucIndata[58],ucKeyArrey,
+											KEYINDEX_PURSECARD1_PURCHASEKEY);
+					if(ucResult!=SUCCESS)
+					{
+				Uart_Printf("CheckKeyVeriCodeErrb.5\n");
+						return ucResult;	
+					}
+					 if(aucIndata[4]==CARD_M1)
+					 {
+						/*充资MAC密钥*/
+						ucResult=LoadKey(&aucIndata[60],ucKeyArrey,
+										KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_LOADMACKEY);
+						ucResult=LoadKey(&aucIndata[68],ucKeyArrey,
+										KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_LOADMACKEY+1);
+						
+	                                         //比对校验码	
+						ucResult=CheckKeyVeriCode(&aucIndata[76],ucKeyArrey,
+												KEYINDEX_PURSECARD1_LOADMACKEY);
+						if(ucResult!=SUCCESS)
+						{
+							return ucResult;	
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
+	return ucResult;
+}
+
+unsigned char WKZoneKey_Insert(uchar *aucIndata)
+{
+	int i,ioffset,j;
+	uchar ucKeyArrey,ucResult=SUCCESS;
+	ioffset=0;
+	Uart_Printf("aucIndata:\n");
+	for(j=0;j<72;j++)
+		Uart_Printf("%02x ",aucIndata[j]);
+	Uart_Printf("\n");
+	for(i=15;i<18;i++)
+	{
+		if(aucIndata[0]=='1')
+		{
+			if(!memcmp(DataSave0.ChangeParamData.aucIssueKeyIndex[i],&aucIndata[1],3))
+			{
+				memset(DataSave0.ChangeParamData.aucIssueKeyIndex[i],0,3);
+				XDATA_Write_Vaild_File(DataSaveChange);
+			}
+		}
+		else
+		{
+			Uart_Printf("Issuekeyindex[%d]:",i);
+			for(j=0;j<3;j++)
+				Uart_Printf("%02x ",DataSave0.ChangeParamData.aucIssueKeyIndex[i][j]);
+			Uart_Printf("\n");
+			if(!memcmp(DataSave0.ChangeParamData.aucIssueKeyIndex[i],"\x00\x00\x00",3)
+			||(!memcmp(DataSave0.ChangeParamData.aucIssueKeyIndex[i],&aucIndata[1],3)))
+			{
+				Uart_Printf("enter i=%d\n",i);
+				memcpy(DataSave0.ChangeParamData.aucIssueKeyIndex[i],&aucIndata[1],3);
+				XDATA_Write_Vaild_File(DataSaveChange);
+				ucKeyArrey=KEYARRAY_PURSECARD5+i;
+				Uart_Printf("uckeyarray=%02x,\n",ucKeyArrey);
+				if(aucIndata[4]==CARD_CPU)
+				{
+					ucResult=LoadKey(&aucIndata[6],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_PURCHASEKEY);
+					ucResult=LoadKey(&aucIndata[14],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_PURCHASEKEY+1);
+					ucResult=CheckKeyVeriCode(&aucIndata[22],ucKeyArrey,
+											KEYINDEX_PURSECARD0_PURCHASEKEY);
+					if(ucResult!=SUCCESS)
+					{
+					Uart_Printf("CheckKeyVeriCodeErr6\n");
+						return ucResult;	
+					}
+					/*ucResult=LoadKey(&aucIndata[132],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_APPCTRLKEY);
+                                      ucResult=LoadKey(&aucIndata[140],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_APPCTRLKEY+1);
+					ucResult=CheckKeyVeriCode(&aucIndata[148],ucKeyArrey,
+											KEYINDEX_PURSECARD0_APPCTRLKEY);
+					if(ucResult!=SUCCESS)
+					{
+					Uart_Printf("CheckKeyVeriCodeErr7\n");
+						return ucResult;	
+					}
+					ucResult=LoadKey(&aucIndata[150],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_APPMACKEY);
+                                      ucResult=LoadKey(&aucIndata[158],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_APPMACKEY+1);
+					ucResult=CheckKeyVeriCode(&aucIndata[166],ucKeyArrey,
+											KEYINDEX_PURSECARD0_APPMACKEY);
+					if(ucResult!=SUCCESS)
+					{
+					Uart_Printf("CheckKeyVeriCodeErr8\n");
+						return ucResult;	
+					}*/
+					ucResult=LoadKey(&aucIndata[186],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_UPDATEKEY);
+                                      ucResult=LoadKey(&aucIndata[194],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD0_UPDATEKEY+1);
+					ucResult=CheckKeyVeriCode(&aucIndata[202],ucKeyArrey,
+											KEYINDEX_PURSECARD0_UPDATEKEY);
+					if(ucResult!=SUCCESS)
+					{
+					Uart_Printf("CheckKeyVeriCodeErr9\n");
+						return ucResult;	
+					}			
+				}
+				else	
+				{
+					//卡校验密钥1
+					ucResult=LoadKey(&aucIndata[6],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_CRCKEY);
+                                      ucResult=LoadKey(&aucIndata[14],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_CRCKEY+1);
+										 
+                                         //比对校验码	
+					ucResult=CheckKeyVeriCode(&aucIndata[22],ucKeyArrey,
+											KEYINDEX_PURSECARD1_CRCKEY);
+					if(ucResult!=SUCCESS)
+					{
+				Uart_Printf("CheckKeyVeriCodeErra\n");
+						return ucResult;	
+					}
+					
+					//信息扇区KeyA密钥
+					ucResult=LoadKey(&aucIndata[24],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_MESSAGEKEYA);
+					ucResult=LoadKey(&aucIndata[32],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_MESSAGEKEYA+1);
+					
+                                         //比对校验码	
+					ucResult=CheckKeyVeriCode(&aucIndata[40],ucKeyArrey,
+											KEYINDEX_PURSECARD1_MESSAGEKEYA);
+					if(ucResult!=SUCCESS)
+					{
+				Uart_Printf("CheckKeyVeriCodeErrb\n");
+						return ucResult;	
+					}
+					//消费KeyA密钥
+					ucResult=LoadKey(&aucIndata[42],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_PURCHASEKEY);
+					ucResult=LoadKey(&aucIndata[50],ucKeyArrey,
+									KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_PURCHASEKEY+1);
+					
+                                         //比对校验码	
+					ucResult=CheckKeyVeriCode(&aucIndata[58],ucKeyArrey,
+											KEYINDEX_PURSECARD1_PURCHASEKEY);
+					if(ucResult!=SUCCESS)
+					{
+				Uart_Printf("CheckKeyVeriCodeErrb.5\n");
+						return ucResult;	
+					}
+					 if(aucIndata[4]==CARD_M1)
+					 {
+						/*充资MAC密钥*/
+						ucResult=LoadKey(&aucIndata[60],ucKeyArrey,
+										KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_LOADMACKEY);
+						ucResult=LoadKey(&aucIndata[68],ucKeyArrey,
+										KEYINDEX_PURSECARD_MASTERKEY,KEYINDEX_PURSECARD1_LOADMACKEY+1);
+						
+	                                         //比对校验码	
+						ucResult=CheckKeyVeriCode(&aucIndata[76],ucKeyArrey,
+												KEYINDEX_PURSECARD1_LOADMACKEY);
+						if(ucResult!=SUCCESS)
+						{
+							return ucResult;	
+						}
+					}
+				}
+				break;
+			}
+		}
+	}
+	return ucResult;
+}
+

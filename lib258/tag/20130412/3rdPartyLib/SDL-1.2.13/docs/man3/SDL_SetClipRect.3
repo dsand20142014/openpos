@@ -1,0 +1,30 @@
+#else
+# ifdef __REDIRECT
+extern FILE *__REDIRECT (fopen, (__const char *__restrict __filename,
+				 __const char *__restrict __modes), fopen64)
+  __wur;
+extern FILE *__REDIRECT (freopen, (__const char *__restrict __filename,
+				   __const char *__restrict __modes,
+				   FILE *__restrict __stream), freopen64)
+  __wur;
+# else
+#  define fopen fopen64
+#  define freopen freopen64
+# endif
+#endif
+__END_NAMESPACE_STD
+#ifdef __USE_LARGEFILE64
+extern FILE *fopen64 (__const char *__restrict __filename,
+		      __const char *__restrict __modes) __wur;
+extern FILE *freopen64 (__const char *__restrict __filename,
+			__const char *__restrict __modes,
+			FILE *__restrict __stream) __wur;
+#endif
+
+#ifdef	__USE_POSIX
+/* Create a new stream that refers to an existing system file descriptor.  */
+extern FILE *fdopen (int __fd, __const char *__modes) __THROW __wur;
+#endif
+
+#ifdef	__USE_GNU
+/* Create a new str

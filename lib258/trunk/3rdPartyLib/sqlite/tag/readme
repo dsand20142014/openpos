@@ -1,0 +1,13 @@
+arm-linux-xxx-gcc -I ./ -L ./ -o test test.c -lsqlite3
+
+
+$./test xyz.db "create table tbl0(name varchar(10), number smallint);"
+$./test xyz.db "insert into tbl0 values('cyc', 1);"
+$./test xyz.db "insert into tbl0 values('dzy', 2);"
+$./test xyz.db "select * from tbl0;"
+
+name = cyc
+number = 1
+ 
+name = dzy
+number = 2

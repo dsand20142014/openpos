@@ -1,0 +1,9 @@
+#ifndef			_QINITAPP_H
+#define			_QINITAPP_H
+
+
+BOOL	QINITAPP_CheckInitMandaData(void);
+UCHAR	QPDOLDATA[QMAXPDOLLEN],QPDOLDATALen;
+UCHAR	QINTIAPP_GPO(void);
+
+#endif

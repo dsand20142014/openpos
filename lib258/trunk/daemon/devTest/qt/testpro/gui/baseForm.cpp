@@ -1,0 +1,106 @@
+#include "baseForm.h"
+
+extern void _print(char *fmt,...);
+
+/*
+ * Base Form - A basic widget with a title and buttons on bottom
+ * All forms with a title and buttons must be based on BaseForm.
+ */
+BaseForm::BaseForm(const QString & text, QWidget *parent) :
+    QWidget(parent,Qt::FramelessWindowHint)
+{
+    screenWidth = qApp->desktop()->screen(0)->width();
+    screenHeight = qApp->desktop()->screen(0)->height();
+
+    int titleHeight = 25;
+    int topbarHeight = 20; // statusbar height
+
+    setAttribute(Qt::WA_DeleteOnClose);
+    resize(screenWidth, screenHeight);
+
+    QPalette palette;
+    palette.setBrush(QPalette::Background, QBrush(QPixmap("/daemon/image/thirdback.png")));
+    setPalette(palette);
+    setAutoFillBackground(true);
+
+     if (!text.isNull())
+     {
+        title = new QLabel(text);
+        title->setAlignment(Qt::AlignCenter);
+        title->setFixedHeight(titleHeight);
+        title->setObjectName(tr("title"));
+     }
+
+    btnExit = new Button(tr("Exit"), 1);
+    btnExit->setObjectName("btnExit");
+    connect(btnExit, SIGNAL(clicked()),this, SLOT(close()));
+    btnOk = new Button(tr("Ok"));
+    btnOk->hide();
+
+    layout = new QVBoxLayout();
+    layout->setAlignment(Qt::AlignCenter);
+    layout->setContentsMargins(10, 0, 10, 0);
+
+    btnlayout = new QHBoxLayout();
+    btnlayout->setContentsMargins(10, 5, 10, 10);
+    btnlayout->addWidget(btnExit,1,Qt::AlignBottom);
+
+    informationBox = new QLabel(this);
+    informationBox->setObjectName("InfoLabel");
+    informationBox->hide();
+    informationBox->setAlignment(Qt::AlignCenter);
+    informationBox->setFixedSize((210*screenWidth)/240,(50*screenHeight)/320);
+    informationBox->setGeometry((screenWidth-informationBox->width())/2,(screenHeight-informationBox->height())/2,informationBox->width(),informationBox->height());
+
+
+    QVBoxLayout *lt = new QVBoxLayout();
+    lt->setMargin(0);
+    lt->setSpacing(10);
+    lt->addSpacerItem(new QSpacerItem(10, topbarHeight+2));
+    if (!text.isNull()) lt->addWidget(title);
+
+    lt->addLayout(layout);
+    lt->addLayout(btnlayout);
+    lt->setAlignment(btnlayout, Qt::AlignBottom|Qt::AlignCenter);
+    setLayout(lt);
+}
+
+BaseForm::~BaseForm()
+{
+
+}
+
+
+void BaseForm::showInforText(QString text,bool moveFLag,int w ,int h )
+{
+    informationBox->setText(text);
+    informationBox->raise();
+    informationBox->show();
+
+    if(moveFLag)
+       informationBox->move(w,h);
+}
+
+void BaseForm::keyPressEvent(QKeyEvent *e)
+{
+
+    switch(e->key())
+    {
+    case Qt::Key_Enter:{
+        _print(" emit btn ok click*********\n");
+
+       btnOk->click();
+
+       }
+        break;
+
+    case Qt::Key_Escape:{
+        btnExit->click();
+        _print("emit btn exit click*********\n");
+
+       }
+        break;
+
+    }
+
+}

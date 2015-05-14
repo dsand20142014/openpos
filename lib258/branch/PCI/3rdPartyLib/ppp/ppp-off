@@ -1,0 +1,16 @@
+#!/bin/sh
+if [ -r /var/run/ppp0.pid ]; then
+kill -INT `cat /var/run/ppp0.pid`
+fi
+if [ ! "$?" = "0" ]; then
+	rm -f /var/run/ppp0.pid
+	echo "ERROR: close ppp0 failed!"
+	exit 1
+fi
+
+if [ -f /var/lock//LCK..ttymxc1 ]; then
+/bin/rm -f /var/lock/LCK..ttymxc1
+fi
+
+echo "SUCCESS: ppp0 was closed!"
+exit 0

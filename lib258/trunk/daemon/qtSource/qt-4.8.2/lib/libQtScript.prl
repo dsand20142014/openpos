@@ -1,0 +1,7 @@
+QMAKE_PRL_BUILD_DIR = /opt/freescale/qt-everywhere-opensource-src-4.8.2/src/script/
+QMAKE_PRO_INPUT = script.pro
+QMAKE_PRL_TARGET = libQtScript.so.4.8.2
+QMAKE_PRL_DEFINES = QT_SHARED
+QMAKE_PRL_CONFIG = lex yacc uic resources qt release incremental link_prl def_files_disabled no_mocdepend release stl qt_no_framework cross_compile release shared dll embedded largefile stl precompile_header exceptions_off dylib create_prl link_prl depend_includepath QTDIR_build qt_install_headers qt depend_includepath qmake_cache target_qt hide_symbols create_pc create_libtool explicitlib building-libs standalone_package depend_includepath moc thread shared dll
+QMAKE_PRL_VERSION = 4.8.2
+QMAKE_PRL_LIBS = -L/opt/freescale/ltib/rootfs/usr/lib -L/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/lib  -lQtCore -L/opt/freescale/ltib/rootfs/usr/lib -L/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/lib -lpthread 

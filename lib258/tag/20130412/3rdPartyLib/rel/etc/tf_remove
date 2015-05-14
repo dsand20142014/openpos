@@ -1,0 +1,4 @@
+#!/bin/sh
+cd
+umount /mnt/tf
+rmdir /mnt/tf

@@ -1,0 +1,1 @@
+./configure --target=arm-linux --host=arm-linux --build=i386-pc-linux-gnu --prefix=/usr/testlib --enable-pulseaudio=no --disable-arts --disable-esd --disable-nasm --enable-video-fbcon=yes --enable-video-directfb=no --enable-video-qtopia=no --enable-video-x11=no

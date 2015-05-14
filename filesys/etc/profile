@@ -1,0 +1,21 @@
+ulimit -S -c 0 > /dev/null 2>&1
+
+USER="`id -un`"
+LOGNAME=$USER
+PS1='SAND# '
+PATH=$PATH:/usr/local/bin
+
+HOSTNAME=`/bin/hostname`
+export USER LOGNAME PS1 PATH LD_LIBRARY_PATH
+
+export TSLIB_TSDEVICE=/dev/event1
+
+#QTDIR=/opt/qte4
+QTDIR=/opt/qtlib-4.8.2
+LD_LIBRARY_PATH=${QTDIR}/lib:$LD_LIBRARY_PATH
+export QWS_MOUSE_PROTO=Tslib:/dev/event1
+export QWS_KEYBOARD=Mx25_4x5:/dev/input/keyboard0
+export QT_QWS_FONTDIR=/fonts
+export QT_PLUGIN_PATH=$QTDIR/plugins/
+export QWS_DISPLAY=Transformed:Rot90
+export QWS_SIZE="320x240"

@@ -1,0 +1,58 @@
+ME) \
+  __libc_maybe_call (__pthread_mutex_trylock, (&(NAME)), 0)
+#endif
+#define __libc_rwlock_tryrdlock(NAME) \
+  __libc_maybe_call (__pthread_rwlock_tryrdlock, (&(NAME)), 0)
+#define __libc_rwlock_trywrlock(NAME) \
+  __libc_maybe_call (__pthread_rwlock_trywrlock, (&(NAME)), 0)
+
+/* Try to lock the recursive named lock variable.  */
+#if defined _LIBC && (!defined NOT_IN_libc || defined IS_IN_libpthread)
+# if __OPTION_EGLIBC_BIG_MACROS != 1
+/* EGLIBC: Declare wrapper function for a big macro if either
+   !__OPTION_EGLIBC_BIG_MACROS or we are using a back door from
+   small-macros-fns.c (__OPTION_EGLIBC_BIG_MACROS == 2).  */
+extern int __libc_lock_trylock_recursive_fn (__libc_lock_recursive_t *);
+libc_hidden_proto (__libc_lock_trylock_recursive_fn);
+# endif /* __OPTION_EGLIBC_BIG_MACROS != 1 */
+# if __OPTION_EGLIBC_BIG_MACROS
+# define __libc_lock_trylock_recursive(NAME) \
+  ({									      \
+    int result = 0;							      \
+    void *self = THREAD_SELF;						      \
+    if ((NAME).owner != self)						      \
+      {									      \
+	if (lll_trylock ((NAME).lock) == 0)				      \
+	  {								      \
+	    (NAME).owner = self;					      \
+	    (NAME).cnt = 1;						      \
+	  }								      \
+	else								      \
+	  result = EBUSY;						      \
+      }									      \
+    else								      \
+      ++(NAME).cnt;							      \
+    result;								      \
+  })
+# else
+# define __libc_lock_trylock_recursive(NAME) \
+  __libc_lock_trylock_recursive_fn (&(NAME))
+# endif /* __OPTION_EGLIBC_BIG_MACROS */
+#else
+# define __libc_lock_trylock_recursive(NAME) \
+  __libc_maybe_call (__pthread_mutex_trylock, (&(NAME)), 0)
+#endif
+
+#define __rtld_lock_trylock_recursive(NAME) \
+  __libc_maybe_call (__pthread_mutex_trylock, (&(NAME).mutex), 0)
+
+/* Unlock the named lock variable.  */
+#if defined _LIBC && (!defined NOT_IN_libc || defined IS_IN_libpthread)
+# if __OPTION_EGLIBC_BIG_MACROS != 1
+/* EGLIBC: Declare wrapper function for a big macro if either
+   !__OPTION_EGLIBC_BIG_MACROS, or we are using a back door from
+   small-macros-fns.c (__OPTION_EGLIBC_BIG_MACROS == 2).  */
+extern void __libc_lock_unlock_fn (__libc_lock_t *);
+libc_hidden_proto (__libc_lock_unlock_fn);
+# endif /* __OPTION_EGLIBC_BIG_MACROS != 1 */
+# if __OPTION_EGL

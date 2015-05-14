@@ -1,0 +1,14 @@
+#/etc/ppp/gprs-connect-chat
+# chat script for China Mobile, used HuaWei GTM900-B GPRS module.
+TIMEOUT         5
+ABORT           "DELAYED"
+ABORT           "BUSY"
+ABORT           "ERROR"
+ABORT           "NO DIALTONE"
+ABORT           "NO CARRIER"
+''              \rAT
+OK                ATS0=0
+OK              ATE0V1
+OK              AT+CGDCONT=1,"IP","GZDXCMDA"
+OK              ATDT*99***1#
+CONNECT         ''

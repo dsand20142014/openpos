@@ -1,0 +1,12 @@
+
+#define	DATAGLO
+#include <Global.h>
+#include <semaphore.h>
+unsigned char ProgressFlag;
+
+unsigned char g_ThreadFlag;
+
+sem_t binSem1;
+sem_t binSem2;
+#undef DATAGLO
+

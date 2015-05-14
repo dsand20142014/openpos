@@ -1,0 +1,19 @@
+prefix=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/_install
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include/QtSql
+qt_config=lex yacc warn_on uic resources qt warn_on release incremental link_prl def_files_disabled no_mocdepend release stl qt_no_framework cross_compile release shared dll embedded largefile stl precompile_header exceptions_off dylib create_prl link_prl depend_includepath QTDIR_build qt_install_headers qt warn_on depend_includepath qmake_cache target_qt hide_symbols create_pc create_libtool explicitlib moc thread shared dll
+moc_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/moc
+uic_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/uic
+rcc_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/rcc
+lupdate_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/lupdate
+lrelease_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/lrelease
+
+Name: Qtsql
+Description: Qtsql Library
+Version: 4.8.2
+Libs: -L${libdir} -lQtSql 
+Libs.private: -L/opt/freescale/ltib/rootfs/usr/lib -L/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/_install/lib  -lQtCore -L/opt/freescale/ltib/rootfs/usr/lib -L/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/_install/lib -lpthread   
+Cflags: -DQT_SHARED -I/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/_install/include -I${includedir}
+Requires: QtCore
+

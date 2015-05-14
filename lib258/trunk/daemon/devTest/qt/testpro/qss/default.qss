@@ -1,0 +1,91 @@
+QLabel#title {
+    font: bold 14px;
+    color: white;
+}
+QLabel#inputLabel {
+    border-style: solid;
+    border-width: 2px;
+    border-radius: 4px;
+    border-color: gray;
+    background-color: #f0f0f0;
+}
+QLabel#signLabel {
+    border-style: solid;    
+    border-width: 2px;      
+    border-radius: 4px;     
+    border-color: gray;        
+    background-color: white;            
+}  
+
+QFrame#MyIpAddrEdit {
+    background-color: white;
+    border-style: inset;
+    border-width: 2px;
+    border-color: gray;
+    border-radius: 4px
+}
+
+QMessageBox {
+    background-color: rgb(165, 247, 247); color:white;
+}
+
+QListWidget::item
+{	color:black;
+	height:40px; 
+	border-bottom:1px solid black;
+} 
+
+QTreeView::item {
+    height: 22px;
+    font: 13px;
+}
+
+QListView::item:selected 
+{
+      padding:-2px;
+      color:white;
+      background-color:rgb(0,24,59);
+}
+
+QComboBox:on
+{
+	padding:-1px;
+}
+
+QComboBox::item:selected:active
+{
+	padding:-1px;
+	backgound-color: yellow;	
+}
+
+QTextEdit
+{	border-style: inset;
+        border-width: 2px;
+        border-radius: 4px;
+        border-color: gray;
+        background-color: #f0f0f0;
+}
+
+QPushButton {
+        background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgb(175, 175, 175), stop:0.4 rgb(51, 70, 98), stop:0.5 rgb(0,24,59), stop:1 rgb(0,24,59));
+        color: white; font: bold 15px;
+        border-radius: 4px; padding: 6px;
+        border-width: 2px; border-color: #e0e0e0;
+} 
+	
+QPushButton:pressed {
+        background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgb(0,24,59), stop:0.5 rgb(0,24,59), stop:0.55 rgb(51, 70, 98), stop:1 rgb(145, 155, 171));
+        color: white; font: bold 15px;
+        border-radius: 4px; padding: 6px;
+        border-width: 2px; border-color: #dfdfdf;
+}
+
+QPushButton:disabled {
+	background-color: #808080; color: #606060
+} 
+
+QProgressBar::chunk {
+     background-color: rgb(0,255,0);
+}

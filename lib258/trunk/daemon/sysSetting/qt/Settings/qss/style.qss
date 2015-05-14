@@ -1,0 +1,18 @@
+QDialog{
+    background-image: url(./image/lanse.png);
+}
+
+QPushButton{
+	background-color:rgb(255,127,0);
+	color:black;
+}
+
+QGraphicsView{
+    background-image: url(./image/lanse.png);
+}
+
+QPushButton:hover{
+	background-color:yellow;	
+}
+
+

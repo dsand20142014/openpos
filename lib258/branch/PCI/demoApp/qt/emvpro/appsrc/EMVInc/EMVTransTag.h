@@ -1,0 +1,64 @@
+#ifndef		_EMVTRANSTAG_H
+#define		_EMVTRANSTAG_H
+
+#ifndef		EMVTRANSTAG_DATA
+#define		EMVTRANSTAG_DATA		extern
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include	<TypeDef.h>
+#include	<EMVDef.h>
+#include	<EMVTag.h>
+
+#define		MAXEMVTRANSTAGNUMS		200
+#define		MAXEMVTRANSTAGBUFFLEN			2048*2
+
+
+#define		EMVTRANSTAGERR_SUCCESS		0x00
+#define		EMVTRANSTAGERR_PARAM			0x01
+#define		EMVTRANSTAGERR_OVERFLOW		0x02
+#define		EMVTRANSTAGERR_REDUNDANT		0x03
+#define		EMVTRANSTAGERR_TAGNOTFIND	0x04
+
+
+typedef		enum {ALLPHASETAG,PSEPHASETAG,ENTRYPHASETAG,ADFPHASETAG,INITAPPPHASETAG,
+				  RECORDPHASETAG,DATAAUTHPHASETAG,FIRSTGACPHASETAG,SECONDGACPHASETAG,ISSUREPHASETAG}TAGPHASE;
+
+typedef		struct
+{
+	unsigned char 	aucTag[2];
+	unsigned short 	uiLen;
+	unsigned char   *pTagValue;
+	TAGPHASE		enTagPhase;
+}EMVTRANSTAGDATA;
+
+typedef		struct
+{
+	USHORT					uiTagNums;
+	EMVTRANSTAGDATA			EMVTransTagData[MAXEMVTRANSTAGNUMS];
+	unsigned short			uiTagBuffLen;
+	unsigned char 			aucTagBuff[MAXEMVTRANSTAGBUFFLEN];   //TAG BUFF 
+}EMVTRANSTAG;
+
+
+EMVTRANSTAG_DATA	EMVTRANSTAG 	EMVTransTag;
+
+void	EMVTRANSTAG_Init(void);
+UCHAR	EMVTRANSTAG_CopyICDataInfo(ICDATAINFO *pICDataInfo,TAGPHASE enTagPhase);
+EMVTRANSTAGDATA * EMVTRANSTAG_SearchTag(TAGPHASE enTagPhase,unsigned char *paucTag);
+UCHAR EMVTRANSTAG_SetTag(TAGPHASE enTagPhase,unsigned char *paucTag,unsigned char *pValue,USHORT uiValueLen);
+DATAPROPERTY *	EMVTRANSTAG_TagMeaning(PUCHAR paucTag);
+UCHAR	EMVTRANSTAG_ICTransDataPack(PUCHAR  pTransDOL,UCHAR ucTransDOLLen,PUCHAR  pTransData,USHORT *puiTransDATALen);
+UCHAR	EMVTRANSTAG_DDOLProcess(PUCHAR pDDOL,UCHAR ucDDOLLen,PUCHAR pDDOLData,PUCHAR pucDDOLDataLen);
+BOOL	EMVTRANSTAG_CheckTDOL(PUCHAR pCDOL,UCHAR ucCDOLLen);
+UCHAR	EMVTRANSTAG_TDOLProcess(PUCHAR  pCDOL,UCHAR ucCDOLLen);
+UCHAR	EMVTRANSTAG_CDOLProcess(PUCHAR pCDOL,UCHAR ucCDOLLen,PUCHAR pCDOLData,PUCHAR pucCDOLDataLen);
+UCHAR	EMVTRANSTAG_DOLProcess(PUCHAR  pDOL,UCHAR ucDOLLen,PUCHAR  pDOLData,UCHAR *pucDOLDATALen);
+UCHAR	EMVTRANSTAG_GetTagValue(TAGPHASE enTagPhase,PUCHAR pucTag,PUCHAR pucBuff,USHORT * puiBuffLen);
+
+#ifdef __cplusplus
+}
+#endif
+#endif

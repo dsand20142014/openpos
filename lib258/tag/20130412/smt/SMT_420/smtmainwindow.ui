@@ -1,0 +1,1005 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SMTMainWindow</class>
+ <widget class="QMainWindow" name="SMTMainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1200</width>
+    <height>656</height>
+   </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>900</width>
+    <height>500</height>
+   </size>
+  </property>
+  <property name="windowTitle">
+   <string/>
+  </property>
+  <property name="windowIcon">
+   <iconset resource="resource.qrc">
+    <normaloff>:/resource/ico/logo.png</normaloff>:/resource/ico/logo.png</iconset>
+  </property>
+  <widget class="QWidget" name="centralWidget">
+   <widget class="QTabWidget" name="tabMain">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>0</y>
+      <width>1202</width>
+      <height>581</height>
+     </rect>
+    </property>
+    <property name="sizePolicy">
+     <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+      <horstretch>0</horstretch>
+      <verstretch>0</verstretch>
+     </sizepolicy>
+    </property>
+    <property name="minimumSize">
+     <size>
+      <width>0</width>
+      <height>0</height>
+     </size>
+    </property>
+    <property name="currentIndex">
+     <number>0</number>
+    </property>
+    <widget class="QWidget" name="tabSerialPort">
+     <attribute name="title">
+      <string>Serial COM</string>
+     </attribute>
+     <widget class="QPlainTextEdit" name="plnEditSerialPort">
+      <property name="enabled">
+       <bool>true</bool>
+      </property>
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>256</width>
+        <height>192</height>
+       </rect>
+      </property>
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="font">
+       <font>
+        <family>Lucida Console</family>
+        <pointsize>10</pointsize>
+        <weight>75</weight>
+        <bold>true</bold>
+       </font>
+      </property>
+      <property name="focusPolicy">
+       <enum>Qt::WheelFocus</enum>
+      </property>
+      <property name="contextMenuPolicy">
+       <enum>Qt::DefaultContextMenu</enum>
+      </property>
+      <property name="acceptDrops">
+       <bool>false</bool>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">background-color: rgb(0, 0, 0);
+color: rgb(0, 249, 0);</string>
+      </property>
+      <property name="verticalScrollBarPolicy">
+       <enum>Qt::ScrollBarAlwaysOff</enum>
+      </property>
+      <property name="horizontalScrollBarPolicy">
+       <enum>Qt::ScrollBarAlwaysOff</enum>
+      </property>
+      <property name="undoRedoEnabled">
+       <bool>true</bool>
+      </property>
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
+      <property name="cursorWidth">
+       <number>8</number>
+      </property>
+      <property name="textInteractionFlags">
+       <set>Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse</set>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QWidget" name="tabActionOfficer">
+     <attribute name="title">
+      <string>Action Officer</string>
+     </attribute>
+     <widget class="QGroupBox" name="groupBox">
+      <property name="geometry">
+       <rect>
+        <x>850</x>
+        <y>0</y>
+        <width>346</width>
+        <height>527</height>
+       </rect>
+      </property>
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="title">
+       <string>Attribute</string>
+      </property>
+      <widget class="QPushButton" name="btnApply">
+       <property name="geometry">
+        <rect>
+         <x>253</x>
+         <y>21</y>
+         <width>75</width>
+         <height>23</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Apply</string>
+       </property>
+      </widget>
+      <widget class="QFrame" name="frameApplication">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>50</y>
+         <width>341</width>
+         <height>471</height>
+        </rect>
+       </property>
+       <property name="frameShape">
+        <enum>QFrame::StyledPanel</enum>
+       </property>
+       <property name="frameShadow">
+        <enum>QFrame::Raised</enum>
+       </property>
+       <widget class="QLabel" name="labelAppName">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>5</y>
+          <width>60</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>AppName:</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="editAppDes">
+        <property name="enabled">
+         <bool>true</bool>
+        </property>
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>3</y>
+          <width>111</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="maxLength">
+         <number>15</number>
+        </property>
+       </widget>
+       <widget class="QLabel" name="labelAppID">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>30</y>
+          <width>60</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>AppID:</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="editAppID">
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>28</y>
+          <width>111</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="maxLength">
+         <number>5</number>
+        </property>
+       </widget>
+       <widget class="QLabel" name="labelAppEditDate">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>105</y>
+          <width>60</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>EditDate:</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="editAppEditDate">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>103</y>
+          <width>111</width>
+          <height>20</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QLabel" name="labelItemCode">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>55</y>
+          <width>60</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>ItemCode:</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="editItemCode">
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>53</y>
+          <width>111</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="maxLength">
+         <number>15</number>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="chkBoxAppHide">
+        <property name="geometry">
+         <rect>
+          <x>189</x>
+          <y>34</y>
+          <width>59</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Hidden</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="labelAppVersion">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>80</y>
+          <width>60</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Version:</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="editAppVersion">
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>78</y>
+          <width>111</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="maxLength">
+         <number>10</number>
+        </property>
+       </widget>
+       <widget class="QLabel" name="labelWarning">
+        <property name="geometry">
+         <rect>
+          <x>311</x>
+          <y>4</y>
+          <width>24</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="pixmap">
+         <pixmap resource="resource.qrc">:/resource/ico/warning.png</pixmap>
+        </property>
+       </widget>
+       <widget class="QRadioButton" name="radioButtonUpdate">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="geometry">
+         <rect>
+          <x>246</x>
+          <y>8</y>
+          <width>60</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Update</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="checked">
+         <bool>false</bool>
+        </property>
+       </widget>
+       <widget class="QRadioButton" name="radioButtonCover">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="geometry">
+         <rect>
+          <x>192</x>
+          <y>8</y>
+          <width>51</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Cover</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+       <widget class="QCheckBox" name="chkBoxUIScript">
+        <property name="geometry">
+         <rect>
+          <x>189</x>
+          <y>60</y>
+          <width>81</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>UI Script:</string>
+        </property>
+       </widget>
+       <widget class="QTabWidget" name="tabAppSetView">
+        <property name="geometry">
+         <rect>
+          <x>1</x>
+          <y>130</y>
+          <width>341</width>
+          <height>343</height>
+         </rect>
+        </property>
+        <property name="currentIndex">
+         <number>0</number>
+        </property>
+        <widget class="QWidget" name="tabImage">
+         <attribute name="title">
+          <string>Image</string>
+         </attribute>
+         <widget class="QListWidget" name="listWgtImage">
+          <property name="geometry">
+           <rect>
+            <x>-1</x>
+            <y>0</y>
+            <width>337</width>
+            <height>319</height>
+           </rect>
+          </property>
+          <property name="dragDropMode">
+           <enum>QAbstractItemView::DragDrop</enum>
+          </property>
+          <property name="iconSize">
+           <size>
+            <width>96</width>
+            <height>96</height>
+           </size>
+          </property>
+          <property name="viewMode">
+           <enum>QListView::IconMode</enum>
+          </property>
+         </widget>
+        </widget>
+        <widget class="QWidget" name="tabBusySet">
+         <attribute name="title">
+          <string>Business Setting</string>
+         </attribute>
+         <widget class="QTextEdit" name="editAppSettings">
+          <property name="geometry">
+           <rect>
+            <x>0</x>
+            <y>0</y>
+            <width>341</width>
+            <height>319</height>
+           </rect>
+          </property>
+          <property name="cursorWidth">
+           <number>1</number>
+          </property>
+         </widget>
+        </widget>
+       </widget>
+       <widget class="QLabel" name="labelUIScript">
+        <property name="geometry">
+         <rect>
+          <x>267</x>
+          <y>61</y>
+          <width>69</width>
+          <height>16</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
+       <zorder>labelAppName</zorder>
+       <zorder>editAppDes</zorder>
+       <zorder>labelAppID</zorder>
+       <zorder>editAppID</zorder>
+       <zorder>labelAppEditDate</zorder>
+       <zorder>editAppEditDate</zorder>
+       <zorder>labelItemCode</zorder>
+       <zorder>editItemCode</zorder>
+       <zorder>labelAppVersion</zorder>
+       <zorder>editAppVersion</zorder>
+       <zorder>chkBoxAppHide</zorder>
+       <zorder>labelWarning</zorder>
+       <zorder>radioButtonUpdate</zorder>
+       <zorder>radioButtonCover</zorder>
+       <zorder>chkBoxUIScript</zorder>
+       <zorder>tabAppSetView</zorder>
+       <zorder>labelUIScript</zorder>
+      </widget>
+      <widget class="Line" name="line">
+       <property name="geometry">
+        <rect>
+         <x>10</x>
+         <y>40</y>
+         <width>317</width>
+         <height>16</height>
+        </rect>
+       </property>
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+      </widget>
+      <widget class="QFrame" name="frameSystem">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>50</y>
+         <width>341</width>
+         <height>471</height>
+        </rect>
+       </property>
+       <property name="frameShape">
+        <enum>QFrame::StyledPanel</enum>
+       </property>
+       <property name="frameShadow">
+        <enum>QFrame::Raised</enum>
+       </property>
+       <widget class="QLabel" name="labelFileName">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>5</y>
+          <width>54</width>
+          <height>12</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>FileName:</string>
+        </property>
+       </widget>
+       <widget class="QLabel" name="labelSysVersion">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>30</y>
+          <width>54</width>
+          <height>12</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Version:</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="editFileName">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>3</y>
+          <width>111</width>
+          <height>20</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="editSysVersion">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="geometry">
+         <rect>
+          <x>70</x>
+          <y>28</y>
+          <width>111</width>
+          <height>20</height>
+         </rect>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QTableWidget" name="tableWidget">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>50</y>
+         <width>341</width>
+         <height>471</height>
+        </rect>
+       </property>
+       <property name="verticalScrollBarPolicy">
+        <enum>Qt::ScrollBarAlwaysOff</enum>
+       </property>
+       <property name="horizontalScrollBarPolicy">
+        <enum>Qt::ScrollBarAlwaysOff</enum>
+       </property>
+      </widget>
+      <zorder>tableWidget</zorder>
+      <zorder>btnApply</zorder>
+      <zorder>line</zorder>
+      <zorder>frameSystem</zorder>
+      <zorder>frameApplication</zorder>
+     </widget>
+     <widget class="QTabWidget" name="tabResourceView">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>211</width>
+        <height>562</height>
+       </rect>
+      </property>
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="contextMenuPolicy">
+       <enum>Qt::DefaultContextMenu</enum>
+      </property>
+      <property name="autoFillBackground">
+       <bool>false</bool>
+      </property>
+      <property name="tabPosition">
+       <enum>QTabWidget::South</enum>
+      </property>
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <widget class="QWidget" name="tabResource">
+       <attribute name="title">
+        <string>RESOURCE</string>
+       </attribute>
+       <widget class="TreeWidget" name="treeResource">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>0</y>
+          <width>200</width>
+          <height>476</height>
+         </rect>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="dragDropMode">
+         <enum>QAbstractItemView::DropOnly</enum>
+        </property>
+        <property name="headerHidden">
+         <bool>true</bool>
+        </property>
+        <column>
+         <property name="text">
+          <string notr="true">1</string>
+         </property>
+        </column>
+       </widget>
+      </widget>
+      <widget class="QWidget" name="tabConfig">
+       <attribute name="title">
+        <string>PLAN</string>
+       </attribute>
+       <widget class="QTreeWidget" name="treeScheme">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>30</y>
+          <width>200</width>
+          <height>446</height>
+         </rect>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="headerHidden">
+         <bool>true</bool>
+        </property>
+        <column>
+         <property name="text">
+          <string notr="true">1</string>
+         </property>
+        </column>
+       </widget>
+       <widget class="QPushButton" name="btnCreateScheme">
+        <property name="geometry">
+         <rect>
+          <x>136</x>
+          <y>0</y>
+          <width>60</width>
+          <height>23</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Create</string>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="editSchemeName">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>2</y>
+          <width>135</width>
+          <height>20</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>app scheme name</string>
+        </property>
+       </widget>
+      </widget>
+     </widget>
+     <widget class="QTabWidget" name="tabFileView">
+      <property name="geometry">
+       <rect>
+        <x>210</x>
+        <y>0</y>
+        <width>635</width>
+        <height>500</height>
+       </rect>
+      </property>
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="tabPosition">
+       <enum>QTabWidget::East</enum>
+      </property>
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <widget class="QWidget" name="tabApplication">
+       <attribute name="title">
+        <string>APP</string>
+       </attribute>
+       <widget class="QListWidget" name="listWgtApplication">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>0</y>
+          <width>634</width>
+          <height>476</height>
+         </rect>
+        </property>
+        <property name="dragDropMode">
+         <enum>QAbstractItemView::DragDrop</enum>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>96</width>
+          <height>96</height>
+         </size>
+        </property>
+        <property name="viewMode">
+         <enum>QListView::IconMode</enum>
+        </property>
+       </widget>
+      </widget>
+      <widget class="QWidget" name="tabSystem">
+       <attribute name="title">
+        <string>SYS</string>
+       </attribute>
+       <widget class="QListWidget" name="listWgtSystem">
+        <property name="geometry">
+         <rect>
+          <x>-1</x>
+          <y>0</y>
+          <width>634</width>
+          <height>476</height>
+         </rect>
+        </property>
+        <property name="showDropIndicator" stdset="0">
+         <bool>true</bool>
+        </property>
+        <property name="dragDropOverwriteMode">
+         <bool>false</bool>
+        </property>
+        <property name="dragDropMode">
+         <enum>QAbstractItemView::DragDrop</enum>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>96</width>
+          <height>96</height>
+         </size>
+        </property>
+        <property name="viewMode">
+         <enum>QListView::IconMode</enum>
+        </property>
+       </widget>
+      </widget>
+     </widget>
+    </widget>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>1200</width>
+     <height>19</height>
+    </rect>
+   </property>
+   <widget class="QMenu" name="mainMenu">
+    <property name="title">
+     <string>File</string>
+    </property>
+    <addaction name="actionConnect"/>
+    <addaction name="actionDisconnect"/>
+    <addaction name="actionShake"/>
+    <addaction name="actionWip"/>
+    <addaction name="separator"/>
+    <addaction name="actionExit"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title">
+     <string>Edit</string>
+    </property>
+    <addaction name="actionSerial_Port"/>
+    <addaction name="actionNetWork_Server"/>
+    <addaction name="separator"/>
+    <addaction name="actionUpdate"/>
+    <addaction name="actionArm_GCC"/>
+    <addaction name="actionUpdate_2"/>
+   </widget>
+   <widget class="QMenu" name="menuOptions">
+    <property name="title">
+     <string>Options</string>
+    </property>
+    <addaction name="actionConfig"/>
+   </widget>
+   <widget class="QMenu" name="menuAbout">
+    <property name="geometry">
+     <rect>
+      <x>427</x>
+      <y>103</y>
+      <width>98</width>
+      <height>54</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>About</string>
+    </property>
+    <addaction name="actionVersion"/>
+   </widget>
+   <addaction name="mainMenu"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuOptions"/>
+   <addaction name="menuAbout"/>
+  </widget>
+  <widget class="QToolBar" name="mainToolBar">
+   <attribute name="toolBarArea">
+    <enum>TopToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+   <addaction name="actionConnect"/>
+   <addaction name="actionDisconnect"/>
+   <addaction name="actionShake"/>
+   <addaction name="actionWip"/>
+   <addaction name="separator"/>
+   <addaction name="actionSerial_Port"/>
+   <addaction name="actionNetWork_Server"/>
+   <addaction name="actionUpdate"/>
+   <addaction name="actionArm_GCC"/>
+   <addaction name="actionUpdate_2"/>
+  </widget>
+  <widget class="QStatusBar" name="statusBar"/>
+  <action name="actionConnect">
+   <property name="icon">
+    <iconset>
+     <normalon>:/resource/ico/connect.png</normalon>
+    </iconset>
+   </property>
+   <property name="text">
+    <string>Open</string>
+   </property>
+   <property name="iconVisibleInMenu">
+    <bool>true</bool>
+   </property>
+  </action>
+  <action name="actionDisconnect">
+   <property name="icon">
+    <iconset>
+     <normalon>:/resource/ico/disconnect.png</normalon>
+    </iconset>
+   </property>
+   <property name="text">
+    <string>Close</string>
+   </property>
+  </action>
+  <action name="actionExit">
+   <property name="text">
+    <string>Exit</string>
+   </property>
+  </action>
+  <action name="actionSerial_Port">
+   <property name="icon">
+    <iconset>
+     <normalon>:/resource/ico/tty.png</normalon>
+    </iconset>
+   </property>
+   <property name="text">
+    <string>Serial Port</string>
+   </property>
+  </action>
+  <action name="actionNetWork_Server">
+   <property name="icon">
+    <iconset>
+     <normalon>:/resource/ico/socket.png</normalon>
+    </iconset>
+   </property>
+   <property name="text">
+    <string>NetWork Server</string>
+   </property>
+  </action>
+  <action name="actionVersion">
+   <property name="text">
+    <string>Version</string>
+   </property>
+  </action>
+  <action name="actionUpdate">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/ico/sync.png</normaloff>:/resource/ico/sync.png</iconset>
+   </property>
+   <property name="text">
+    <string>Sync</string>
+   </property>
+  </action>
+  <action name="actionConfig">
+   <property name="text">
+    <string>Config</string>
+   </property>
+  </action>
+  <action name="actionShake">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/ico/shake.png</normaloff>:/resource/ico/shake.png</iconset>
+   </property>
+   <property name="text">
+    <string>Shake</string>
+   </property>
+  </action>
+  <action name="actionUpdate_2">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/ico/sync_server.png</normaloff>:/resource/ico/sync_server.png</iconset>
+   </property>
+   <property name="text">
+    <string>Update</string>
+   </property>
+  </action>
+  <action name="actionWip">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/ico/wipe.png</normaloff>:/resource/ico/wipe.png</iconset>
+   </property>
+   <property name="text">
+    <string>Wipe</string>
+   </property>
+  </action>
+  <action name="actionArm_GCC">
+   <property name="icon">
+    <iconset resource="resource.qrc">
+     <normaloff>:/resource/ico/gcc.png</normaloff>:/resource/ico/gcc.png</iconset>
+   </property>
+   <property name="text">
+    <string>Arm Gcc(eabi)</string>
+   </property>
+   <property name="toolTip">
+    <string>Arm Gcc</string>
+   </property>
+  </action>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <customwidgets>
+  <customwidget>
+   <class>TreeWidget</class>
+   <extends>QTreeWidget</extends>
+   <header>treewidget.h</header>
+  </customwidget>
+ </customwidgets>
+ <tabstops>
+  <tabstop>editAppDes</tabstop>
+  <tabstop>editAppID</tabstop>
+  <tabstop>editItemCode</tabstop>
+  <tabstop>editAppVersion</tabstop>
+  <tabstop>editAppEditDate</tabstop>
+  <tabstop>radioButtonCover</tabstop>
+  <tabstop>radioButtonUpdate</tabstop>
+  <tabstop>chkBoxAppHide</tabstop>
+  <tabstop>chkBoxUIScript</tabstop>
+  <tabstop>editAppSettings</tabstop>
+  <tabstop>listWgtImage</tabstop>
+  <tabstop>editFileName</tabstop>
+  <tabstop>editSysVersion</tabstop>
+  <tabstop>btnApply</tabstop>
+  <tabstop>tableWidget</tabstop>
+  <tabstop>treeScheme</tabstop>
+  <tabstop>listWgtSystem</tabstop>
+  <tabstop>plnEditSerialPort</tabstop>
+  <tabstop>tabResourceView</tabstop>
+  <tabstop>treeResource</tabstop>
+  <tabstop>tabFileView</tabstop>
+  <tabstop>listWgtApplication</tabstop>
+  <tabstop>btnCreateScheme</tabstop>
+  <tabstop>tabMain</tabstop>
+  <tabstop>editSchemeName</tabstop>
+ </tabstops>
+ <resources>
+  <include location="resource.qrc"/>
+ </resources>
+ <connections/>
+</ui>

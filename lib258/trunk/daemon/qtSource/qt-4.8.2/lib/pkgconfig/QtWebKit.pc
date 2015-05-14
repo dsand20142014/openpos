@@ -1,0 +1,19 @@
+prefix=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/_install
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include/QtWebKit
+qt_config=lex yacc uic resources qt release incremental link_prl def_files_disabled no_mocdepend release stl qt_no_framework cross_compile release shared dll embedded largefile stl precompile_header exceptions_off dylib create_prl link_prl depend_includepath QTDIR_build building-libs depend_includepath embedded standalone_package depend_includepath include_webinspector production production embedded no_debug_info link_pkgconfig embedded production qt_install_headers qt warn_on depend_includepath qmake_cache target_qt hide_symbols create_pc create_libtool moc thread shared dll
+moc_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/moc
+uic_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/uic
+rcc_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/rcc
+lupdate_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/lupdate
+lrelease_location=/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/bin/lrelease
+
+Name: Qtwebkit
+Description: Qtwebkit Library
+Version: 4.9.2
+Libs: -L${libdir} -lQtWebKit 
+Libs.private: -L/opt/freescale/ltib/rootfs/usr/lib -L/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/_install/lib -L../../WebCore/release -L../../JavaScriptCore/release  -lwebcore -L/opt/freescale/ltib/rootfs/usr/lib -L/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/_install/lib -ljscore -lQtGui -lQtNetwork -lQtCore -lpthread   
+Cflags: -DQT_SHARED -I/opt/freescale/qt-everywhere-opensource-src-4.8.2/_install/_install/include -I${includedir}
+Requires: QtCore QtGui QtNetwork
+

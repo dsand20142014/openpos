@@ -1,0 +1,166 @@
+#ifndef __OSDRV_H
+#define __OSDRV_H
+
+#include <sand_debug.h>
+
+
+#ifndef NOTIMPLEMENT
+#define NOTIMPLEMENT Uart_Printf("!!!!!! Not implement  %s!!!\n", __func__);
+#endif
+
+#define DRVERR_SUCCESS           0x00
+#define DRVERR_BADDRVID          0x01
+#define DRVERR_BADCMD            0x02
+#define DRVERR_NOTEXIST          0x03
+#define DRVERR_NOHANDLE          0x04
+#define DRVERR_NOTRESPONSE       0x05
+#define DRVERR_INSTALLED         0x06
+#define DRVERR_NOTINSTALL        0x07
+#define DRVERR_OPERATION         0x08
+#define DRVERR_BUSY              0x09
+#define DRVERR_ABSENT            0x0a
+#define DRVERR_CMDNOTSUPPORT     0xFE
+#define DRVERR_PROCESSPENDING    0xFF
+
+/* Must keep same as osdriver.h!!! */
+
+#define DRVCMD_ABORT     0       /* abort driver     */
+#define DRVCMD_EXECUTE   1       /* execute order    */
+#define DRVCMD_STATEREQ  2       /* state request    */
+#define DRVCMD_RESET     3       /* reset driver     */
+#define DRVCMD_TEST      4
+#define DRVCMD_IOCTL    10       /* config driver    */
+
+
+#define DRV_MAXNB        20      /* number of drivers */
+#define DRVID_RESERVNB   20
+#define DRVID_MMI        0       /* Man-Machine-Interface (Display-Keyboard) driver number */
+#define DRVID_PRN        1       /* Printer driver number */
+#define DRVID_PAD        2       /* PINPAD driver number */
+#define DRVID_EEP        3       /* EEPROM driver number */
+#define DRVID_MAG        4       /* magnetic card reader card driver number */
+#define DRVID_DAT        5       /* DATe driver number */
+#define DRVID_COM        6       /* COM driver number */
+#define DRVID_ICC        7       /* Smart card driver number */
+#define DRVID_I2C        8       /* I2C driver number */
+#define DRVID_CHE        9       /* CHEQUE reader */
+#define DRVID_PME        10      /* PME peripheral */
+#define DRVID_GSM        11      /* GSM module */
+#define DRVID_ADC        12      /* ADC module */
+#define DRVID_EXP        13      /* for example  2009.4.3 */
+#define DRVID_MIFARE     14      /* MIFARE module */
+#define DRVID_WIFI       16      /* WIFI module */
+#define DRVID_APP        0x7F
+#define DRVID_OS		 0x80
+#define HALDRVERR_CMDNOTSUPPORT     0xFE
+#define HALDRVERR_PROCESSPENDING    0xFF
+
+#define DRVCFG_GET       0
+#define DRVCFG_SET       1
+
+#define DRVST_STOPED      0   /* Order execution terminated on error    */
+#define DRVST_ENDED       1   /* DRIVER TREATMENT ENDED OK              */
+#define DRVST_ABSENT      2   /* Peripheral does not answer             */
+#define DRVST_FREE        3   /* Driver free for ordering               */
+#define DRVST_WAIT        4   /* Order waiting for execution            */
+#define DRVST_RUNNING     5   /* Order is running                       */
+#define DRVST_FULL        6   /* Driver waiting stack is full           */
+#define DRVST_UNKNOWN     7   /* Unknown order                          */
+#define DRVST_REJECTED    8   /* Driver does not exist (wrong driver id)*/
+#define DRVST_NOABORT     9   /* Abort refused to the requester         */
+#define DRVST_RESET       10  /* Orders in waiting stack are reseted    */
+#define DRVST_CONTINUE    0xFF
+
+typedef struct
+{
+    unsigned char ucType;
+    unsigned char ucLen;
+    unsigned char aucData[512];
+}DRVIN;
+
+typedef struct
+{
+    unsigned char ucReqNR;
+    unsigned char ucGenStatus;
+    unsigned char ucDrvStatus;
+    unsigned char aucData[512];
+}DRVOUT;
+
+typedef struct
+{
+    unsigned char ucDrvID;
+    unsigned char ucDrvCMD;
+    DRVIN   *pDrvIn;
+    DRVOUT  *pDrvOut;
+}DRV;
+
+typedef struct
+{
+    unsigned char ucDrvID;
+    unsigned char ucDrvCMD;
+    DRVIN   pDrvIn;
+    DRVOUT  pDrvOut;
+}DRV_MMAP;
+
+struct _drv_op {
+    int    (*drv_init)(void);
+    int    (*drv_remove)(void);
+    int    (*drv_test)(void);
+    int    (*drv_exec)(DRVIN *in ,DRVOUT *out);
+    int    (*drv_state)(DRVIN *in ,DRVOUT *out);
+    int    (*drv_abort)(DRVIN *in ,DRVOUT *out);
+    int    (*drv_reset)(DRVIN *in ,DRVOUT *out);
+    int    (*drv_ioctl)(unsigned char type,unsigned char *pstr );
+};
+typedef struct _drv_op DRVOP;
+
+#define HALDRV_MAX_NAME_LEN  16
+struct _drv {
+    unsigned char drv_id;
+    unsigned char drv_name[HALDRV_MAX_NAME_LEN];
+    unsigned char drv_version;
+    unsigned char drv_type;
+    unsigned char drv_allow_share;
+    unsigned char drv_calling_cnt;
+    void *drv_block_tasks;
+    DRVOP *drv_op;
+};
+
+typedef struct
+{
+    unsigned char ucDrvID;
+    DRVIN   *pDrvIn;
+    DRVOUT  *pDrvOut;
+    unsigned char (*pfnInstall)(void);
+    unsigned char (*pfnUninstall)(void);
+    unsigned char (*pfnTest)(void);
+    unsigned char (*pfnIoctl)(unsigned char ucType,unsigned char *pucData);
+    unsigned char (*pfnState)(DRVIN *pDrvIn,DRVOUT *pDrvOut);
+    unsigned char (*pfnRun)(DRVIN *pDrvIn,DRVOUT *pDrvOut);
+    unsigned char (*pfnAbort)(DRVIN *pDrvIn,DRVOUT *pDrvOut);
+    unsigned char (*pfnReset)(DRVIN *pDrvIn,DRVOUT *pDrvOut);
+    unsigned char (*pfnRecvHook)(unsigned char ucDevID,unsigned char *pucRecvData,unsigned int uiRecvLen);
+}HALDRV;
+
+
+typedef struct _drv DRVTBL;
+void  OSDRV_init(void);
+int   OSDRV_install(unsigned char drvid,DRVOP *opration);
+int   OSDRV_remove(unsigned char drvid);
+int   OSDRV_call(DRV *order);
+unsigned char  OSDRV_get_version(unsigned char drvid);
+unsigned char *OSDRV_get_name(unsigned char drvid);
+
+/* for support API */
+unsigned char  OSDRV_wait(DRVOUT *drvout);
+void  OSDRV_abort(unsigned char drvid);
+int   OSDRV_execute(unsigned char drvid,DRVIN *pdrvin,DRVOUT *pdrvout);
+void OSDRV_Active(unsigned char ucDrvID,DRVIN *pDrvIn,DRVOUT *pDrvOut);
+
+extern DRVOP  gbl_mmi_op;
+
+
+#endif
+
+
+

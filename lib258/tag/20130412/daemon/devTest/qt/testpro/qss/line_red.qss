@@ -1,0 +1,4 @@
+background-color: rgb(255, 181, 181);
+    border-style: solid; border-width: 1px; border-radius: 2px;
+    border-top-color: rgb(76, 29, 54);
+    border-bottom-color: red;

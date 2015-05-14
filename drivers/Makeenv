@@ -1,0 +1,16 @@
+# Comment/uncomment the following line to disable/enable debugging
+#DEBUG = y
+# Add your debugging flag (or not) to EXTRA_CFLAGS
+ifeq ($(DEBUG),y)
+  DEBFLAGS = -O -Wall -g -DSBULL_DEBUG # "-O" is needed to expand inlines
+else
+  DEBFLAGS = -O2 -Wall
+endif
+
+PWD       := $(shell pwd)
+
+KERNELSRC := `pwd`/../../kernel
+CC_PATH := /opt/freescale/usr/local/gcc-4.1.2-glibc-2.5-nptl-3/arm-none-linux-gnueabi/bin
+CC      := ${CC_PATH}/arm-none-linux-gnueabi-gcc
+EXTRA_CFLAGS += $(DEBFLAGS)
+EXTRA_CFLAGS += -I.

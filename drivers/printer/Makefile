@@ -1,0 +1,17 @@
+include $(PWD)/../Makeenv
+
+obj-m	:= printer.o
+printer-objs := mx25printer.o apselm205.o m-u111s2.o
+
+ALL:
+	$(MAKE) -C $(KERNELSRC) M=$(PWD) modules
+
+clean:
+	rm -rf *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions Module.symvers Module.markers  modules.order
+
+depend .depend dep:
+	$(CC) $(EXTRA_CFLAGS) -M *.c > .depend
+
+ifeq (.depend,$(wildcard .depend))
+include .depend
+endif

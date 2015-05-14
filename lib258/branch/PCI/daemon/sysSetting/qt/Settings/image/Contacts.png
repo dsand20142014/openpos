@@ -1,0 +1,208 @@
+(src))[5],	      \
+	  '\0' } }),							      \
+     __extension__ ((__STRING2_COPY_ARR8)				      \
+      { { ((__const char *) (src))[0], ((__const char *) (src))[1],	      \
+	  ((__const char *) (src))[2], ((__const char *) (src))[3],	      \
+	  ((__const char *) (src))[4], ((__const char *) (src))[5],	      \
+	  ((__const char *) (src))[6], '\0' } })
+#    endif
+__STRING_INLINE char *__stpcpy_small (char *, __STRING2_COPY_ARR2,
+				      __STRING2_COPY_ARR3,
+				      __STRING2_COPY_ARR4,
+				      __STRING2_COPY_ARR5,
+				      __STRING2_COPY_ARR6,
+				      __STRING2_COPY_ARR7,
+				      __STRING2_COPY_ARR8, size_t);
+__STRING_INLINE char *
+__stpcpy_small (char *__dest,
+		__STRING2_COPY_ARR2 __src2, __STRING2_COPY_ARR3 __src3,
+		__STRING2_COPY_ARR4 __src4, __STRING2_COPY_ARR5 __src5,
+		__STRING2_COPY_ARR6 __src6, __STRING2_COPY_ARR7 __src7,
+		__STRING2_COPY_ARR8 __src8, size_t __srclen)
+{
+  union {
+    char __c;
+    __STRING2_COPY_ARR2 __sca2;
+    __STRING2_COPY_ARR3 __sca3;
+    __STRING2_COPY_ARR4 __sca4;
+    __STRING2_COPY_ARR5 __sca5;
+    __STRING2_COPY_ARR6 __sca6;
+    __STRING2_COPY_ARR7 __sca7;
+    __STRING2_COPY_ARR8 __sca8;
+  } *__u = (void *) __dest;
+  switch ((unsigned int) __srclen)
+    {
+    case 1:
+      __u->__c = '\0';
+      break;
+    case 2:
+      __extension__ __u->__sca2 = __src2;
+      break;
+    case 3:
+      __extension__ __u->__sca3 = __src3;
+      break;
+    case 4:
+      __extension__ __u->__sca4 = __src4;
+      break;
+    case 5:
+      __extension__ __u->__sca5 = __src5;
+      break;
+    case 6:
+      __extension__ __u->__sca6 = __src6;
+      break;
+    case 7:
+      __extension__ __u->__sca7 = __src7;
+      break;
+    case 8:
+      __extension__ __u->__sca8 = __src8;
+      break;
+  }
+  return __dest + __srclen - 1;
+}
+#   endif
+#  endif
+# endif
+#endif
+
+
+/* Copy no more than N characters of SRC to DEST.  */
+#ifndef _HAVE_STRING_ARCH_strncpy
+# if __GNUC_PREREQ (3, 2)
+#  define strncpy(dest, src, n) __builtin_strncpy (dest, src, n)
+# else
+#  define strncpy(dest, src, n) \
+  (__extension__ (__builtin_constant_p (src) && __builtin_constant_p (n)      \
+		  ? (strlen (src) + 1 >= ((size_t) (n))			      \
+		     ? (char *) memcpy (dest, src, n)			      \
+		     : strncpy (dest, src, n))				      \
+		  : strncpy (dest, src, n)))
+# endif
+#endif
+
+
+/* Append no more than N characters from SRC onto DEST.  */
+#ifndef _HAVE_STRING_ARCH_strncat
+# ifdef _USE_STRING_ARCH_strchr
+#  define strncat(dest, src, n) \
+  (__extension__ ({ char *__dest = (dest);				      \
+		    __builtin_constant_p (src) && __builtin_constant_p (n)    \
+		    ? (strlen (src) < ((size_t) (n))			      \
+		       ? strcat (__dest, src)				      \
+		       : (*((char *) __mempcpy (strchr (__dest, '\0'),	      \
+						src, n)) = '\0', __dest))     \
+		    : strncat (dest, src, n); }))
+# elif __GNUC_PREREQ (3, 2)
+#  define strncat(dest, src, n) __builtin_strncat (dest, src, n)
+# else
+#  define strncat(dest, src, n) \
+  (__extension__ (__builtin_constant_p (src) && __builtin_constant_p (n)      \
+		  ? (strlen (src) < ((size_t) (n))			      \
+		     ? strcat (dest, src)				      \
+		     : strncat (dest, src, n))				      \
+		  : strncat (dest, src, n)))
+# endif
+#endif
+
+
+/* Compare characters of S1 and S2.  */
+#ifndef _HAVE_STRING_ARCH_strcmp
+# if __GNUC_PREREQ (3, 2)
+#  define strcmp(s1, s2) \
+  __extension__								      \
+  ({ size_t __s1_len, __s2_len;						      \
+     (__builtin_constant_p (s1) && __builtin_constant_p (s2)		      \
+      && (__s1_len = __builtin_strlen (s1), __s2_len = __builtin_strlen (s2), \
+	  (!__string2_1bptr_p (s1) || __s1_len >= 4)			      \
+	  && (!__string2_1bptr_p (s2) || __s2_len >= 4))		      \
+      ? __builtin_strcmp (s1, s2)					      \
+      : (__builtin_constant_p (s1) && __string2_1bptr_p (s1)		      \
+	 && (__s1_len = __builtin_strlen (s1), __s1_len < 4)		      \
+	 ? (__builtin_constant_p (s2) && __string2_1bptr_p (s2)		      \
+	    ? __builtin_strcmp (s1, s2)					      \
+	    : __strcmp_cg (s1, s2, __s1_len))				      \
+	 : (__builtin_constant_p (s2) && __string2_1bptr_p (s2)		      \
+	    && (__s2_len = __builtin_strlen (s2), __s2_len < 4)		      \
+	    ? (__builtin_constant_p (s1) && __string2_1bptr_p (s1)	      \
+	       ? __builtin_strcmp (s1, s2)				      \
+	       : __strcmp_gc (s1, s2, __s2_len))			      \
+	    : __builtin_strcmp (s1, s2)))); })
+# else
+#  define strcmp(s1, s2) \
+  __extension__								      \
+  ({ size_t __s1_len, __s2_len;						      \
+     (__builtin_constant_p (s1) && __builtin_constant_p (s2)		      \
+      && (__s1_len = strlen (s1), __s2_len = strlen (s2),		      \
+	  (!__string2_1bptr_p (s1) || __s1_len >= 4)			      \
+	  && (!__string2_1bptr_p (s2) || __s2_len >= 4))		      \
+      ? memcmp ((__const char *) (s1), (__const char *) (s2),		      \
+		(__s1_len < __s2_len ? __s1_len : __s2_len) + 1)	      \
+      : (__builtin_constant_p (s1) && __string2_1bptr_p (s1)		      \
+	 && (__s1_len = strlen (s1), __s1_len < 4)			      \
+	 ? (__builtin_constant_p (s2) && __string2_1bptr_p (s2)		      \
+	    ? __strcmp_cc (s1, s2, __s1_len)				      \
+	    : __strcmp_cg (s1, s2, __s1_len))				      \
+	 : (__builtin_constant_p (s2) && __string2_1bptr_p (s2)		      \
+	    && (__s2_len = strlen (s2), __s2_len < 4)			      \
+	    ? (__builtin_constant_p (s1) && __string2_1bptr_p (s1)	      \
+	       ? __strcmp_cc (s1, s2, __s2_len)				      \
+	       : __strcmp_gc (s1, s2, __s2_len))			      \
+	    : strcmp (s1, s2)))); })
+# endif
+
+# define __strcmp_cc(s1, s2, l) \
+  (__extension__ ({ register int __result =				      \
+		      (((__const unsigned char *) (__const char *) (s1))[0]   \
+		       - ((__const unsigned char *) (__const char *)(s2))[0]);\
+		    if (l > 0 && __result == 0)				      \
+		      {							      \
+			__result = (((__const unsigned char *)		      \
+				     (__const char *) (s1))[1]		      \
+				    - ((__const unsigned char *)	      \
+				       (__const char *) (s2))[1]);	      \
+			if (l > 1 && __result == 0)			      \
+			  {						      \
+			    __result =					      \
+			      (((__const unsigned char *)		      \
+				(__const char *) (s1))[2]		      \
+			       - ((__const unsigned char *)		      \
+				  (__const char *) (s2))[2]);		      \
+			    if (l > 2 && __result == 0)			      \
+			      __result =				      \
+				(((__const unsigned char *)		      \
+				  (__const char *) (s1))[3]		      \
+				 - ((__const unsigned char *)		      \
+				    (__const char *) (s2))[3]);		      \
+			  }						      \
+		      }							      \
+		    __result; }))
+
+# define __strcmp_cg(s1, s2, l1) \
+  (__extension__ ({ __const unsigned char *__s2 =			      \
+		      (__const unsigned char *) (__const char *) (s2);	      \
+		    register int __result =				      \
+		      (((__const unsigned char *) (__const char *) (s1))[0]   \
+		       - __s2[0]);					      \
+		    if (l1 > 0 && __result == 0)			      \
+		      {							      \
+			__result = (((__const unsigned char *)		      \
+				     (__const char *) (s1))[1] - __s2[1]);    \
+			if (l1 > 1 && __result == 0)			      \
+			  {						      \
+			    __result = (((__const unsigned char *)	      \
+					 (__const char *) (s1))[2] - __s2[2]);\
+			    if (l1 > 2 && __result == 0)		      \
+			      __result = (((__const unsigned char *)	      \
+					  (__const char *)  (s1))[3]	      \
+					  - __s2[3]);			      \
+			  }						      \
+		      }							      \
+		    __result; }))
+
+# define __strcmp_gc(s1, s2, l2) \
+  (__extension__ ({ __const unsigned char *__s1 =			      \
+		      (__const unsigned char *) (__const char *) (s1);	      \
+		    register int __result =				      \
+		      __s1[0] - ((__const unsigned char *)		      \
+				 (__const char *) (s2))[0];		      \
+		    if (l2 > 0 && __result == 0)			      \
+		      {							 

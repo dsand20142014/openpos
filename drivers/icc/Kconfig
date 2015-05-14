@@ -1,0 +1,27 @@
+#
+# ICC character device configuration
+#
+
+menu "ICC character devices"
+	#depends on POS_ICC
+
+config ICC
+	tristate "ICC card suppport"
+	#depends on POS_ICC
+	help
+	  Enable support for the IC Card.
+
+	  This driver may be built as a module ( = code which can be
+	  inserted in and removed from the running kernel whenever you want).
+	  The module will be called synclinkmp.  If you want to do that, say M
+	  here.
+
+
+config ICC_DEBUG
+	tristate "ICC card debug function support"
+	depends on  ICC
+	help
+	  Enable support for the IC Card reader.
+
+endmenu
+

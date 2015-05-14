@@ -1,0 +1,41 @@
+<RCC>
+    <qresource prefix="/resource">
+        <file>ico/font.png</file>
+        <file>ico/zip.png</file>
+        <file>ico/app.png</file>
+        <file>ico/lib.png</file>
+        <file>ico/driver.png</file>
+        <file>ico/other.png</file>
+        <file>ico/logo.png</file>
+        <file>ico/pm.png</file>
+        <file>ico/connect.png</file>
+        <file>ico/disconnect.png</file>
+        <file>ico/conico.png</file>
+        <file>ico/pos.png</file>
+        <file>ico/conf.png</file>
+        <file>ico/tty.png</file>
+        <file>ico/socket.png</file>
+        <file>ico/ws.png</file>
+        <file>ico/warning.png</file>
+        <file>ico/sync.png</file>
+        <file>ico/shake.png</file>
+        <file>ico/sync_server.png</file>
+        <file>ico/delete.png</file>
+        <file>ico/next.png</file>
+        <file>ico/prev.png</file>
+        <file>ico/update.png</file>
+        <file>ico/refresh.png</file>
+        <file>ico/shell.png</file>
+        <file>ico/daemon.png</file>
+        <file>ico/kernel.png</file>
+        <file>ico/uboot.png</file>
+        <file>ico/other_boot.png</file>
+        <file>ico/wipe.png</file>
+        <file>ico/file_system.png</file>
+        <file>ico/srk.png</file>
+        <file>ico/scm.png</file>
+        <file>ico/gcc.png</file>
+        <file>ico/cry.png</file>
+        <file>ico/smile.png</file>
+    </qresource>
+</RCC>
