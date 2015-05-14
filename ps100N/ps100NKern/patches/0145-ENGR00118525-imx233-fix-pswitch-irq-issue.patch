@@ -1,0 +1,35 @@
+fully configured as NDISWAN\n");
+		break;
+
+	case TL_SETUP_SIGNO_REBOOT_MSG:
+		if (hw->to_setup)
+			printk(KERN_DEBUG IPWIRELESS_PCCARD_NAME
+			       ": Setup not completed - ignoring reboot msg\n");
+		else {
+			struct ipw_setup_reboot_msg_ack *packet;
+
+			printk(KERN_DEBUG IPWIRELESS_PCCARD_NAME
+			       ": Acknowledging REBOOT message\n");
+			packet = alloc_ctrl_packet(
+					sizeof(struct ipw_setup_reboot_msg_ack),
+					ADDR_SETUP_PROT, TL_PROTOCOLID_SETUP,
+					TL_SETUP_SIGNO_REBOOT_MSG_ACK);
+			packet->header.length =
+				sizeof(struct TlSetupRebootMsgAck);
+			send_packet(hw, PRIO_SETUP, &packet->header);
+			if (hw->reboot_callback)
+				hw->reboot_callback(hw->reboot_callback_data);
+		}
+		break;
+
+	default:
+		printk(KERN_INFO IPWIRELESS_PCCARD_NAME
+		       ": unknown setup message %u received\n",
+		       (unsigned int) rx_msg->sig_no);
+	}
+}
+
+static void do_close_hardware(struct ipw_hardware *hw)
+{
+	unsigned int irqn;
+

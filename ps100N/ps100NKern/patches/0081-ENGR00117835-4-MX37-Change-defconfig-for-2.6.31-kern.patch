@@ -1,0 +1,1162 @@
+          0x40004
+#define BR02                  0x40008
+#define BR03                  0x4000C
+#define BR04                  0x40010
+#define BR05                  0x40014
+#define BR06                  0x40018
+#define BR07                  0x4001C
+#define BR08                  0x40020
+#define BR09                  0x40024
+#define BR10                  0x40028
+#define BR11                  0x4002C
+#define BR12                  0x40030
+#define BR13                  0x40034
+#define BR14                  0x40038
+#define BR15                  0x4003C
+#define BR16                  0x40040
+#define BR17                  0x40044
+#define BR18                  0x40048
+#define BR19                  0x4004C
+#define SSLADD                0x40074
+#define DSLH                  0x40078
+#define DSLRADD               0x4007C
+
+
+/* LCD/TV-Out and HW DVD Registers (60000h 6FFFFh) */
+/* LCD/TV-Out */
+#define HTOTAL                0x60000
+#define HBLANK                0x60004
+#define HSYNC                 0x60008
+#define VTOTAL                0x6000C
+#define VBLANK                0x60010
+#define VSYNC                 0x60014
+#define LCDTV_C               0x60018
+#define OVRACT                0x6001C
+#define BCLRPAT               0x60020
+
+/*  Display and Cursor Control Registers (70000h 7FFFFh) */
+#define DISP_SL               0x70000
+#define DISP_SLC              0x70004
+#define PIXCONF               0x70008
+#define PIXCONF1              0x70009
+#define BLTCNTL               0x7000C
+#define SWF                   0x70014
+#define DPLYBASE              0x70020
+#define DPLYSTAS              0x70024
+#define CURCNTR               0x70080
+#define CURBASE               0x70084
+#define CURPOS                0x70088
+
+
+/* VGA Registers */
+
+/* SMRAM Registers */
+#define SMRAM                 0x10
+
+/* Graphics Control Registers */
+#define GR_INDEX              0x3CE
+#define GR_DATA               0x3CF
+
+#define GR10                  0x10
+#define GR11                  0x11
+
+/* CRT Controller Registers */
+#define CR_INDEX_MDA          0x3B4
+#define CR_INDEX_CGA          0x3D4
+#define CR_DATA_MDA           0x3B5
+#define CR_DATA_CGA           0x3D5
+
+#define CR30                  0x30
+#define CR31                  0x31
+#define CR32                  0x32
+#define CR33                  0x33
+#define CR35                  0x35
+#define CR39                  0x39
+#define CR40                  0x40
+#define CR41                  0x41
+#define CR42                  0x42
+#define CR70                  0x70
+#define CR80                  0x80 
+#define CR81                  0x82
+
+/* Extended VGA Registers */
+
+/* General Control and Status Registers */
+#define ST00                  0x3C2
+#define ST01_MDA              0x3BA
+#define ST01_CGA              0x3DA
+#define FRC_READ              0x3CA
+#define FRC_WRITE_MDA         0x3BA
+#define FRC_WRITE_CGA         0x3DA
+#define MSR_READ              0x3CC
+#define MSR_WRITE             0x3C2
+
+/* Sequencer Registers */
+#define SR_INDEX              0x3C4
+#define SR_DATA               0x3C5
+
+#define SR01                  0x01
+#define SR02                  0x02
+#define SR03                  0x03
+#define SR04                  0x04
+#define SR07                  0x07
+
+/* Graphics Controller Registers */
+#define GR00                  0x00   
+#define GR01                  0x01
+#define GR02                  0x02
+#define GR03                  0x03
+#define GR04                  0x04
+#define GR05                  0x05
+#define GR06                  0x06
+#define GR07                  0x07
+#define GR08                  0x08  
+
+/* Attribute Controller Registers */
+#define ATTR_WRITE              0x3C0
+#define ATTR_READ               0x3C1
+
+/* VGA Color Palette Registers */
+
+/* CLUT */
+#define CLUT_DATA             0x3C9        /* DACDATA */
+#define CLUT_INDEX_READ       0x3C7        /* DACRX */
+#define CLUT_INDEX_WRITE      0x3C8        /* DACWX */
+#define DACMASK               0x3C6
+
+/* CRT Controller Registers */
+#define CR00                  0x00
+#define CR01                  0x01
+#define CR02                  0x02
+#define CR03                  0x03
+# not set
+ # CONFIG_ARCH_EBSA110 is not set
+ # CONFIG_ARCH_EP93XX is not set
+ # CONFIG_ARCH_FOOTBRIDGE is not set
++CONFIG_ARCH_MXC=y
++# CONFIG_ARCH_STMP3XXX is not set
+ # CONFIG_ARCH_NETX is not set
+ # CONFIG_ARCH_H720X is not set
+-# CONFIG_ARCH_IMX is not set
+ # CONFIG_ARCH_IOP13XX is not set
+ # CONFIG_ARCH_IOP32X is not set
+ # CONFIG_ARCH_IOP33X is not set
+@@ -144,47 +157,44 @@ CONFIG_FREEZER=y
+ # CONFIG_ARCH_IXP4XX is not set
+ # CONFIG_ARCH_L7200 is not set
+ # CONFIG_ARCH_KIRKWOOD is not set
+-# CONFIG_ARCH_KS8695 is not set
+-# CONFIG_ARCH_NS9XXX is not set
+ # CONFIG_ARCH_LOKI is not set
+ # CONFIG_ARCH_MV78XX0 is not set
+-CONFIG_ARCH_MXC=y
+ # CONFIG_ARCH_ORION5X is not set
++# CONFIG_ARCH_MMP is not set
++# CONFIG_ARCH_KS8695 is not set
++# CONFIG_ARCH_NS9XXX is not set
++# CONFIG_ARCH_W90X900 is not set
+ # CONFIG_ARCH_PNX4008 is not set
+ # CONFIG_ARCH_PXA is not set
++# CONFIG_ARCH_MSM is not set
+ # CONFIG_ARCH_RPC is not set
+ # CONFIG_ARCH_SA1100 is not set
+ # CONFIG_ARCH_S3C2410 is not set
++# CONFIG_ARCH_S3C64XX is not set
+ # CONFIG_ARCH_SHARK is not set
+ # CONFIG_ARCH_LH7A40X is not set
++# CONFIG_ARCH_U300 is not set
+ # CONFIG_ARCH_DAVINCI is not set
+ # CONFIG_ARCH_OMAP is not set
+-# CONFIG_ARCH_MSM is not set
+-# CONFIG_ARCH_STMP3XXX is not set
+-
+-#
+-# Boot options
+-#
+-
+-#
+-# Power management
+-#
++CONFIG_DMA_ZONE_SIZE=32
++CONFIG_UTMI_MXC=y
+ 
+ #
+ # Freescale MXC Implementations
+ #
+-CONFIG_ARCH_MX37=y
+-# CONFIG_ARCH_MX35 is not set
+-# CONFIG_ARCH_MX51 is not set
++# CONFIG_ARCH_MX1 is not set
++# CONFIG_ARCH_MX2 is not set
+ # CONFIG_ARCH_MX3 is not set
+-# CONFIG_ARCH_MX27 is not set
+ # CONFIG_ARCH_MX25 is not set
+-CONFIG_I2C_MXC_SELECT1=y
+-CONFIG_I2C_MXC_SELECT2=y
++# CONFIG_ARCH_MX35 is not set
++CONFIG_ARCH_MX37=y
++# CONFIG_ARCH_MX51 is not set
+ CONFIG_MXC_SDMA_API=y
+-# CONFIG_I2C_MXC_SELECT3 is not set
+ CONFIG_SDMA_IRAM=y
+ CONFIG_SDMA_IRAM_SIZE=0x1000
++CONFIG_I2C_MXC_SELECT1=y
++CONFIG_I2C_MXC_SELECT2=y
++# CONFIG_I2C_MXC_SELECT3 is not set
+ 
+ #
+ # MX37 Options
+@@ -202,19 +212,17 @@ CONFIG_ARCH_MXC_HAS_NFC_V3_1=y
+ # Device options
+ #
+ CONFIG_MXC_TZIC=y
+-CONFIG_ARCH_HAS_RNGC=y
+ CONFIG_ARCH_HAS_EVTMON=y
+-CONFIG_DMA_ZONE_SIZE=32
+-CONFIG_UTMI_MXC=y
++# CONFIG_MXC_IRQ_PRIOR is not set
++# CONFIG_MXC_PWM is not set
++CONFIG_ARCH_HAS_RNGC=y
+ 
+ #
+ # Processor Type
+ #
+ CONFIG_CPU_32=y
+-# CONFIG_CPU_ARM926T is not set
+ CONFIG_CPU_V6=y
+ CONFIG_CPU_32v6K=y
+-# CONFIG_CPU_V7 is not set
+ CONFIG_CPU_32v6=y
+ CONFIG_CPU_ABRT_EV6=y
+ CONFIG_CPU_PABRT_NOIFAR=y
+@@ -235,8 +243,8 @@ CONFIG_ARM_THUMB=y
+ # CONFIG_CPU_BPREDICT_DISABLE is not set
+ CONFIG_OUTER_CACHE=y
+ CONFIG_CACHE_L2X0=y
+-# CONFIG_ARM_ERRATA_364296 is not set
+ CONFIG_ARM_ERRATA_411920=y
++# CONFIG_ARM_ERRATA_364296 is not set
+ 
+ #
+ # Bus support
+@@ -260,9 +268,9 @@ CONFIG_PREEMPT=y
+ CONFIG_HZ=100
+ CONFIG_AEABI=y
+ # CONFIG_OABI_COMPAT is not set
+-CONFIG_ARCH_FLATMEM_HAS_HOLES=y
+ # CONFIG_ARCH_SPARSEMEM_DEFAULT is not set
+ # CONFIG_ARCH_SELECT_MEMORY_MODEL is not set
++# CONFIG_HIGHMEM is not set
+ CONFIG_SELECT_MEMORY_MODEL=y
+ CONFIG_FLATMEM_MANUAL=y
+ # CONFIG_DISCONTIGMEM_MANUAL is not set
+@@ -271,14 +279,16 @@ CONFIG_FLATMEM=y
+ CONFIG_FLAT_NODE_MEM_MAP=y
+ CONFIG_PAGEFLAGS_EXTENDED=y
+ CONFIG_SPLIT_PTLOCK_CPUS=4
+-# CONFIG_RESOURCES_64BIT is not set
+ # CONFIG_PHYS_ADDR_T_64BIT is not set
+ CONFIG_ZONE_DMA_FLAG=1
+ CONFIG_BOUNCE=y
+ CONFIG_VIRT_TO_BUS=y
+-CONFIG_UNEVICTABLE_LRU=y
++CONFIG_HAVE_MLOCK=y
++CONFIG_HAVE_MLOCKED_PAGE_BIT=y
++CONFIG_DEFAULT_MMAP_MIN_ADDR=4096
+ # CONFIG_LEDS is not set
+ CONFIG_ALIGNMENT_TRAP=y
++# CONFIG_UACCESS_WITH_MEMCPY is not set
+ 
+ #
+ # Boot options
+@@ -398,7 +408,10 @@ CONFIG_DEFAULT_TCP_CONG="cubic"
+ # CONFIG_LAPB is not set
+ # CONFIG_ECONET is not set
+ # CONFIG_WAN_ROUTER is not set
++# CONFIG_PHONET is not set
++# CONFIG_IEEE802154 is not set
+ # CONFIG_NET_SCHED is not set
++# CONFIG_DCB is not set
+ 
+ #
+ # Network testing
+@@ -409,18 +422,18 @@ CONFIG_DEFAULT_TCP_CONG="cubic"
+ # CONFIG_IRDA is not set
+ # CONFIG_BT is not set
+ # CONFIG_AF_RXRPC is not set
+-# CONFIG_PHONET is not set
+ CONFIG_WIRELESS=y
+ # CONFIG_CFG80211 is not set
+ CONFIG_WIRELESS_OLD_REGULATORY=y
+ CONFIG_/*
+ * Copyright (C) 2005 Philips Semiconductors
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2, or (at your option)
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; see the file COPYING.  If not, write to
+ * the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+ * Boston, MA 02111-1307, USA, or http://www.gnu.org/licenses/gpl.html
+*/
+
+#define MAX_DUM_CHANNELS	64
+
+#define RGB_MEM_WINDOW(x) (0x10000000 + (x)*0x00100000)
+
+#define QCIF_OFFSET(x) (((x) == 0) ? 0x00000: ((x) == 1) ? 0x30000: -1)
+#define CIF_OFFSET(x)  (((x) == 0) ? 0x00000: ((x) == 1) ? 0x60000: -1)
+
+#define CTRL_SETDIRTY	 	(0x00000001)
+#define CONF_DIRTYENABLE	(0x00000020)
+#define CONF_SYNCENABLE		(0x00000004)
+
+#define DIRTY_ENABLED(conf)	((conf) & 0x0020)
+#define SYNC_ENABLED(conf) 	((conf) & 0x0004)
+
+/* Display 1 & 2 Write Timing Configuration */
+#define PNX4008_DUM_WT_CFG		0x00372000
+
+/* Display 1 & 2 Read Timing Configuration */
+#define PNX4008_DUM_RT_CFG		0x00003A47
+
+/* DUM Transit State Timing Configuration */
+#define PNX4008_DUM_T_CFG		0x1D	/* 29 HCLK cycles */
+
+/* DUM Sync count clock divider */
+#define PNX4008_DUM_CLK_DIV		0x02DD
+
+/* Memory size for framebuffer, allocated through dma_alloc_writecombine().
+ * Must be PAGE aligned
+ */
+#define FB_DMA_SIZE (PAGE_ALIGN(SZ_1M + PAGE_SIZE))
+
+#define OFFSET_RGBBUFFER (0xB0000)
+#define OFFSET_YUVBUFFER (0x00000)
+
+#define YUVBUFFER (lcd_video_start + OFFSET_YUVBUFFER)
+#define RGBBUFFER (lcd_video_start + OFFSET_RGBBUFFER)
+
+#define CMDSTRING_BASEADDR	(0x00C000)	/* iram */
+#define BYTES_PER_CMDSTRING	(0x80)
+#define NR_OF_CMDSTRINGS	(64)
+
+#define MAX_NR_PRESTRINGS (0x40)
+#define MAX_NR_POSTSTRINGS (0x40)
+
+/* various mask definitions */
+#define DUM_CLK_ENABLE 0x01
+#define DUM_CLK_DISABLE 0
+#define DUM_DECODE_MASK 0x1FFFFFFF
+#define DUM_CHANNEL_CFG_MASK 0x01FF
+#define DUM_CHANNEL_CFG_SYNC_MASK 0xFFFE00FF
+#define DUM_CHANNEL_CFG_SYNC_MASK_SET 0x0CA00
+
+#define SDUM_RETURNVAL_BASE (0x500)
+
+#define CONF_SYNC_OFF		(0x602)
+#define CONF_SYNC_ON		(0x603)
+
+#define CONF_DIRTYDETECTION_OFF	(0x600)
+#define CONF_DIRTYDETECTION_ON	(0x601)
+
+struct dumchannel_uf {
+	int channelnr;
+	u32 *dirty;
+	u32 *source;
+	u32 x_offset;
+	u32 y_offset;
+	u32 width;
+	u32 height;
+};
+
+enum {
+	FB_TYPE_YUV,
+	FB_TYPE_RGB
+};
+
+struct cmdstring {
+	int channelnr;
+	uint16_t prestringlen;
+	uint16_t poststringlen;
+	uint16_t format;
+	uint16_t reserved;
+	uint16_t startaddr_low;
+	uint16_t startaddr_high;
+	uint16_t pixdatlen_low;
+	uint16_t pixdatlen_high;
+	u32 precmd[MAX_NR_PRESTRINGS];
+	u32 postcmd[MAX_NR_POSTSTRINGS];
+
+};
+
+struct dumchannel {
+	int channelnr;
+	int dum_ch_min;
+	int dum_ch_max;
+	int dum_ch_conf;
+	int dum_ch_stat;
+	int dum_ch_ctrl;
+};
+
+int pnx4008_alloc_dum_channel(int dev_id);
+int pnx4008_free_dum_channel(int channr, int dev_id);
+
+int pnx4008_get_dum_channel_uf(struct dumchannel_uf *pChan_uf, int dev_id);
+int pnx4008_put_dum_channel_uf(struct dumchannel_uf chan_uf, int dev_id);
+
+int pnx4008_set_dum_channel_sync(int channr, int val, int dev_id);
+int pnx4008_set_dum_channel_dirty_detect(int channr, int val, int dev_id);
+
+int pnx4008_force_dum_update_channel(int channr, int dev_id);
+
+int pnx4008_get_dum_channel_config(int channr, int dev_id);
+
+int pnx4008_sdum_mmap(struct fb_info *info, struct vm_area_struct *vma, struct device *dev);
+int pnx4008_set_dum_exit_notification(int dev_id);
+
+int pnx4008_get_fb_addresses(int fb_type, void **virt_addr,
+			     dma_addr_t * phys_addr, int *fb_length);
+                                                                                                                                                                                             /*
+ * Adaptec 274x/284x/294x device driver firmware for Linux and FreeBSD.
+ *
+ * Copyright (c) 1994-2001 Justin T. Gibbs.
+ * Copyright (c) 2000-2001 Adaptec Inc.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions, and the following disclaimer,
+ *    without modification.
+ * 2. Redistributions in binary form must reproduce at minimum a disclaimer
+ *    substantially similar to the "NO WARRANTY" disclaimer below
+ *    ("Disclaimer") and any redistribution must be conditioned upon
+ *    including a substantially similar Disclaimer requirement for further
+ *    binary redistribution.
+ * 3. Neither the names of the above-listed copyright holders nor the names
+ *    of any contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * Alternatively, this software may be distributed under the terms of the
+ * GNU General Public License ("GPL") version 2 as published by the Free
+ * Software Foundation.
+ *
+ * NO WARRANTY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGES.
+ *
+ * $FreeBSD$
+ */
+
+VERSION = "$Id: //depot/aic7xxx/aic7xxx/aic7xxx.seq#58 $"
+PATCH_ARG_LIST = "struct ahc_softc *ahc"
+PREFIX = "ahc_"
+
+#include "aic7xxx.reg"
+#include "scsi_message.h"
+
+/*
+ * A few words on the waiting SCB list:
+ * After starting the selection hardware, we check for reconnecting targets
+ * as well as for our selection to complete just in case the reselection wins
+ * bus arbitration.  The problem with this is that we must keep track of the
+ * SCB that we've already pulled from the QINFIFO and started the selection
+ * on just in case the reselection wins so that we can retry the selection at
+ * a later time.  This problem cannot be resolved by holding a single entry
+ * in scratch ram since a reconnecting target can request sense and this will
+ * create yet another SCB waiting for selection.  The solution used here is to 
+ * use byte 27 of the SCB as a psuedo-next pointer and to thread a list
+ * of SCBs that are awaiting selection.  Since 0-0xfe are valid SCB indexes, 
+ * SCB_LIST_NULL is 0xff which is out of range.  An entry is also added to
+ * this list everytime a request sense occurs or after completing a non-tagged
+ * command for which a second SCB has been queued.  The sequencer will
+ * automatically consume the entries.
+ */
+
+bus_free_sel:
+	/*
+	 * Turn off the selection hardware.  We need to reset the
+	 * selection request in order to perform a new selection.
+	 */
+	and	SCSISEQ, TEMODE|ENSELI|ENRSELI|ENAUTOATNP;
+	and	SIMODE1, ~ENBUSFREE;
+poll_for_work:
+	call	clear_target_state;
+	and	SXFRCTL0, ~SPIOEN;
+	if ((ahc->features & AHC_ULTRA2) != 0) {
+		clr	SCSIBUSL;
+	}
+	test	SCSISEQ, ENSELO	jnz poll_for_selection;
+	if ((ahc->features & AHC_TWIN) != 0) {
+		xor	SBLKCTL,SELBUSB;	/* Toggle to the other bus */
+		test	SCSISEQ, ENSELO		jnz poll_for_selection;
+	}
+	cmp	WAITING_SCBH,SCB_LIST_NULL jne start_waiting;
+poll_for_work_loop:
+	if ((ahc->features & AHC_TWIN) != 0) {
+		xor	SBLKCTL,SELBUSB;	/* Toggle to the other bus */
+	}
+	test	SSTAT0, SELDO|SELDI	jnz selection;
+test_queue:
+	/* Has the driver posted any work for us? */
+BEGIN_CRITICAL;
+	if ((ahc->features & AHC_QUEUE_REGS) != 0) {
+		test	QOFF_CTLSTA, SCB_AVAIL jz poll_for_work_loop;
+	} else {
+		mov	A, QINPOS;
+		cmp	KERNEL_QINPOS, A je poll_for_work_loop;
+	}
+	mov	ARG_1, NEXT_QUEUED_SCB;
+
+	/*
+	 * We have at least one queued SCB now and we don't have any 
+	 * SCBs in the list of SCBs awaiting selection.  Allocate a
+	 * card SCB for the host's SCB and get to work on it.
+	 */
+	if ((ahc->flags & AHC_PAGESCBS) != 0) {
+		mov	ALLZEROS	call	get_free_or_disc_scb;
+	} else {
+		/* In the non-paging case, the SCBID == hardware SCB index */
+		mov	SCBPTR, ARG_1;
+	}
+	or	SEQ_FLAGS2, SCB_DMA;
+END_CRITICAL;
+dma_queued_scb:
+	/*
+	 * DMA the SCB from host ram into the current SCB location.
+	 */
+	mvi	DMAPARAMS, HDMAEN|DIRECTION|FIFORESET;
+	mov	ARG_1	call dma_scb;
+	/*
+	 * Check one last time to see if this SCB was canceled
+	 * before we completed the DMA operation.  If it was,
+	 * the QINFIFO next pointer will not match our saved
+	 * value.
+	 */
+	mov	A, ARG_1;
+BEGIN_CRITICAL;
+	cmp	NEXT_QUEUED_SCB, A jne abort_qinscb;
+	if ((ahc->flags & AHC_SEQUENCER_DEBUG) != 0) {
+		cmp	SCB_TAG, A je . + 2;
+		mvi	SCB_MISMATCH call set_seqint;
+	}
+	mov	NEXT_QUEUED_SCB, SCB_NEXT;
+	mov	SCB_NEXT,WAITING_SCBH;
+	mov	WAITING_SCBH, SCBPTR;
+	if ((ahc->features & AHC_QUEUE_REGS) != 0) {
+		mov	NONE, SNSCB_QOFF;
+	} else {
+		inc	QINPOS;
+	}
+	and	SEQ_FLAGS2, ~SCB_DMA;
+END_CRITICAL;
+start_waiting:
+	/*
+	 * Start the first entry on the waiting SCB list.
+	 */
+	mov	SCBPTR, WAITING_SCBH;
+	call	start_selection;
+
+poll_for_selection:
+	/*
+	 * Twin channel devices cannot handle things like SELTO
+	 * interrupts on the "background" channel.  So, while
+	 * selecting, keep polling the current channel until
+	 * either a selection or reselection occurs.
+	 */
+	test	SSTAT0, SELDO|SELDI	jz poll_for_selection;
+
+selection:
+	/*
+	 * We aren't expecting a bus free, so interrupt
+	 * the kernel driver if it happens.
+	 */
+	mvi	CLRSINT1,CLRBUSFREE;
+	if ((ahc->features & AHC_DT) == 0) {
+		or	SIMODE1, ENBUSFREE;
+	}
+
+	/*
+	 * Guard against a bus free after (re)selection
+	 * but prior to enabling the busfree interrupt.  SELDI
+	 * and SELDO will be cleared in that case.
+	 */
+	test	SSTAT0, SELDI|SELDO	jz bus_free_sel;
+	test	SSTAT0,SELDO	jnz select_out;
+select_in:
+	if ((ahc->flags & AHC_TARGETROLE) != 0) {
+		if ((ahc->flags & AHC_INITIATORROLE) != 0) {
+			test	SSTAT0, TARGET	jz initiator_reselect;
+		}
+		mvi	CLRSINT0, CLRSELDI;
+
+		/*
+		 * We've just been selected.  Assert BSY and
+		 * setup the phase for receiving messages
+		 * from the target.
+		 */
+		mvi	SCSISIGO, P_MESGOUT|BSYO;
+
+		/*
+		 * Setup the DMA for sending the identify and
+		 * command information.
+		 */
+		mvi	SEQ_FLAGS, CMDPHASE_PENDING;
+
+		mov     A, TQINPOS;
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			mvi	DINDEX, CCHADDR;
+			mvi	SHARED_DATA_ADDR call set_32byte_addr;
+			mvi	CCSCBCTL, CCSCBRESET;
+		} else {
+			mvi	DINDEX, HADDR;
+			mvi	SHARED_DATA_ADDR call set_32byte_addr;
+			mvi	DFCNTRL, FIFORESET;
+		}
+
+		/* Initiator that selected us */
+		and	SAVED_SCSIID, SELID_MASK, SELID;
+		/* The Target ID we were selected at */
+		if ((ahc->features & AHC_MULTI_TID) != 0) {
+			and	A, OID, TARGIDIN;
+		} else if ((ahc->features & AHC_ULTRA2) != 0) {
+			and	A, OID, SCSIID_ULTRA2;
+		} else {
+			and	A, OID, SCSIID;
+		}
+		or	SAVED_SCSIID, A;
+		if ((ahc->features & AHC_TWIN) != 0) {
+			test 	SBLKCTL, SELBUSB jz . + 2;
+			or	SAVED_SCSIID, TWIN_CHNLB;
+		}
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			mov	CCSCBRAM, SAVED_SCSIID;
+		} else {
+			mov	DFDAT, SAVED_SCSIID;
+		}
+
+		/*
+		 * If ATN isn't asserted, the target isn't interested
+		 * in talking to us.  Go directly to bus free.
+		 * XXX SCSI-1 may require us to assume lun 0 if
+		 * ATN is false.
+		 */
+		test	SCSISIGI, ATNI	jz	target_busfree;
+
+		/*
+		 * Watch ATN closely now as we pull in messages from the
+		 * initiator.  We follow the guidlines from section 6.5
+		 * of the SCSI-2 spec for what messages are allowed when.
+		 */
+		call	target_inb;
+
+		/*
+		 * Our first message must be one of IDENTIFY, ABORT, or
+		 * BUS_DEVICE_RESET.
+		 */
+		test	DINDEX, MSG_IDENTIFYFLAG jz host_target_message_loop;
+		/* Store for host */
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			mov	CCSCBRAM, DINDEX;
+		} else {
+			mov	DFDAT, DINDEX;
+		}
+		and	SAVED_LUN, MSG_IDENTIFY_LUNMASK, DINDEX;
+
+		/* Remember for disconnection decision */
+		test	DINDEX, MSG_IDENTIFY_DISCFLAG jnz . + 2;
+		/* XXX Honor per target settings too */
+		or	SEQ_FLAGS, NO_DISCONNECT;
+
+		test	SCSISIGI, ATNI	jz	ident_messages_done;
+		call	target_inb;
+		/*
+		 * If this is a tagged request, the tagged message must
+		 * immediately follow the identify.  We test for a valid
+		 * tag message by seeing if it is >= MSG_SIMPLE_Q_TAG and
+		 * < MSG_IGN_WIDE_RESIDUE.
+		 */
+		add	A, -MSG_SIMPLE_Q_TAG, DINDEX;
+		jnc	ident_messages_done_msg_pending;
+		add	A, -MSG_IGN_WIDE_RESIDUE, DINDEX;
+		jc	ident_messages_done_msg_pending;
+
+		/* Store for host */
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			mov	CCSCBRAM, DINDEX;
+		} else {
+			mov	DFDAT, DINDEX;
+		}
+		
+		/*
+		 * If the initiator doesn't feel like providing a tag number,
+		 * we've got a failed selection and must transition to bus
+		 * free.
+		 */
+		test	SCSISIGI, ATNI	jz	target_busfree;
+
+		/*
+		 * Store the tag for the host.
+		 */
+		call	target_inb;
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			mov	CCSCBRAM, DINDEX;
+		} else {
+			mov	DFDAT, DINDEX;
+		}
+		mov	INITIATOR_TAG, DINDEX;
+		or	SEQ_FLAGS, TARGET_CMD_IS_TAGGED;
+
+ident_messages_done:
+		/* Terminate the ident list */
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			mvi	CCSCBRAM, SCB_LIST_NULL;
+		} else {
+			mvi	DFDAT, SCB_LIST_NULL;
+		}
+		or	SEQ_FLAGS, TARG_CMD_PENDING;
+		test	SEQ_FLAGS2, TARGET_MSG_PENDING
+			jnz target_mesgout_pending;
+		test	SCSISIGI, ATNI jnz target_mesgout_continue;
+		jmp	target_ITloop;
+
+
+ident_messages_done_msg_pending:
+		or	SEQ_FLAGS2, TARGET_MSG_PENDING;
+		jmp	ident_messages_done;
+
+		/*
+		 * Pushed message loop to allow the kernel to
+		 * run it's own target mode message state engine.
+		 */
+host_target_message_loop:
+		mvi	HOST_MSG_LOOP call set_seqint;
+		cmp	RETURN_1, EXIT_MSG_LOOP	je target_ITloop;
+		test	SSTAT0, SPIORDY jz .;
+		jmp	host_target_message_loop;
+	}
+
+if ((ahc->flags & AHC_INITIATORROLE) != 0) {
+/*
+ * Reselection has been initiated by a target. Make a note that we've been
+ * reselected, but haven't seen an IDENTIFY message from the target yet.
+ */
+initiator_reselect:
+	/* XXX test for and handle ONE BIT condition */
+	or	SXFRCTL0, SPIOEN|CLRSTCNT|CLRCHN;
+	and	SAVED_SCSIID, SELID_MASK, SELID;
+	if ((ahc->features & AHC_ULTRA2) != 0) {
+		and	A, OID, SCSIID_ULTRA2;
+	} else {
+		and	A, OID, SCSIID;
+	}
+	or	SAVED_SCSIID, A;
+	if ((ahc->features & AHC_TWIN) != 0) {
+		test	SBLKCTL, SELBUSB	jz . + 2;
+		or	SAVED_SCSIID, TWIN_CHNLB;
+	}
+	mvi	CLRSINT0, CLRSELDI;
+	jmp	ITloop;
+}
+
+abort_qinscb:
+	call	add_scb_to_free_list;
+	jmp	poll_for_work_loop;
+
+start_selection:
+	/*
+	 * If bus reset interrupts have been disabled (from a previous
+	 * reset), re-enable them now.  Resets are only of interest
+	 * when we have outstanding transactions, so we can safely
+	 * defer re-enabling the interrupt until, as an initiator,
+	 * we start sending out transactions again.
+	 */
+	test	SIMODE1, ENSCSIRST	jnz . + 3;
+	mvi	CLRSINT1, CLRSCSIRSTI;
+	or	SIMODE1, ENSCSIRST;
+	if ((ahc->features & AHC_TWIN) != 0) {
+		and	SINDEX,~SELBUSB,SBLKCTL;/* Clear channel select bit */
+		test	SCB_SCSIID, TWIN_CHNLB jz . + 2;
+		or	SINDEX, SELBUSB;
+		mov	SBLKCTL,SINDEX;		/* select channel */
+	}
+initialize_scsiid:
+	if ((ahc->features & AHC_ULTRA2) != 0) {
+		mov	SCSIID_ULTRA2, SCB_SCSIID;
+	} else if ((ahc->features & AHC_TWIN) != 0) {
+		and	SCSIID, TWIN_TID|OID, SCB_SCSIID;
+	} else {
+		mov	SCSIID, SCB_SCSIID;
+	}
+	if ((ahc->flags & AHC_TARGETROLE) != 0) {
+		mov	SINDEX, SCSISEQ_TEMPLATE;
+		test	SCB_CONTROL, TARGET_SCB jz . + 2;
+		or	SINDEX, TEMODE;
+		mov	SCSISEQ, SINDEX ret;
+	} else {
+		mov	SCSISEQ, SCSISEQ_TEMPLATE ret;
+	}
+
+/*
+ * Initialize transfer settings with SCB provided settings.
+ */
+set_transfer_settings:
+	if ((ahc->features & AHC_ULTRA) != 0) {
+		test	SCB_CONTROL, ULTRAENB jz . + 2;
+		or	SXFRCTL0, FAST20;
+	} 
+	/*
+	 * Initialize SCSIRATE with the appropriate value for this target.
+	 */
+	if ((ahc->features & AHC_ULTRA2) != 0) {
+		bmov	SCSIRATE, SCB_SCSIRATE, 2 ret;
+	} else {
+		mov	SCSIRATE, SCB_SCSIRATE ret;
+	}
+
+if ((ahc->flags & AHC_TARGETROLE) != 0) {
+/*
+ * We carefully toggle SPIOEN to allow us to return the 
+ * message byte we receive so it can be checked prior to
+ * driving REQ on the bus for the next byte.
+ */
+target_inb:
+	/*
+	 * Drive REQ on the bus by enabling SCSI PIO.
+	 */
+	or	SXFRCTL0, SPIOEN;
+	/* Wait for the byte */
+	test	SSTAT0, SPIORDY jz .;
+	/* Prevent our read from triggering another REQ */
+	and	SXFRCTL0, ~SPIOEN;
+	/* Save latched contents */
+	mov	DINDEX, SCSIDATL ret;
+}
+
+/*
+ * After the selection, remove this SCB from the "waiting SCB"
+ * list.  This is achieved by simply moving our "next" pointer into
+ * WAITING_SCBH.  Our next pointer will be set to null the next time this
+ * SCB is used, so don't bother with it now.
+ */
+select_out:
+	/* Turn off the selection hardware */
+	and	SCSISEQ, TEMODE|ENSELI|ENRSELI|ENAUTOATNP, SCSISEQ;
+	mov	SCBPTR, WAITING_SCBH;
+	mov	WAITING_SCBH,SCB_NEXT;
+	mov	SAVED_SCSIID, SCB_SCSIID;
+	and	SAVED_LUN, LID, SCB_LUN;
+	call	set_transfer_settings;
+	if ((ahc->flags & AHC_TARGETROLE) != 0) {
+		test	SSTAT0, TARGET	jz initiator_select;
+
+		or	SXFRCTL0, CLRSTCNT|CLRCHN;
+
+		/*
+		 * Put tag in connonical location since not
+		 * all connections have an SCB.
+		 */
+		mov	INITIATOR_TAG, SCB_TARGET_ITAG;
+
+		/*
+		 * We've just re-selected an initiator.
+		 * Assert BSY and setup the phase for
+		 * sending our identify messages.
+		 */
+		mvi	P_MESGIN|BSYO call change_phase;
+		mvi	CLRSINT0, CLRSELDO;
+
+		/*
+		 * Start out with a simple identify message.
+		 */
+		or	SAVED_LUN, MSG_IDENTIFYFLAG call target_outb;
+
+		/*
+		 * If we are the result of a tagged command, send
+		 * a simple Q tag and the tag id.
+		 */
+		test	SCB_CONTROL, TAG_ENB	jz . + 3;
+		mvi	MSG_SIMPLE_Q_TAG call target_outb;
+		mov	SCB_TARGET_ITAG call target_outb;
+target_synccmd:
+		/*
+		 * Now determine what phases the host wants us
+		 * to go through.
+		 */
+		mov	SEQ_FLAGS, SCB_TARGET_PHASES;
+		
+		test	SCB_CONTROL, MK_MESSAGE	jz target_ITloop;
+		mvi	P_MESGIN|BSYO call change_phase;
+		jmp	host_target_message_loop;
+target_ITloop:
+		/*
+		 * Start honoring ATN signals now that
+		 * we properly identified ourselves.
+		 */
+		test	SCSISIGI, ATNI			jnz target_mesgout;
+		test	SEQ_FLAGS, CMDPHASE_PENDING	jnz target_cmdphase;
+		test	SEQ_FLAGS, DPHASE_PENDING	jnz target_dphase;
+		test	SEQ_FLAGS, SPHASE_PENDING	jnz target_sphase;
+
+		/*
+		 * No more work to do.  Either disconnect or not depending
+		 * on the state of NO_DISCONNECT.
+		 */
+		test	SEQ_FLAGS, NO_DISCONNECT jz target_disconnect; 
+		mvi	TARG_IMMEDIATE_SCB, SCB_LIST_NULL;
+		call	complete_target_cmd;
+		if ((ahc->flags & AHC_PAGESCBS) != 0) {
+			mov	ALLZEROS	call	get_free_or_disc_scb;
+		}
+		cmp	TARG_IMMEDIATE_SCB, SCB_LIST_NULL je .;
+		mvi	DMAPARAMS, HDMAEN|DIRECTION|FIFORESET;
+		mov	TARG_IMMEDIATE_SCB call dma_scb;
+		call	set_transfer_settings;
+		or	SXFRCTL0, CLRSTCNT|CLRCHN;
+		jmp	target_synccmd;
+
+target_mesgout:
+		mvi	SCSISIGO, P_MESGOUT|BSYO;
+target_mesgout_continue:
+		call	target_inb;
+target_mesgout_pending:
+		and	SEQ_FLAGS2, ~TARGET_MSG_PENDING;
+		/* Local Processing goes here... */
+		jmp	host_target_message_loop;
+		
+target_disconnect:
+		mvi	P_MESGIN|BSYO call change_phase;
+		test	SEQ_FLAGS, DPHASE	jz . + 2;
+		mvi	MSG_SAVEDATAPOINTER call target_outb;
+		mvi	MSG_DISCONNECT call target_outb;
+
+target_busfree_wait:
+		/* Wait for preceding I/O session to complete. */
+		test	SCSISIGI, ACKI jnz .;
+target_busfree:
+		and	SIMODE1, ~ENBUSFREE;
+		if ((ahc->features & AHC_ULTRA2) != 0) {
+			clr	SCSIBUSL;
+		}
+		clr	SCSISIGO;
+		mvi	LASTPHASE, P_BUSFREE;
+		call	complete_target_cmd;
+		jmp	poll_for_work;
+
+target_cmdphase:
+		/*
+		 * The target has dropped ATN (doesn't want to abort or BDR)
+		 * and we believe this selection to be valid.  If the ring
+		 * buffer for new commands is full, return busy or queue full.
+		 */
+		if ((ahc->features & AHC_HS_MAILBOX) != 0) {
+			and	A, HOST_TQINPOS, HS_MAILBOX;
+		} else {
+			mov	A, KERNEL_TQINPOS;
+		}
+		cmp	TQINPOS, A jne tqinfifo_has_space;
+		mvi	P_STATUS|BSYO call change_phase;
+		test	SEQ_FLAGS, TARGET_CMD_IS_TAGGED jz . + 3;
+		mvi	STATUS_QUEUE_FULL call target_outb;
+		jmp	target_busfree_wait;
+		mvi	STATUS_BUSY call target_outb;
+		jmp	target_busfree_wait;
+tqinfifo_has_space:	
+		mvi	P_COMMAND|BSYO call change_phase;
+		call	target_inb;
+		mov	A, DINDEX;
+		/* Store for host */
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			mov	CCSCBRAM, A;
+		} else {
+			mov	DFDAT, A;
+		}
+
+		/*
+		 * Determine the number of bytes to read
+		 * based on the command group code via table lookup.
+		 * We reuse the first 8 bytes of the TARG_SCSIRATE
+		 * BIOS array for this table. Count is one less than
+		 * the total for the command since we've already fetched
+		 * the first byte.
+		 */
+		shr	A, CMD_GROUP_CODE_SHIFT;
+		add	SINDEX, CMDSIZE_TABLE, A;
+		mov	A, SINDIR;
+
+		test	A, 0xFF jz command_phase_done;
+		or	SXFRCTL0, SPIOEN;
+command_loop:
+		test	SSTAT0, SPIORDY jz .;
+		cmp	A, 1 jne . + 2;
+		and	SXFRCTL0, ~SPIOEN;	/* Last Byte */
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			mov	CCSCBRAM, SCSIDATL;
+		} else {
+			mov	DFDAT, SCSIDATL;
+		}
+		dec	A;
+		test	A, 0xFF jnz command_loop;
+
+command_phase_done:
+		and	SEQ_FLAGS, ~CMDPHASE_PENDING;
+		jmp	target_ITloop;
+
+target_dphase:
+		/*
+		 * Data phases on the bus are from the
+		 * perspective of the initiator.  The dma
+		 * code looks at LASTPHASE to determine the
+		 * data direction of the DMA.  Toggle it for
+		 * target transfers.
+		 */
+		xor	LASTPHASE, IOI, SCB_TARGET_DATA_DIR;
+		or	SCB_TARGET_DATA_DIR, BSYO call change_phase;
+		jmp	p_data;
+
+target_sphase:
+		mvi	P_STATUS|BSYO call change_phase;
+		mvi	LASTPHASE, P_STATUS;
+		mov	SCB_SCSI_STATUS call target_outb;
+		/* XXX Watch for ATN or parity errors??? */
+		mvi	SCSISIGO, P_MESGIN|BSYO;
+		/* MSG_CMDCMPLT is 0, but we can't do an immediate of 0 */
+		mov	ALLZEROS call target_outb;
+		jmp	target_busfree_wait;
+	
+complete_target_cmd:
+		test	SEQ_FLAGS, TARG_CMD_PENDING	jnz . + 2;
+		mov	SCB_TAG jmp complete_post;
+		if ((ahc->features & AHC_CMD_CHAN) != 0) {
+			/* Set the valid byte */
+			mvi	CCSCBADDR, 24;
+			mov	CCSCBRAM, ALLONES;
+			mvi	CCHCNT, 28;
+			or	CCSCBCTL, CCSCBEN|CCSCBRESET;
+			test	CCSCBCTL, CCSCBDONE jz .;
+			clr	CCSCBCTL;
+		} else {
+			/* Set the valid byte */
+			or	DFCNTRL, FIFORESET;
+			mvi	DFWADDR, 3; /* Third 64bit word or byte 24 */
+			mov	DFDAT, ALLONES;
+			mvi	28	call set_hcnt;
+			or	DFCNTRL, HDMAEN|FIFOFLUSH;
+			call	dma_finish;
+		}
+		inc	TQINPOS;
+		mvi	INTSTAT,CMDCMPLT ret;
+	}
+
+if ((ahc->flags & AHC_INITIATORROLE) != 0) {
+initiator_select:
+	or	SXFRCTL0, SPIOEN|CLRSTCNT|CLRCHN;
+	/*
+	 * As soon as we get a successful selection, the target
+	 * should go into the message out phase since we have ATN
+	 * asserted.
+	 */
+	mvi	MSG_OUT, MSG_IDENTIFYFLAG;
+	mvi	SEQ_FLAGS, NO_CDB_SENT;
+	mvi	CLRSINT0, CLRSELDO;
+
+	/*
+	 * Main loop for information transfer phases.  Wait for the
+	 * target to assert REQ before checking MSG, C/D and I/O for
+	 * the bus phase.
+	 */
+mesgin_phasemis:
+ITloop:
+	call	phase_lock;
+
+	mov	A, LASTPHASE;
+
+	test	A, ~P_DATAIN	jz p_data;
+	cmp	A,P_COMMAND	je p_command;
+	cmp	A,P_MESGOUT	je p_mesgout;
+	cmp	A,P_STATUS	je p_status;
+	cmp	A,P_MESGIN	je p_mesgin;
+
+	mvi	BAD_PHASE call set_seqint;
+	jmp	ITloop;			/* Try reading the bus again. */
+
+await_busfree:
+	and	SIMODE1, ~ENBUSFREE;
+	mov	NONE, SCSIDATL;		/* Ack the last byte */
+	if ((ahc->features & AHC_ULTRA2) != 0) {
+		clr	SCSIBUSL;	/* Prevent bit leakage durint SELTO */
+	}
+	and	SXFRCTL0, ~SPIOEN;
+	mvi	SEQ_FLAGS, NOT_IDENTIFIED|NO_CDB_SENT;
+	test	SSTAT1,REQINIT|BUSFREE	jz .;
+	test	SSTAT1, BUSFREE jnz poll_for_work;
+	mvi	MISSED_BUSFREE call set_seqint;
+}
+	
+clear_target_state:
+	/*
+	 * We assume that the kernel driver may reset us
+	 * at any time, even in the middle of a DMA, so
+	 * clear DFCNTRL too.
+	 */
+	clr	DFCNTRL;
+	or	SXFRCTL0, CLRSTCNT|CLRCHN;
+
+	/*
+	 * We don't know the target we will connect to,
+	 * so default to narrow transfers to avoid
+	 * parity problems.
+	 */
+	if ((ahc->features & AHC_ULTRA2) != 0) {
+		bmov	SCSIRATE, ALLZEROS, 2;
+	} else {
+		clr	SCSIRATE;
+		if ((ahc->features & AHC_ULTRA) != 0) {
+			and	SXFRCTL0, ~(FAST20);
+		}
+	}
+	mvi	LASTPHASE, P_BUSFREE;
+	/* clear target specific flags */
+	mvi	SEQ_FLAGS, NOT_IDENTIFIED|NO_CDB_SENT ret;
+
+sg_advance:
+	clr	A;			/* add sizeof(struct scatter) */
+	add	SCB_RESIDUAL_SGPTR[0],SG_SIZEOF;
+	adc	SCB_RESIDUAL_SGPTR[1],A;
+	adc	SCB_RESIDUAL_SGPTR[2],A;
+	adc	SCB_RESIDUAL_SGPTR[3],A ret;
+
+if ((ahc->features & AHC_CMD_CHAN) != 0) {
+disable_ccsgen:
+	test	CCSGCTL, CCSGEN jz return;
+	test	CCSGCTL, CCSGDONE jz .;
+disable_ccsgen_fetch_done:
+	clr	CCSGCTL;
+	test	CCSGCTL, CCSGEN jnz .;
+	ret;
+idle_loop:
+	/*
+	 * Do we need any more segments for this transfer?
+	 */
+	test	SCB_RESIDUAL_DATACNT[3], SG_LAST_SEG jnz return;
+
+	/* Did we just finish fetching segs? */
+	cmp	CCSGCTL

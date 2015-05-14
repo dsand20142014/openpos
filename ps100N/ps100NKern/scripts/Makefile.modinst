@@ -1,0 +1,43 @@
+cmd->sense_buffer[7];
+
+				if (len > SCSI_SENSE_BUFFERSIZE)
+					len = SCSI_SENSE_BUFFERSIZE;
+				memcpy(req->sense, cmd->sense_buffer,  len);
+				req->sense_len = len;
+			}
+			if (!sense_deferred)
+				error = -EIO;
+		}
+
+		req->resid_len = scsi_get_resid(cmd);
+
+		if (scsi_bidi_cmnd(cmd)) {
+			/*
+			 * Bidi commands Must be complete as a whole,
+			 * both sides at once.
+			 */
+			req->next_rq->resid_len = scsi_in(cmd)->resid;
+
+			blk_end_request_all(req, 0);
+
+			scsi_release_buffers(cmd);
+			scsi_next_command(cmd);
+			return;
+		}
+	}
+
+	BUG_ON(blk_bidi_rq(req)); /* bidi not support for !blk_pc_request yet */
+
+	/*
+	 * Next deal with any sectors which we were able to correctly
+	 * handle.
+	 */
+	SCSI_LOG_HLCOMPLETE(1, printk("%u sectors total, "
+				      "%d bytes done.\n",
+				      blk_rq_sectors(req), good_bytes));
+
+	/*
+	 * Recovered errors need reporting, but they're always treated
+	 * as success, so fiddle the result code here.  For BLOCK_PC
+	 * we already took a copy of the original into rq->errors which
+	 * is what gets returne

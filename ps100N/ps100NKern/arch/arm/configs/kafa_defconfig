@@ -1,0 +1,703 @@
+	{
+		if (cmdqelmt->buffer)
+			NdisFreeMemory(cmdqelmt->buffer, cmdqelmt->bufferlength, 0);
+		NdisFreeMemory(cmdqelmt, sizeof(CmdQElmt), 0);
+	}
+	else
+	RTUSBCMDUp(pAd);
+
+
+    return(NDIS_STATUS_SUCCESS);
+}
+
+/*
+	========================================================================
+
+	Routine Description:
+
+	Arguments:
+
+	Return Value:
+
+	IRQL =
+
+	Note:
+
+	========================================================================
+*/
+NDIS_STATUS RTUSBEnqueueInternalCmd(
+	IN PRTMP_ADAPTER	pAd,
+	IN NDIS_OID			Oid,
+	IN PVOID			pInformationBuffer,
+	IN UINT32			InformationBufferLength)
+{
+	NDIS_STATUS	status;
+	PCmdQElmt	cmdqelmt = NULL;
+
+
+	status = RTMPAllocateMemory((PVOID *)&cmdqelmt, sizeof(CmdQElmt));
+	if ((status != NDIS_STATUS_SUCCESS) || (cmdqelmt == NULL))
+		return (NDIS_STATUS_RESOURCES);
+	NdisZeroMemory(cmdqelmt, sizeof(CmdQElmt));
+
+	if(InformationBufferLength > 0)
+	{
+		status = RTMPAllocateMemory((PVOID *)&cmdqelmt->buffer, InformationBufferLength);
+		if ((status != NDIS_STATUS_SUCCESS) || (cmdqelmt->buffer == NULL))
+		{
+			NdisFreeMemory(cmdqelmt, sizeof(CmdQElmt), 0);
+			return (NDIS_STATUS_RESOURCES);
+		}
+		else
+		{
+			NdisMoveMemory(cmdqelmt->buffer, pInformationBuffer, InformationBufferLength);
+			cmdqelmt->bufferlength = InformationBufferLength;
+		}
+	}
+	else
+	{
+		cmdqelmt->buffer = NULL;
+		cmdqelmt->bufferlength = 0;
+	}
+
+	cmdqelmt->command = Oid;
+	cmdqelmt->CmdFromNdis = FALSE;
+
+	if (cmdqelmt != NULL)
+	{
+		NdisAcquireSpinLock(&pAd->CmdQLock);
+		if (pAd->CmdQ.CmdQState & RT2870_THREAD_CAN_DO_INSERT)
+		{
+			EnqueueCmd((&pAd->CmdQ), cmdqelmt);
+			status = NDIS_STATUS_SUCCESS;
+		}
+		else
+		{
+			status = NDIS_STATUS_FAILURE;
+		}
+		NdisReleaseSpinLock(&pAd->CmdQLock);
+
+		if (status == NDIS_STATUS_FAILURE)
+		{
+			if (cmdqelmt->buffer)
+				NdisFreeMemory(cmdqelmt->buffer, cmdqelmt->bufferlength, 0);
+			NdisFreeMemory(cmdqelmt, sizeof(CmdQElmt), 0);
+		}
+		else
+		RTUSBCMDUp(pAd);
+	}
+	return(NDIS_STATUS_SUCCESS);
+}
+
+/*
+	========================================================================
+
+	Routine Description:
+
+	Arguments:
+
+	Return Value:
+
+	IRQL =
+
+	Note:
+
+	========================================================================
+*/
+VOID	RTUSBDequeueCmd(
+	IN	PCmdQ		cmdq,
+	OUT	PCmdQElmt	*pcmdqelmt)
+{
+	*pcmdqelmt = cmdq->head;
+
+	if (*pcmdqelmt != NULL)
+	{
+		cmdq->head = cmdq->head->next;
+		cmdq->size--;
+		if (cmdq->size == 0)
+			cmdq->tail = NULL;
+	}
+}
+
+/*
+    ========================================================================
+	  usb_control_msg - Builds a control urb, sends it off and waits for completion
+	  @dev: pointer to the usb device to send the message to
+	  @pipe: endpoint "pipe" to send the message to
+	  @request: USB message request value
+	  @requesttype: USB message request type value
+	  @value: USB message value
+	  @index: USB message index value
+	  @data: pointer to the data to send
+	  @size: length in bytes of the data to send
+	  @timeout: time in jiffies to wait for the message to complete before
+			  timing out (if 0 the wait is forever)
+	  Context: !in_interrupt ()
+
+	  This function sends a simple control message to a specified endpoint
+	  and waits for the message to complete, or timeout.
+	  If successful, it returns the number of bytes transferred, otherwise a negative error number.
+
+	 Don't use this function from within an interrupt context, like a
+	  bottom half handler.	If you need an asynchronous message, or need to send
+	  a message from within interrupt context, use usb_submit_urb()
+	  If a thread in your driver uses this call, make sure your disconnect()
+	  method can wait for it to complete.  Since you don't have a handle on
+	  the URB used, you can't cancel the request.
+
+
+	Routine Description:
+
+	Arguments:
+
+	Return Value:
+
+	Note:
+
+	========================================================================
+*/
+NTSTATUS    RTUSB_VendorRequest(
+	IN	PRTMP_ADAPTER	pAd,
+	IN	UINT32			TransferFlags,
+	IN	UCHAR			RequestType,
+	IN	UCHAR			Request,
+	IN	USHORT			Value,
+	IN	USHORT			Index,
+	IN	PVOID			TransferBuffer,
+	IN	UINT32			TransferBufferLength)
+{
+	int				ret;
+	POS_COOKIE		pObj = (POS_COOKIE) pAd->OS_Cookie;
+
+	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST))
+	{
+		DBGPRINT(RT_DEBUG_ERROR, ("device disconnected\n"));
+		return -1;
+	}
+	else if (in_interrupt())
+	{
+		DBGPRINT(RT_DEBUG_ERROR, ("in_interrupt, RTUSB_VendorRequest Request%02x Value%04x Offset%04x\n",Request,Value,Index));
+
+		return -1;
+	}
+	else
+	{
+#define MAX_RETRY_COUNT  10
+
+		int retryCount = 0;
+		void	*tmpBuf = TransferBuffer;
+
+		// Acquire Control token
+		do {
+		if( RequestType == DEVICE_VENDOR_REQUEST_OUT)
+			ret=usb_control_msg(pObj->pUsb_Dev, usb_sndctrlpipe( pObj->pUsb_Dev, 0 ), Request, RequestType, Value,Index, tmpBuf, TransferBufferLength, CONTROL_TIMEOUT_JIFFIES);
+		else if(RequestType == DEVICE_VENDOR_REQUEST_IN)
+			ret=usb_control_msg(pObj->pUsb_Dev, usb_rcvctrlpipe( pObj->pUsb_Dev, 0 ), Request, RequestType, Value,Index, tmpBuf, TransferBufferLength, CONTROL_TIMEOUT_JIFFIES);
+		else
+		{
+			DBGPRINT(RT_DEBUG_ERROR, ("vendor request direction is failed\n"));
+			ret = -1;
+		}
+
+			retryCount++;
+			if (ret < 0) {
+				printk("#\n");
+				RTMPusecDelay(5000);
+			}
+		} while((ret < 0) && (retryCount < MAX_RETRY_COUNT));
+
+        if (ret < 0) {
+//			DBGPRINT(RT_DEBUG_ERROR, ("USBVendorRequest failed ret=%d \n",ret));
+			DBGPRINT(RT_DEBUG_ERROR, ("RTUSB_VendorRequest failed(%d),TxFlags=0x%x, ReqType=%s, Req=0x%x, Index=0x%x\n",
+						ret, TransferFlags, (RequestType == DEVICE_VENDOR_REQUEST_OUT ? "OUT" : "IN"), Request, Index));
+			if (Request == 0x2)
+				DBGPRINT(RT_DEBUG_ERROR, ("\tRequest Value=0x%04x!\n", Value));
+
+			if ((TransferBuffer!= NULL) && (TransferBufferLength > 0))
+				hex_dump("Failed TransferBuffer value", TransferBuffer, TransferBufferLength);
+        }
+	}
+	return ret;
+}
+
+/*
+	========================================================================
+
+	Routine Description:
+	  Creates an IRP to submite an IOCTL_INTERNAL_USB_RESET_PORT
+	  synchronously. Callers of this function must be running at
+	  PASSIVE LEVEL.
+
+	Arguments:
+
+	Return Value:
+
+	Note:
+
+	========================================================================
+*/
+NTSTATUS	RTUSB_ResetDevice(
+	IN	PRTMP_ADAPTER	pAd)
+{
+	NTSTATUS		Status = TRUE;
+
+	DBGPRINT_RAW(RT_DEBUG_TRACE, ("--->USB_ResetDevice\n"));
+	//RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_RESET_IN_PROGRESS);
+	return Status;
+}
+
+VOID CMDHandler(
+    IN PRTMP_ADAPTER pAd)
+{
+	PCmdQElmt		cmdqelmt;
+	PUCHAR			pData;
+	NDIS_STATUS		NdisStatus = NDIS_STATUS_SUCCESS;
+//	ULONG			Now = 0;
+	NTSTATUS		ntStatus;
+//	unsigned long	IrqFlags;
+
+	while (pAd->CmdQ.size > 0)
+	{
+		NdisStatus = NDIS_STATUS_SUCCESS;
+
+		NdisAcquireSpinLock(&pAd->CmdQLock);
+		RTUSBDequeueCmd(&pAd->CmdQ, &cmdqelmt);
+		NdisReleaseSpinLock(&pAd->CmdQLock);
+
+		if (cmdqelmt == NULL)
+			break;
+
+		pData = cmdqelmt->buffer;
+
+		if(!(RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST) || RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS)))
+		{
+			switch (cmdqelmt->command)
+			{
+				case CMDTHREAD_CHECK_GPIO:
+					{
+						UINT32 data;
+
+						{
+							// Read GPIO pin2 as Hardware controlled radio state
+
+							RTUSBReadMACRegister( pAd, GPIO_CTRL_CFG, &data);
+
+							if (data & 0x04)
+							{
+								pAd->StaCfg.bHwRadio = TRUE;
+							}
+							else
+							{
+								pAd->StaCfg.bHwRadio = FALSE;
+							}
+
+							if(pAd->StaCfg.bRadio != (pAd->StaCfg.bHwRadio && pAd->StaCfg.bSwRadio))
+							{
+								pAd->StaCfg.bRadio = (pAd->StaCfg.bHwRadio && pAd->StaCfg.bSwRadio);
+								if(pAd->StaCfg.bRadio == TRUE)
+								{
+									DBGPRINT_RAW(RT_DEBUG_ERROR, ("!!! Radio On !!!\n"));
+
+									MlmeRadioOn(pAd);
+									// Update extra information
+									pAd->ExtraInfo = EXTRA_INFO_CLEAR;
+								}
+								else
+								{
+									DBGPRINT_RAW(RT_DEBUG_ERROR, ("!!! Radio Off !!!\n"));
+
+									MlmeRadioOff(pAd);
+									// Update extra information
+									pAd->ExtraInfo = HW_RADIO_OFF;
+								}
+							}
+						}
+					}
+					break;
+
+				case CMDTHREAD_QKERIODIC_EXECUT:
+					{
+						StaQuickResponeForRateUpExec(NULL, pAd, NULL, NULL);
+					}
+					break;
+
+				case CMDTHREAD_RESET_BULK_OUT:
+					{
+						UINT32		MACValue;
+						UCHAR		Index;
+						int			ret=0;
+						PHT_TX_CONTEXT	pHTTXContext;
+//		IG_MD is not set
+
+#
+# Fusion MPT device support
+#
+# CONFIG_FUSION is not set
+
+#
+# IEEE 1394 (FireWire) support
+#
+
+#
+# I2O device support
+#
+
+#
+# Network device support
+#
+CONFIG_NETDEVICES=y
+# CONFIG_DUMMY is not set
+# CONFIG_BONDING is not set
+# CONFIG_EQUALIZER is not set
+# CONFIG_TUN is not set
+
+#
+# PHY device support
+#
+CONFIG_PHYLIB=y
+
+#
+# MII PHY device drivers
+#
+# CONFIG_MARVELL_PHY is not set
+CONFIG_DAVICOM_PHY=y
+# CONFIG_QSEMI_PHY is not set
+# CONFIG_LXT_PHY is not set
+# CONFIG_CICADA_PHY is not set
+
+#
+# Ethernet (10 or 100Mbit)
+#
+CONFIG_NET_ETHERNET=y
+CONFIG_MII=y
+CONFIG_ARM_AT91_ETHER=y
+# CONFIG_SMC91X is not set
+# CONFIG_DM9000 is not set
+
+#
+# Ethernet (1000 Mbit)
+#
+
+#
+# Ethernet (10000 Mbit)
+#
+
+#
+# Token Ring devices
+#
+
+#
+# Wireless LAN (non-hamradio)
+#
+# CONFIG_NET_RADIO is not set
+
+#
+# Wan interfaces
+#
+# CONFIG_WAN is not set
+# CONFIG_PPP is not set
+# CONFIG_SLIP is not set
+# CONFIG_SHAPER is not set
+# CONFIG_NETCONSOLE is not set
+# CONFIG_NETPOLL is not set
+# CONFIG_NET_POLL_CONTROLLER is not set
+
+#
+# ISDN subsystem
+#
+# CONFIG_ISDN is not set
+
+#
+# Input device support
+#
+CONFIG_INPUT=y
+
+#
+# Userland interfaces
+#
+CONFIG_INPUT_MOUSEDEV=y
+# CONFIG_INPUT_MOUSEDEV_PSAUX is not set
+CONFIG_INPUT_MOUSEDEV_SCREEN_X=1024
+CONFIG_INPUT_MOUSEDEV_SCREEN_Y=768
+# CONFIG_INPUT_JOYDEV is not set
+# CONFIG_INPUT_TSDEV is not set
+# CONFIG_INPUT_EVDEV is not set
+# CONFIG_INPUT_EVBUG is not set
+
+#
+# Input Device Drivers
+#
+# CONFIG_INPUT_KEYBOARD is not set
+# CONFIG_INPUT_MOUSE is not set
+# CONFIG_INPUT_JOYSTICK is not set
+# CONFIG_INPUT_TOUCHSCREEN is not set
+# CONFIG_INPUT_MISC is not set
+
+#
+# Hardware I/O ports
+#
+# CONFIG_SERIO is not set
+# CONFIG_GAMEPORT is not set
+
+#
+# Character devices
+#
+CONFIG_VT=y
+CONFIG_VT_CONSOLE=y
+CONFIG_HW_CONSOLE=y
+# CONFIG_SERIAL_NONSTANDARD is not set
+
+#
+# Serial drivers
+#
+# CONFIG_SERIAL_8250 is not set
+
+#
+# Non-8250 serial port support
+#
+CONFIG_SERIAL_ATMEL=y
+CONFIG_SERIAL_ATMEL_CONSOLE=y
+# CONFIG_SERIAL_ATMEL_TTYAT is not set
+CONFIG_SERIAL_CORE=y
+CONFIG_SERIAL_CORE_CONSOLE=y
+CONFIG_UNIX98_PTYS=y
+CONFIG_LEGACY_PTYS=y
+CONFIG_LEGACY_PTY_COUNT=32
+
+#
+# IPMI
+#
+# CONFIG_IPMI_HANDLER is not set
+
+#
+# Watchdog Cards
+#
+CONFIG_WATCHDOG=y
+CONFIG_WATCHDOG_NOWAYOUT=y
+
+#
+# Watchdog Device Drivers
+#
+# CONFIG_SOFT_WATCHDOG is not set
+CONFIG_AT91RM9200_WATCHDOG=y
+# CONFIG_NVRAM is not set
+# CONFIG_DTLK is not set
+# CONFIG_R3964 is not set
+
+#
+# Ftape, the floppy tape device driver
+#
+# CONFIG_RAW_DRIVER is not set
+
+#
+# TPM devices
+#
+# CONFIG_TCG_TPM is not set
+# CONFIG_TELCLOCK is not set
+CONFIG_AT91_SPI=y
+CONFIG_AT91_SPIDEV=y
+
+#
+# I2C support
+#
+CONFIG_I2C=y
+CONFIG_I2C_CHARDEV=y
+
+#
+# I2C Algorithms
+#
+CONFIG_I2C_ALGOBIT=y
+# CONFIG_I2C_ALGOPCF is not set
+# CONFIG_I2C_ALGOPCA is not set
+
+#
+# I2C Hardware Bus support
+#
+CONFIG_I2C_GPIO=y
+# CONFIG_I2C_PARPORT_LIGHT is not set
+# CONFIG_I2C_STUB is not set
+# CONFIG_I2C_PCA_ISA is not set
+
+#
+# Miscellaneous I2C Chip support
+#
+# CONFIG_SENSORS_DS1337 is not set
+# CONFIG_SENSORS_DS1374 is not set
+# CONFIG_EEPROM_LEGACY is not set
+# CONFIG_SENSORS_PCF8574 is not set
+# CONFIG_SENSORS_PCA9539 is not set
+# CONFIG_SENSORS_PCF8591 is not set
+# CONFIG_SENSORS_MAX6875 is not set
+# CONFIG_I2C_DEBUG_CORE is not set
+# CONFIG_I2C_DEBUG_ALGO is not set
+# CONFIG_I2C_DEBUG_BUS is not set
+# CONFIG_I2C_DEBUG_CHIP is not set
+
+#
+# SPI support
+#
+# CONFIG_SPI is not set
+# CONFIG_SPI_MASTER is not set
+
+#
+# Dallas's 1-wire bus
+#
+# CONFIG_W1 is not set
+
+#
+# Hardware Monitoring support
+#
+# CONFIG_HWMON is not set
+# CONFIG_HWMON_VID is not set
+
+#
+# Misc devices
+#
+
+#
+# LED devices
+#
+# CONFIG_NEW_LEDS is not set
+
+#
+# LED drivers
+#
+
+#
+# LED Triggers
+#
+
+#
+# Multimedia devices
+#
+# CONFIG_VIDEO_DEV is not set
+
+#
+# Digital Video Broadcasting Devices
+#
+# CONFIG_DVB is not set
+
+#
+# Graphics support
+#
+# CONFIG_FB is not set
+
+#
+# Console display driver support
+#
+# CONFIG_VGA_CONSOLE is not set
+CONFIG_DUMMY_CONSOLE=y
+
+#
+# Sound
+#
+# CONFIG_SOUND is not set
+
+#
+# USB support
+#
+CONFIG_USB_ARCH_HAS_HCD=y
+CONFIG_USB_ARCH_HAS_OHCI=y
+# CONFIG_USB_ARCH_HAS_EHCI is not set
+# CONFIG_USB is not set
+
+#
+# NOTE: USB_STORAGE enableher=0x%lx\n",
+															pAd->BulkOutReq, pAd->BulkOutComplete, pAd->BulkOutCompleteOther));
+										RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[pAd->bulkResetPipeid], IrqFlags);
+										DBGPRINT_RAW(RT_DEBUG_TRACE, ("\tCMDTHREAD_RESET_BULK_OUT: Submit Tx DATA URB for failed BulkReq(0x%lx) Done, status=%d!\n", pAd->bulkResetReq[pAd->bulkResetPipeid], pHTTXContext->pUrb->status));
+
+									}
+								}
+							}
+							else
+							{
+								//NdisReleaseSpinLock(&pAd->BulkOutLock[pAd->bulkResetPipeid]);
+								//RTMP_INT_UNLOCK(&pAd->BulkOutLock[pAd->bulkResetPipeid], IrqFlags);
+
+								DBGPRINT_RAW(RT_DEBUG_ERROR, ("CmdThread : TX DATA RECOVER FAIL for BulkReq(0x%lx) because BulkOutPending[%d] is TRUE!\n", pAd->bulkResetReq[pAd->bulkResetPipeid], pAd->bulkResetPipeid));
+								if (pAd->bulkResetPipeid == 0)
+								{
+									UCHAR	pendingContext = 0;
+									PHT_TX_CONTEXT pHTTXContext = (PHT_TX_CONTEXT)(&pAd->TxContext[pAd->bulkResetPipeid ]);
+									PTX_CONTEXT pMLMEContext = (PTX_CONTEXT)(pAd->MgmtRing.Cell[pAd->MgmtRing.TxDmaIdx].AllocVa);
+									PTX_CONTEXT pNULLContext = (PTX_CONTEXT)(&pAd->PsPollContext);
+									PTX_CONTEXT pPsPollContext = (PTX_CONTEXT)(&pAd->NullContext);
+
+									if (pHTTXContext->IRPPending)
+										pendingContext |= 1;
+									else if (pMLMEContext->IRPPending)
+										pendingContext |= 2;
+									else if (pNULLContext->IRPPending)
+										pendingContext |= 4;
+									else if (pPsPollContext->IRPPending)
+										pendingContext |= 8;
+									else
+										pendingContext = 0;
+
+									DBGPRINT_RAW(RT_DEBUG_ERROR, ("\tTX Occupied by %d!\n", pendingContext));
+								}
+
+							// no matter what, clean the flag
+							RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET);
+
+								RTMP_INT_UNLOCK(&pAd->BulkOutLock[pAd->bulkResetPipeid], IrqFlags);
+
+								RTUSB_SET_BULK_FLAG(pAd, (fRTUSB_BULK_OUT_DATA_NORMAL << pAd->bulkResetPipeid));
+							}
+
+							RTMPDeQueuePacket(pAd, FALSE, NUM_OF_TX_RING, MAX_TX_PROCESS);
+							//RTUSBKickBulkOut(pAd);
+						}
+
+					}
+					/*
+						// Don't cancel BULKIN.
+						while ((atomic_read(&pAd->PendingRx) > 0) &&
+								(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)))
+						{
+							if (atomic_read(&pAd->PendingRx) > 0)
+							{
+								DBGPRINT_RAW(RT_DEBUG_ERROR, ("BulkIn IRP Pending!!cancel it!\n"));
+								RTUSBCancelPendingBulkInIRP(pAd);
+							}
+							RTMPusecDelay(100000);
+						}
+
+						if ((atomic_read(&pAd->PendingRx) == 0) && (!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS)))
+						{
+							UCHAR	i;
+							RTUSBRxPacket(pAd);
+							pAd->NextRxBulkInReadIndex = 0;	// Next Rx Read index
+							pAd->NextRxBulkInIndex		= 0;	// Rx Bulk pointer
+							for (i = 0; i < (RX_RING_SIZE); i++)
+							{
+								PRX_CONTEXT  pRxContext = &(pAd->RxContext[i]);
+
+								pRxContext->pAd	= pAd;
+								pRxContext->InUse		= FALSE;
+								pRxContext->IRPPending	= FALSE;
+								pRxContext->Readable	= FALSE;
+								pRxContext->ReorderInUse = FALSE;
+
+							}
+							RTUSBBulkReceive(pAd);
+							DBGPRINT_RAW(RT_DEBUG_ERROR, ("RTUSBBulkReceive\n"));
+						}*/
+					DBGPRINT_RAW(RT_DEBUG_TRACE, ("CmdThread : CMDTHREAD_RESET_BULK_OUT<===\n"));
+    	   			break;
+
+				case CMDTHREAD_RESET_BULK_IN:
+					DBGPRINT_RAW(RT_DEBUG_TRACE, ("CmdThread : CMDTHREAD_RESET_BULK_IN === >\n"));
+
+					// All transfers must be aborted or cancelled before attempting to reset the pipe.
+					{
+						UINT32		MACValue;
+/*-----------------------------------------------------------------------------------------------*/
+/*-----------------------------------------------------------------------------------------------*/
+						{
+						//while ((atomic_read(&pAd->PendingRx) > 0) && (!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)))
+						if((pAd->PendingRx > 0) && (!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)))
+						{
+							DBGPRINT_RAW(RT_DEBUG_ERROR, ("BulkIn IRP Pending!!!\n"));
+							RTUSB

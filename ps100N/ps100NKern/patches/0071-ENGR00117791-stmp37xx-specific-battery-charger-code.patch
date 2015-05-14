@@ -1,0 +1,423 @@
+electable)
+   * (does it work for everybody ? - especially old cards...) */
+  /* Note : WFREQSEL verify that it is able to read from EEprom
+   * a sensible frequency (address 0x00) + that MMR_FEE_STATUS_ID
+   * is 0xA (Xilinx version) or 0xB (Ariadne version).
+   * My test is more crude but do work... */
+  if(!(mmc_in(base, mmroff(0, mmr_fee_status)) &
+       (MMR_FEE_STATUS_DWLD | MMR_FEE_STATUS_BUSY)))
+    {
+      /* We must download the frequency parameters to the
+       * synthetisers (from the EEprom - area 1)
+       * Note : as the EEprom is auto decremented, we set the end
+       * if the area... */
+      m.mmw_fee_addr = 0x0F;
+      m.mmw_fee_ctrl = MMW_FEE_CTRL_READ | MMW_FEE_CTRL_DWLD;
+      mmc_write(base, (char *)&m.mmw_fee_ctrl - (char *)&m,
+		(unsigned char *)&m.mmw_fee_ctrl, 2);
+
+      /* Wait until the download is finished */
+      fee_wait(base, 100, 100);
+
+#ifdef DEBUG_CONFIG_INFO
+      /* The frequency was in the last word downloaded... */
+      mmc_read(base, (char *)&m.mmw_fee_data_l - (char *)&m,
+	       (unsigned char *)&m.mmw_fee_data_l, 2);
+
+      /* Print some info for the user */
+      printk(KERN_DEBUG "%s: Wavelan 2.00 recognised (frequency select) : Current frequency = %ld\n",
+	     dev->name,
+	     ((m.mmw_fee_data_h << 4) |
+	      (m.mmw_fee_data_l >> 4)) * 5 / 2 + 24000L);
+#endif
+
+      /* We must now download the power adjust value (gain) to
+       * the synthetisers (from the EEprom - area 7 - DAC) */
+      m.mmw_fee_addr = 0x61;
+      m.mmw_fee_ctrl = MMW_FEE_CTRL_READ | MMW_FEE_CTRL_DWLD;
+      mmc_write(base, (char *)&m.mmw_fee_ctrl - (char *)&m,
+		(unsigned char *)&m.mmw_fee_ctrl, 2);
+
+      /* Wait until the download is finished */
+    }	/* if 2.00 card */
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: <-wv_mmc_init()\n", dev->name);
+#endif
+  return TRUE;
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * Routine to gracefully turn off reception, and wait for any commands
+ * to complete.
+ * (called in wv_ru_start() and wavelan_close() and wavelan_event())
+ */
+static int
+wv_ru_stop(struct net_device *	dev)
+{
+  unsigned int	base = dev->base_addr;
+  net_local *	lp = netdev_priv(dev);
+  unsigned long	flags;
+  int		status;
+  int		spin;
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: ->wv_ru_stop()\n", dev->name);
+#endif
+
+  spin_lock_irqsave(&lp->spinlock, flags);
+
+  /* First, send the LAN controller a stop receive command */
+  wv_82593_cmd(dev, "wv_graceful_shutdown(): stop-rcv",
+	       OP0_STOP_RCV, SR0_NO_RESULT);
+
+  /* Then, spin until the receive unit goes idle */
+  spin = 300;
+  do
+    {
+      udelay(10);
+      outb(OP0_NOP | CR0_STATUS_3, LCCR(base));
+      status = inb(LCSR(base));
+    }
+  while(((status & SR3_RCV_STATE_MASK) != SR3_RCV_IDLE) && (spin-- > 0));
+
+  /* Now, spin until the chip finishes executing its current command */
+  do
+    {
+      udelay(10);
+      outb(OP0_NOP | CR0_STATUS_3, LCCR(base));
+      status = inb(LCSR(base));
+    }
+  while(((status & SR3_EXEC_STATE_MASK) != SR3_EXEC_IDLE) && (spin-- > 0));
+
+  spin_unlock_irqrestore(&lp->spinlock, flags);
+
+  /* If there was a problem */
+  if(spin <= 0)
+    {
+#ifdef DEBUG_CONFIG_ERRORS
+      printk(KERN_INFO "%s: wv_ru_stop(): The chip doesn't want to stop...\n",
+	     dev->name);
+#endif
+      return FALSE;
+    }
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: <-wv_ru_stop()\n", dev->name);
+#endif
+  return TRUE;
+} /* wv_ru_stop */
+
+/*------------------------------------------------------------------*/
+/*
+ * This routine starts the receive unit running.  First, it checks if
+ * the card is actually ready. Then the card is instructed to receive
+ * packets again.
+ * (called in wv_hw_reset() & wavelan_open())
+ */
+static int
+wv_ru_start(struct net_device *	dev)
+{
+  unsigned int	base = dev->base_addr;
+  net_local *	lp = netdev_priv(dev);
+  unsigned long	flags;
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: ->wv_ru_start()\n", dev->name);
+#endif
+
+  /*
+   * We need to start from a quiescent state. To do so, we could check
+   * if the card is already running, but instead we just try to shut
+   * it down. First, we disable reception (in case it was already enabled).
+   */
+  if(!wv_ru_stop(dev))
+    return FALSE;
+
+  spin_lock_irqsave(&lp->spinlock, flags);
+
+  /* Now we know that no command is being executed. */
+
+  /* Set the receive frame pointer and stop pointer */
+  lp->rfp = 0;
+  outb(OP0_SWIT_TO_PORT_1 | CR0_CHNL, LCCR(base));
+
+  /* Reset ring management.  This sets the receive frame pointer to 1 */
+  outb(OP1_RESET_RING_MNGMT, LCCR(base));
+
+#if 0
+  /* XXX the i82593 manual page 6-4 seems to indicate that the stop register
+     should be set as below */
+  /* outb(CR1_STOP_REG_UPDATE|((RX_SIZE - 0x40)>> RX_SIZE_SHIFT),LCCR(base));*/
+#elif 0
+  /* but I set it 0 instead */
+  lp->stop = 0;
+#else
+  /* but I set it to 3 bytes per packet less than 8K */
+  lp->stop = (0 + RX_SIZE - ((RX_SIZE / 64) * 3)) % RX_SIZE;
+#endif
+  outb(CR1_STOP_REG_UPDATE | (lp->stop >> RX_SIZE_SHIFT), LCCR(base));
+  outb(OP1_INT_ENABLE, LCCR(base));
+  outb(OP1_SWIT_TO_PORT_0, LCCR(base));
+
+  /* Reset receive DMA pointer */
+  hacr_write_slow(base, HACR_PWR_STAT | HACR_TX_DMA_RESET);
+  hacr_write_slow(base, HACR_DEFAULT);
+
+  /* Receive DMA on channel 1 */
+  wv_82593_cmd(dev, "wv_ru_start(): rcv-enable",
+	       CR0_CHNL | OP0_RCV_ENABLE, SR0_NO_RESULT);
+
+#ifdef DEBUG_I82593_SHOW
+  {
+    int	status;
+    int	opri;
+    int	spin = 10000;
+
+    /* spin until the chip starts receiving */
+    do
+      {
+	outb(OP0_NOP | CR0_STATUS_3, LCCR(base));
+	status = inb(LCSR(base));
+	if(spin-- <= 0)
+	  break;
+      }
+    while(((status & SR3_RCV_STATE_MASK) != SR3_RCV_ACTIVE) &&
+	  ((status & SR3_RCV_STATE_MASK) != SR3_RCV_READY));
+    printk(KERN_DEBUG "rcv status is 0x%x [i:%d]\n",
+	   (status & SR3_RCV_STATE_MASK), i);
+  }
+#endif
+
+  spin_unlock_irqrestore(&lp->spinlock, flags);
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: <-wv_ru_start()\n", dev->name);
+#endif
+  return TRUE;
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * This routine does a standard config of the WaveLAN controller (i82593).
+ * In the ISA driver, this is integrated in wavelan_hardware_reset()
+ * (called by wv_hw_config(), wv_82593_reconfig() & wavelan_packet_xmit())
+ */
+static int
+wv_82593_config(struct net_device *	dev)
+{
+  unsigned int			base = dev->base_addr;
+  net_local *			lp = netdev_priv(dev);
+  struct i82593_conf_block	cfblk;
+  int				ret = TRUE;
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: ->wv_82593_config()\n", dev->name);
+#endif
+
+  /* Create & fill i82593 config block
+   *
+   * Now conform to Wavelan document WCIN085B
+   */
+  memset(&cfblk, 0x00, sizeof(struct i82593_conf_block));
+  cfblk.d6mod = FALSE;  	/* Run in i82593 advanced mode */
+  cfblk.fifo_limit = 5;         /* = 56 B rx and 40 B tx fifo thresholds */
+  cfblk.forgnesi = FALSE;       /* 0=82C501, 1=AMD7992B compatibility */
+  cfblk.fifo_32 = 1;
+  cfblk.throttle_enb = FALSE;
+  cfblk.contin = TRUE;          /* enable continuous mode */
+  cfblk.cntrxint = FALSE;       /* enable continuous mode receive interrupts */
+  cfblk.addr_len = WAVELAN_ADDR_SIZE;
+  cfblk.acloc = TRUE;           /* Disable source addr insertion by i82593 */
+  cfblk.preamb_len = 0;         /* 2 bytes preamble (SFD) */
+  cfblk.loopback = FALSE;
+  cfblk.lin_prio = 0;   	/* conform to 802.3 backoff algorithm */
+  cfblk.exp_prio = 5;	        /* conform to 802.3 backoff algorithm */
+  cfblk.bof_met = 1;	        /* conform to 802.3 backoff algorithm */
+  cfblk.ifrm_spc = 0x20 >> 4;	/* 32 bit times interframe spacing */
+  cfblk.slottim_low = 0x20 >> 5;	/* 32 bit times slot time */
+  cfblk.slottim_hi = 0x0;
+  cfblk.max_retr = 15;
+  cfblk.prmisc = ((lp->promiscuous) ? TRUE: FALSE);	/* Promiscuous mode */
+  cfblk.bc_dis = FALSE;         /* Enable broadcast reception */
+  cfblk.crs_1 = TRUE;		/* Transmit without carrier sense */
+  cfblk.nocrc_ins = FALSE;	/* i82593 generates CRC */	
+  cfblk.crc_1632 = FALSE;	/* 32-bit Autodin-II CRC */
+  cfblk.crs_cdt = FALSE;	/* CD not to be interpreted as CS */
+  cfblk.cs_filter = 0;  	/* CS is recognized immediately */
+  cfblk.crs_src = FALSE;	/* External carrier sense */
+  cfblk.cd_filter = 0;  	/* CD is recognized immediately */
+  cfblk.min_fr_len = ETH_ZLEN >> 2;     /* Minimum frame length 64 bytes */
+  cfblk.lng_typ = FALSE;	/* Length field > 1500 = type field */
+  cfblk.lng_fld = TRUE; 	/* Disable 802.3 length field check */
+  cfblk.rxcrc_xf = TRUE;	/* Don't transfer CRC to memory */
+  cfblk.artx = TRUE;		/* Disable automatic retransmission */
+  cfblk.sarec = TRUE;		/* Disable source addr trig of CD */
+  cfblk.tx_jabber = TRUE;	/* Disable jabber jam sequence */
+  cfblk.hash_1 = FALSE; 	/* Use bits 0-5 in mc address hash */
+  cfblk.lbpkpol = TRUE; 	/* Loopback pin active high */
+  cfblk.fdx = FALSE;		/* Disable full duplex operation */
+  cfblk.dummy_6 = 0x3f; 	/* all ones */
+  cfblk.mult_ia = FALSE;	/* No multiple individual addresses */
+  cfblk.dis_bof = FALSE;	/* Disable the backoff algorithm ?! */
+  cfblk.dummy_1 = TRUE; 	/* set to 1 */
+  cfblk.tx_ifs_retrig = 3;	/* Hmm... Disabled */
+#ifdef MULTICAST_ALL
+  cfblk.mc_all = (lp->allmulticast ? TRUE: FALSE);	/* Allow all multicasts */
+#else
+  cfblk.mc_all = FALSE;		/* No multicast all mode */
+#endif
+  cfblk.rcv_mon = 0;		/* Monitor mode disabled */
+  cfblk.frag_acpt = TRUE;	/* Do not accept fragments */
+  cfblk.tstrttrs = FALSE;	/* No start transmission threshold */
+  cfblk.fretx = TRUE;		/* FIFO automatic retransmission */
+  cfblk.syncrqs = FALSE; 	/* Synchronous DRQ deassertion... */
+  cfblk.sttlen = TRUE;  	/* 6 byte status registers */
+  cfblk.rx_eop = TRUE;  	/* Signal EOP on packet reception */
+  cfblk.tx_eop = TRUE;  	/* Signal EOP on packet transmission */
+  cfblk.rbuf_size = RX_SIZE>>11;	/* Set receive buffer size */
+  cfblk.rcvstop = TRUE; 	/* Enable Receive Stop Register */
+
+#ifdef DEBUG_I82593_SHOW
+  print_hex_dump(KERN_DEBUG, "wavelan_cs: config block: ", DUMP_PREFIX_NONE,
+		 16, 1, &cfblk, sizeof(struct i82593_conf_block), false);
+#endif
+
+  /* Copy the config block to the i82593 */
+  outb(TX_BASE & 0xff, PIORL(base));
+  outb(((TX_BASE >> 8) & PIORH_MASK) | PIORH_SEL_TX, PIORH(base));
+  outb(sizeof(struct i82593_conf_block) & 0xff, PIOP(base));    /* lsb */
+  outb(sizeof(struct i82593_conf_block) >> 8, PIOP(base));	/* msb */
+  outsb(PIOP(base), (char *) &cfblk, sizeof(struct i82593_conf_block));
+
+  /* reset transmit DMA pointer */
+  hacr_write_slow(base, HACR_PWR_STAT | HACR_TX_DMA_RESET);
+  hacr_write(base, HACR_DEFAULT);
+  if(!wv_82593_cmd(dev, "wv_82593_config(): configure",
+		   OP0_CONFIGURE, SR0_CONFIGURE_DONE))
+    ret = FALSE;
+
+  /* Initialize adapter's ethernet MAC address */
+  outb(TX_BASE & 0xff, PIORL(base));
+  outb(((TX_BASE >> 8) & PIORH_MASK) | PIORH_SEL_TX, PIORH(base));
+  outb(WAVELAN_ADDR_SIZE, PIOP(base));	/* byte count lsb */
+  outb(0, PIOP(base));			/* byte count msb */
+  outsb(PIOP(base), &dev->dev_addr[0], WAVELAN_ADDR_SIZE);
+
+  /* reset transmit DMA pointer */
+  hacr_write_slow(base, HACR_PWR_STAT | HACR_TX_DMA_RESET);
+  hacr_write(base, HACR_DEFAULT);
+  if(!wv_82593_cmd(dev, "wv_82593_config(): ia-setup",
+		   OP0_IA_SETUP, SR0_IA_SETUP_DONE))
+    ret = FALSE;
+
+#ifdef WAVELAN_ROAMING
+    /* If roaming is enabled, join the "Beacon Request" multicast group... */
+    /* But only if it's not in there already! */
+  if(do_roaming)
+    dev_mc_add(dev,WAVELAN_BEACON_ADDRESS, WAVELAN_ADDR_SIZE, 1);
+#endif	/* WAVELAN_ROAMING */
+
+  /* If any multicast address to set */
+  if(lp->mc_count)
+    {
+      struct dev_mc_list *	dmi;
+      int			addrs_len = WAVELAN_ADDR_SIZE * lp->mc_count;
+
+#ifdef DEBUG_CONFIG_INFO
+      printk(KERN_DEBUG "%s: wv_hw_config(): set %d multicast addresses:\n",
+	     dev->name, lp->mc_count);
+      for(dmi=dev->mc_list; dmi; dmi=dmi->next)
+	printk(KERN_DEBUG " %pM\n", dmi->dmi_addr);
+#endif
+
+      /* Initialize adapter's ethernet multicast addresses */
+      outb(TX_BASE & 0xff, PIORL(base));
+      outb(((TX_BASE >> 8) & PIORH_MASK) | PIORH_SEL_TX, PIORH(base));
+      outb(addrs_len & 0xff, PIOP(base));	/* byte count lsb */
+      outb((addrs_len >> 8), PIOP(base));	/* byte count msb */
+      for(dmi=dev->mc_list; dmi; dmi=dmi->next)
+	outsb(PIOP(base), dmi->dmi_addr, dmi->dmi_addrlen);
+
+      /* reset transmit DMA pointer */
+      hacr_write_slow(base, HACR_PWR_STAT | HACR_TX_DMA_RESET);
+      hacr_write(base, HACR_DEFAULT);
+      if(!wv_82593_cmd(dev, "wv_82593_config(): mc-setup",
+		       OP0_MC_SETUP, SR0_MC_SETUP_DONE))
+	ret = FALSE;
+      lp->mc_count = dev->mc_count;	/* remember to avoid repeated reset */
+    }
+
+  /* Job done, clear the flag */
+  lp->reconfig_82593 = FALSE;
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: <-wv_82593_config()\n", dev->name);
+#endif
+  return(ret);
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * Read the Access Configuration Register, perform a software reset,
+ * and then re-enable the card's software.
+ *
+ * If I understand correctly : reset the pcmcia interface of the
+ * wavelan.
+ * (called by wv_config())
+ */
+static int
+wv_pcmcia_reset(struct net_device *	dev)
+{
+  int		i;
+  conf_reg_t	reg = { 0, CS_READ, CISREG_COR, 0 };
+  struct pcmcia_device *	link = ((net_local *)netdev_priv(dev))->link;
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: ->wv_pcmcia_reset()\n", dev->name);
+#endif
+
+  i = pcmcia_access_configuration_register(link, &reg);
+  if (i != 0)
+    {
+      cs_error(link, AccessConfigurationRegister, i);
+      return FALSE;
+    }
+      
+#ifdef DEBUG_CONFIG_INFO
+  printk(KERN_DEBUG "%s: wavelan_pcmcia_reset(): Config reg is 0x%x\n",
+	 dev->name, (u_int) reg.Value);
+#endif
+
+  reg.Action = CS_WRITE;
+  reg.Value = reg.Value | COR_SW_RESET;
+  i = pcmcia_access_configuration_register(link, &reg);
+  if (i != 0)
+    {
+      cs_error(link, AccessConfigurationRegister, i);
+      return FALSE;
+    }
+      
+  reg.Action = CS_WRITE;
+  reg.Value = COR_LEVEL_IRQ | COR_CONFIG;
+  i = pcmcia_access_configuration_register(link, &reg);
+  if (i != 0)
+    {
+      cs_error(link, AccessConfigurationRegister, i);
+      return FALSE;
+    }
+
+#ifdef DEBUG_CONFIG_TRACE
+  printk(KERN_DEBUG "%s: <-wv_pcmcia_reset()\n", dev->name);
+#endif
+  return TRUE;
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * wavelan_hw_config() is called after a CARD_INSERTION event is
+ * received, to configure the wavelan hardware.
+ * Note that the reception will be enabled in wavelan->open(), so the
+ * device is configured but idle...
+ * Performs the following actions

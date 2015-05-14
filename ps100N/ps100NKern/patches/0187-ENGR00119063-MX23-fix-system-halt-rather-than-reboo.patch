@@ -1,0 +1,40 @@
+}
+
+#ifdef CONFIG_CCW_CONSOLE
+static struct ccw_device console_cdev;
+static char console_cdev_name[10] = "0.x.xxxx";
+static struct ccw_device_private console_private;
+static int console_cdev_in_use;
+
+static DEFINE_SPINLOCK(ccw_console_lock);
+
+spinlock_t * cio_get_console_lock(void)
+{
+	return &ccw_console_lock;
+}
+
+static int ccw_device_console_enable(struct ccw_device *cdev,
+				     struct subchannel *sch)
+{
+	int rc;
+
+	/* Attach subchannel private data. */
+	sch->private = cio_get_console_priv();
+	memset(sch->private, 0, sizeof(struct io_subchannel_private));
+	io_subchannel_init_fields(sch);
+	rc = cio_commit_config(sch);
+	if (rc)
+		return rc;
+	sch->driver = &io_subchannel_driver;
+	/* Initialize the ccw_device structure. */
+	cdev->dev.parent= &sch->dev;
+	rc = io_subchannel_recog(cdev, sch);
+	if (rc)
+		return rc;
+
+	/* Now wait for the async. recognition to come to an end. */
+	spin_lock_irq(cdev->ccwlock);
+	while (!dev_fsm_final_state(cdev))
+		wait_cons_dev();
+	rc = -EIO;
+	if (cdev->private->state != DEV_STATE_OFFLI

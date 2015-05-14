@@ -1,0 +1,49 @@
+ output */
+		dib3000mc_set_output_mode(&st, OUTMODE_HIGH_Z);
+	}
+	return 0;
+}
+EXPORT_SYMBOL(dib3000mc_i2c_enumeration);
+
+static struct dvb_frontend_ops dib3000mc_ops;
+
+struct dvb_frontend * dib3000mc_attach(struct i2c_adapter *i2c_adap, u8 i2c_addr, struct dib3000mc_config *cfg)
+{
+	struct dvb_frontend *demod;
+	struct dib3000mc_state *st;
+	st = kzalloc(sizeof(struct dib3000mc_state), GFP_KERNEL);
+	if (st == NULL)
+		return NULL;
+
+	st->cfg = cfg;
+	st->i2c_adap = i2c_adap;
+	st->i2c_addr = i2c_addr;
+
+	demod                   = &st->demod;
+	demod->demodulator_priv = st;
+	memcpy(&st->demod.ops, &dib3000mc_ops, sizeof(struct dvb_frontend_ops));
+
+	if (dib3000mc_identify(st) != 0)
+		goto error;
+
+	dibx000_init_i2c_master(&st->i2c_master, DIB3000MC, st->i2c_adap, st->i2c_addr);
+
+	dib3000mc_write_word(st, 1037, 0x3130);
+
+	return demod;
+
+error:
+	kfree(st);
+	return NULL;
+}
+EXPORT_SYMBOL(dib3000mc_attach);
+
+static struct dvb_frontend_ops dib3000mc_ops = {
+	.info = {
+		.name = "DiBcom 3000MC/P",
+		.type = FE_OFDM,
+		.frequency_min      = 44250000,
+		.frequency_max      = 867250000,
+		.frequency_stepsize = 62500,
+		.caps = FE_CAN_INVERSION_AUTO |
+			FE_CAN_FEC_1_2 | FE_CAN_FEC_2_3 | FE_CAN_FEC_3_4 |

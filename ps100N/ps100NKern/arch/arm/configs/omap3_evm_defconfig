@@ -1,0 +1,1411 @@
+#
+# Automatically generated make config: don't edit
+# Linux kernel version: 2.6.30-rc5
+# Mon May 18 14:01:52 2009
+#
+CONFIG_ARM=y
+CONFIG_SYS_SUPPORTS_APM_EMULATION=y
+CONFIG_GENERIC_GPIO=y
+CONFIG_GENERIC_TIME=y
+CONFIG_GENERIC_CLOCKEVENTS=y
+CONFIG_MMU=y
+# CONFIG_NO_IOPORT is not set
+CONFIG_GENERIC_HARDIRQS=y
+CONFIG_STACKTRACE_SUPPORT=y
+CONFIG_HAVE_LATENCYTOP_SUPPORT=y
+CONFIG_LOCKDEP_SUPPORT=y
+CONFIG_TRACE_IRQFLAGS_SUPPORT=y
+CONFIG_HARDIRQS_SW_RESEND=y
+CONFIG_GENERIC_IRQ_PROBE=y
+CONFIG_RWSEM_GENERIC_SPINLOCK=y
+# CONFIG_ARCH_HAS_ILOG2_U32 is not set
+# CONFIG_ARCH_HAS_ILOG2_U64 is not set
+CONFIG_GENERIC_HWEIGHT=y
+CONFIG_GENERIC_CALIBRATE_DELAY=y
+CONFIG_GENERIC_HARDIRQS_NO__DO_IRQ=y
+CONFIG_VECTORS_BASE=0xffff0000
+CONFIG_DEFCONFIG_LIST="/lib/modules/$UNAME_RELEASE/.config"
+
+#
+# General setup
+#
+CONFIG_EXPERIMENTAL=y
+CONFIG_BROKEN_ON_SMP=y
+CONFIG_INIT_ENV_ARG_LIMIT=32
+CONFIG_LOCALVERSION=""
+CONFIG_LOCALVERSION_AUTO=y
+CONFIG_SWAP=y
+CONFIG_SYSVIPC=y
+CONFIG_SYSVIPC_SYSCTL=y
+# CONFIG_POSIX_MQUEUE is not set
+CONFIG_BSD_PROCESS_ACCT=y
+# CONFIG_BSD_PROCESS_ACCT_V3 is not set
+# CONFIG_TASKSTATS is not set
+# CONFIG_AUDIT is not set
+
+#
+# RCU Subsystem
+#
+CONFIG_CLASSIC_RCU=y
+# CONFIG_TREE_RCU is not set
+# CONFIG_PREEMPT_RCU is not set
+# CONFIG_TREE_RCU_TRACE is not set
+# CONFIG_PREEMPT_RCU_TRACE is not set
+# CONFIG_IKCONFIG is not set
+CONFIG_LOG_BUF_SHIFT=14
+CONFIG_GROUP_SCHED=y
+CONFIG_FAIR_GROUP_SCHED=y
+# CONFIG_RT_GROUP_SCHED is not set
+CONFIG_USER_SCHED=y
+# CONFIG_CGROUP_SCHED is not set
+# CONFIG_CGROUPS is not set
+CONFIG_SYSFS_DEPRECATED=y
+CONFIG_SYSFS_DEPRECATED_V2=y
+# CONFIG_RELAY is not set
+# CONFIG_NAMESPACES is not set
+CONFIG_BLK_DEV_INITRD=y
+CONFIG_INITRAMFS_SOURCE=""
+CONFIG_RD_GZIP=y
+# CONFIG_RD_BZIP2 is not set
+# CONFIG_RD_LZMA is not set
+CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+CONFIG_SYSCTL=y
+CONFIG_ANON_INODES=y
+CONFIG_EMBEDDED=y
+CONFIG_UID16=y
+# CONFIG_SYSCTL_SYSCALL is not set
+CONFIG_KALLSYMS=y
+# CONFIG_KALLSYMS_ALL is not set
+CONFIG_KALLSYMS_EXTRA_PASS=y
+# CONFIG_STRIP_ASM_SYMS is not set
+CONFIG_HOTPLUG=y
+CONFIG_PRINTK=y
+CONFIG_BUG=y
+CONFIG_ELF_CORE=y
+CONFIG_BASE_FULL=y
+CONFIG_FUTEX=y
+CONFIG_EPOLL=y
+CONFIG_SIGNALFD=y
+CONFIG_TIMERFD=y
+CONFIG_EVENTFD=y
+CONFIG_SHMEM=y
+CONFIG_AIO=y
+CONFIG_VM_EVENT_COUNTERS=y
+CONFIG_COMPAT_BRK=y
+CONFIG_SLAB=y
+# CONFIG_SLUB is not set
+# CONFIG_SLOB is not set
+# CONFIG_PROFILING is not set
+# CONFIG_MARKERS is not set
+CONFIG_HAVE_OPROFILE=y
+# CONFIG_KPROBES is not set
+CONFIG_HAVE_KPROBES=y
+CONFIG_HAVE_KRETPROBES=y
+CONFIG_HAVE_CLK=y
+# CONFIG_SLOW_WORK is not set
+CONFIG_HAVE_GENERIC_DMA_COHERENT=y
+CONFIG_SLABINFO=y
+CONFIG_RT_MUTEXES=y
+CONFIG_BASE_SMALL=0
+CONFIG_MODULES=y
+# CONFIG_MODULE_FORCE_LOAD is not set
+CONFIG_MODULE_UNLOAD=y
+# CONFIG_MODULE_FORCE_UNLOAD is not set
+CONFIG_MODVERSIONS=y
+CONFIG_MODULE_SRCVERSION_ALL=y
+CONFIG_BLOCK=y
+# CONFIG_LBD is not set
+# CONFIG_BLK_DEV_BSG is not set
+# CONFIG_BLK_DEV_INTEGRITY is not set
+
+#
+# IO Schedulers
+#
+CONFIG_IOSCHED_NOOP=y
+CONFIG_IOSCHED_AS=y
+CONFIG_IOSCHED_DEADLINE=y
+CONFIG_IOSCHED_CFQ=y
+CONFIG_DEFAULT_AS=y
+# CONFIG_DEFAULT_DEADLINE is not set
+# CONFIG_DEFAULT_CFQ is not set
+# CONFIG_DEFAULT_NOOP is not set
+CONFIG_DEFAULT_IOSCHED="anticipatory"
+CONFIG_FREEZER=y
+
+#
+# System Type
+#
+# CONFIG_ARCH_AAEC2000 is not set
+# CONFIG_ARCH_INTEGRATOR is not set
+# CONFIG_ARCH_REALVIEW is not set
+# CONFIG_ARCH_VERSATILE is not set
+# CONFIG_ARCH_AT91 is not set
+# CONFIG_ARCH_CLPS711X is not set
+# CONFIG_ARCH_EBSA110 is not set
+# CONFIG_ARCH_EP93XX is not set
+# CONFIG_ARCH_GEMINI is not set
+# CONFIG_ARCH_FOOTBRIDGE is not set
+# CONFIG_ARCH_NETX is not set
+# CONFIG_ARCH_H720X is not set
+# CONFIG_ARCH_IMX is not set
+# CONFIG_ARCH_IOP13XX is not set
+# CONFIG_ARCH_IOP32X is not set
+# CONFIG_ARCH_IOP33X is not set
+# CONFIG_ARCH_IXP23XX is not set
+# CONFIG_ARCH_IXP2000 is not set
+# CONFIG_ARCH_IXP4XX is not set
+# CONFIG_ARCH_L7200 is not set
+# CONFIG_ARCH_KIRKWOOD is not set
+# CONFIG_ARCH_KS8695 is not set
+# CONFIG_ARCH_NS9XXX is not set
+# CONFIG_ARCH_LOKI is not set
+# CONFIG_ARCH_MV78XX0 is not set
+# CONFIG_ARCH_MXC is not set
+# CONFIG_ARCH_ORION5X is not set
+# CONFIG_ARCH_PNX4008 is d;
+	u_int	ppr_options;
+	u_int	offset;
+
+	tinfo = ahc_fetch_transinfo(ahc, devinfo->channel, devinfo->our_scsiid,
+				    devinfo->target, &tstate);
+	/*
+	 * Filter our period based on the current connection.
+	 * If we can't perform DT transfers on this segment (not in LVD
+	 * mode for instance), then our decision to issue a PPR message
+	 * may change.
+	 */
+	period = tinfo->goal.period;
+	offset = tinfo->goal.offset;
+	ppr_options = tinfo->goal.ppr_options;
+	/* Target initiated PPR is not allowed in the SCSI spec */
+	if (devinfo->role == ROLE_TARGET)
+		ppr_options = 0;
+	rate = ahc_devlimited_syncrate(ahc, tinfo, &period,
+				       &ppr_options, devinfo->role);
+	dowide = tinfo->curr.width != tinfo->goal.width;
+	dosync = tinfo->curr.offset != offset || tinfo->curr.period != period;
+	/*
+	 * Only use PPR if we have options that need it, even if the device
+	 * claims to support it.  There might be an expander in the way
+	 * that doesn't.
+	 */
+	doppr = ppr_options != 0;
+
+	if (!dowide && !dosync && !doppr) {
+		dowide = tinfo->goal.width != MSG_EXT_WDTR_BUS_8_BIT;
+		dosync = tinfo->goal.offset != 0;
+	}
+
+	if (!dowide && !dosync && !doppr) {
+		/*
+		 * Force async with a WDTR message if we have a wide bus,
+		 * or just issue an SDTR with a 0 offset.
+		 */
+		if ((ahc->features & AHC_WIDE) != 0)
+			dowide = 1;
+		else
+			dosync = 1;
+
+		if (bootverbose) {
+			ahc_print_devinfo(ahc, devinfo);
+			printf("Ensuring async\n");
+		}
+	}
+
+	/* Target initiated PPR is not allowed in the SCSI spec */
+	if (devinfo->role == ROLE_TARGET)
+		doppr = 0;
+
+	/*
+	 * Both the PPR message and SDTR message require the
+	 * goal syncrate to be limited to what the target device
+	 * is capable of handling (based on whether an LVD->SE
+	 * expander is on the bus), so combine these two cases.
+	 * Regardless, guarantee that if we are using WDTR and SDTR
+	 * messages that WDTR comes first.
+	 */
+	if (doppr || (dosync && !dowide)) {
+
+		offset = tinfo->goal.offset;
+		ahc_validate_offset(ahc, tinfo, rate, &offset,
+				    doppr ? tinfo->goal.width
+					  : tinfo->curr.width,
+				    devinfo->role);
+		if (doppr) {
+			ahc_construct_ppr(ahc, devinfo, period, offset,
+					  tinfo->goal.width, ppr_options);
+		} else {
+			ahc_construct_sdtr(ahc, devinfo, period, offset);
+		}
+	} else {
+		ahc_construct_wdtr(ahc, devinfo, tinfo->goal.width);
+	}
+}
+
+/*
+ * Build a synchronous negotiation message in our message
+ * buffer based on the input parameters.
+ */
+static void
+ahc_construct_sdtr(struct ahc_softc *ahc, struct ahc_devinfo *devinfo,
+		   u_int period, u_int offset)
+{
+	if (offset == 0)
+		period = AHC_ASYNC_XFER_PERIOD;
+	ahc->msgout_index += spi_populate_sync_msg(
+			ahc->msgout_buf + ahc->msgout_index, period, offset);
+	ahc->msgout_len += 5;
+	if (bootverbose) {
+		printf("(%s:%c:%d:%d): Sending SDTR period %x, offset %x\n",
+		       ahc_name(ahc), devinfo->channel, devinfo->target,
+		       devinfo->lun, period, offset);
+	}
+}
+
+/*
+ * Build a wide negotiation message in our message
+ * buffer based on the input parameters.
+ */
+static void
+ahc_construct_wdtr(struct ahc_softc *ahc, struct ahc_devinfo *devinfo,
+		   u_int bus_width)
+{
+	ahc->msgout_index += spi_populate_width_msg(
+			ahc->msgout_buf + ahc->msgout_index, bus_width);
+	ahc->msgout_len += 4;
+	if (bootverbose) {
+		printf("(%s:%c:%d:%d): Sending WDTR %x\n",
+		       ahc_name(ahc), devinfo->channel, devinfo->target,
+		       devinfo->lun, bus_width);
+	}
+}
+
+/*
+ * Build a parallel protocol request message in our message
+ * buffer based on the input parameters.
+ */
+static void
+ahc_construct_ppr(struct ahc_softc *ahc, struct ahc_devinfo *devinfo,
+		  u_int period, u_int offset, u_int bus_width,
+		  u_int ppr_options)
+{
+	if (offset == 0)
+		period = AHC_ASYNC_XFER_PERIOD;
+	ahc->msgout_index += spi_populate_ppr_msg(
+			ahc->msgout_buf + ahc->msgout_index, period, offset,
+			bus_width, ppr_options);
+	ahc->msgout_len += 8;
+	if (bootverbose) {
+		printf("(%s:%c:%d:%d): Sending PPR bus_width %x, period %x, "
+		       "offset %x, ppr_options %x\n", ahc_name(ahc),
+		       devinfo->channel, devinfo->target, devinfo->lun,
+		       bus_width, period, offset, ppr_options);
+	}
+}
+
+/*
+ * Clear any active message state.
+ */
+static void
+ahc_clear_msg_state(struct ahc_softc *ahc)
+{
+	ahc->msgout_len = 0;
+	ahc->msgin_index = 0;
+	ahc->msg_type = MSG_TYPE_NONE;
+	if ((ahc_inb(ahc, SCSISIGI) & ATNI) != 0) {
+		/*
+		 * The target didn't care to respond to our
+		 * message request, so clear ATN.
+		 */
+		ahc_outb(ahc, CLRSINT1, CLRATNO);
+	}
+	ahc_outb(ahc, MSG_OUT, MSG_NOOP);
+	ahc_outb(ahc, SEQ_FLAGS2,
+		 ahc_inb(ahc, SEQ_FLAGS2) & ~TARGET_MSG_PENDING);
+}
+
+static void
+ahc_handle_proto_violation(struct ahc_softc *ahc)
+{
+	struct	ahc_devinfo devinfo;
+	struct	scb *scb;
+	u_int	scbid;
+	u_int	seq_flags;
+	u_int	curphase;
+	u_int	lastphase;
+	int	found;
+
+	ahc_fetch_devinfo(ahc, &devinfo);
+	scbid = ahc_inb(ahc, SCB_TAG);
+	scb = ahc_lookup_scb(ahc, scbid);
+	seq_flags = ahc_inb(ahc, SEQ_FLAGS);
+	curphase = ahc_inb(ahc, SCSISIGI) & PHASE_MASK;
+	lastphase = ahc_inb(ahc, LASTPHASE);
+	if ((seq_flags & NOT_IDENTIFIED) != 0) {
+
+		/*
+		 * The reconnecting target either did not send an
+		 * identify message, or did, but we didn't find an SCB
+		 * to match.
+		 */
+		ahc_print_devinfo(ahc, &devinfo);
+		printf("Target did not send an IDENTIFY message. "
+		       "LASTPHASE = 0x%x.\n", lastphase);
+		scb = NULL;
+	} else if (scb == NULL) {
+		/*
+		 * We don't seem to have an SCB active for this
+		 * transaction.  Print an error and reset the bus.
+		 */
+		ahc_print_devinfo(ahc, &devinfo);
+		printf("No SCB found during protocol violation\n");
+		goto proto_violation_reset;
+	} else {
+		ahc_set_transaction_status(scb, CAM_SEQUENCE_FAIL);
+		if ((seq_flags & NO_CDB_SENT) != 0) {
+			ahc_print_path(ahc, scb);
+			printf("No or incomplete CDB sent to device.\n");
+		} else if ((ahc_inb(ahc, SCB_CONTROL) & STATUS_RCVD) == 0) {
+			/*
+			 * The target never bothered to provide status to
+			 * us prior to completing the command.  Since we don't
+			 * know the disposition of this command, we must attempt
+			 * to abort it.  Assert ATN and prepare to send an abort
+			 * message.
+			 */
+			ahc_print_path(ahc, scb);
+			printf("Completed command without status.\n");
+		} else {
+			ahc_print_path(ahc, scb);
+			printf("Unknown protocol violation.\n");
+			ahc_dump_card_state(ahc);
+		}
+	}
+	if ((lastphase & ~P_DATAIN_DT) == 0
+	 || lastphase == P_COMMAND) {
+proto_violation_reset:
+		/*
+		 * Target either went directly to data/command
+		 * phase or didn't respond to our ATN.
+		 * The only safe thing to do is to blow
+		 * it away with a bus reset.
+		 */
+		found = ahc_reset_channel(ahc, 'A', TRUE);
+		printf("%s: Issued Channel %c Bus Reset. "
+		       "%d SCBs aborted\n", ahc_name(ahc), 'A', found);
+	} else {
+		/*
+		 * Leave the selection hardware off in case
+		 * this abort attempt will affect yet to
+		 * be sent commands.
+		 */
+		ahc_outb(ahc, SCSISEQ,
+			 ahc_inb(ahc, SCSISEQ) & ~ENSELO);
+		ahc_assert_atn(ahc);
+		ahc_outb(ahc, MSG_OUT, HOST_MSG);
+		if (scb == NULL) {
+			ahc_print_devinfo(ahc, &devinfo);
+			ahc->msgout_buf[0] = MSG_ABORT_TASK;
+			ahc->msgout_len = 1;
+			ahc->msgout_index = 0;
+			ahc->msg_type = MSG_TYPE_INITIATOR_MSGOUT;
+		} else {
+			ahc_print_path(ahc, scb);
+			scb->flags |= SCB_ABORT;
+		}
+		printf("Protocol violation %s.  Attempting to abort.\n",
+		       ahc_lookup_phase_entry(curphase)->phasemsg);
+	}
+}
+
+/*
+ * Manual message loop handler.
+ */
+static void
+ahc_handle_message_phase(struct ahc_softc *ahc)
+{
+	struct	ahc_devinfo devinfo;
+	u_int	bus_phase;
+	int	end_session;
+
+	ahc_fetch_devinfo(ahc, &devinfo);
+	end_session = FALSE;
+	bus_phase = ahc_inb(ahc, SCSISIGI) & PHASE_MASK;
+
+reswitch:
+	switch (ahc->msg_type) {
+	case MSG_TYPE_INITIATOR_MSGOUT:
+	{
+		int lastbyte;
+		int phasemis;
+		int msgdone;
+
+		if (ahc->msgout_len == 0)
+			panic("HOST_MSG_LOOP interrupt with no active message");
+
+#ifdef AHC_DEBUG
+		if ((ahc_debug & AHC_SHOW_MESSAGES) != 0) {
+			ahc_print_devinfo(ahc, &devinfo);
+			printf("INITIATOR_MSG_OUT");
+		}
+#endif
+		phasemis = bus_phase != P_MESGOUT;
+		if (phasemis) {
+#ifdef AHC_DEBUG
+			if ((ahc_debug & AHC_SHOW_MESSAGES) != 0) {
+				printf(" PHASEMIS %s\n",
+				       ahc_lookup_phase_entry(bus_phase)
+							     ->phasemsg);
+			}
+#endif
+			if (bus_phase == P_MESGIN) {
+				/*
+				 * Change gears and see if
+				 * this messages is of interest to
+				 * us or should be passed back to
+				 * the sequencer.
+				 */
+				ahc_outb(ahc, CLRSINT1, CLRATNO);
+				ahc->send_msg_perror = FALSE;
+				ahc->msg_type = MSG_TYPE_INITIATOR_MSGIN;
+				ahc->msgin_index = 0;
+				goto reswitch;
+			}
+			end_session = TRUE;
+			break;
+		}
+
+		if (ahc->send_msg_perror) {
+			ahc_outb(ahc, CLRSINT1, CLRATNO);
+			ahc_outb(ahc, CLRSINT1, CLRREQINIT);
+#ifdef AHC_DEBUG
+			if ((ahc_debug & AHC_SHOW_MESSAGES) != 0)
+				printf(" byte 0x%x\n", ahc->send_msg_perror);
+#endif
+			ahc_outb(ahc, SCSIDATL, MSG_PARITY_ERROR);
+			break;
+		}
+
+		msgdone	= ahc->msgout_index == ahc->msgout_len;
+		if (msgdone) {
+			/*
+			 * The target has requested a retry.
+			 * Re-assert ATN, reset our message index to
+			 * 0, and try again.
+			 */
+			ahc->msgout_index = 0;
+			ahc_assert_atn(ahc);
+		}
+
+		lastbyte = ahc->msgout_index == (ahc->msgout_len - 1);
+		if (lastbyte) {
+			/* Last byte is signified by dropping ATN */
+			ahc_outb(ahc, CLRSINT1, CLRATNO);
+		}
+
+		/*
+		 * Clear our interrupt status and present
+		 * the next byte on the bus.
+		 */
+		ahc_outb(ahc, CLRSINT1, CLRREQINIT);
+#ifdef AHC_DEBUG
+		if ((ahc_debug & AHC_SHOW_MESSAGES) != 0)
+			printf(" byte 0x%x\n",
+			       ahc->msgout_buf[ahc->msgout_index]);
+#endif
+		ahc_outb(ahc, SCSIDATL, ahc->msgout_buf[ahc->msgout_index++]);
+		break;
+	}
+	case MSG_TYPE_INITIATOR_MSGIN:
+	{
+		int phasemis;
+		int message_done;
+
+#ifdef AHC_DEBUG
+		if ((ahc_debug & AHC_SHOW_MESSAGES) != 0) {
+			ahc_print_devinfo(ahc, &devinfo);
+			printf("INITIATOR_MSG_IN");
+		}
+#endif
+		phasemis = bus_phase != P_MESGIN;
+		if (phasemis) {
+#ifdef AHC_DEBUG
+			if ((ahc_debug & AHC_SHOW_MESSAGES) != 0) {
+				printf(" PHASEMIS %s\n",
+				       ahc_lookup_phase_entry(bus_phase)
+							     ->phasemsg);
+			}
+#endif
+			ahc->msgin_index = 0;
+			if (bus_phase == P_MESGOUT
+			 && (ahc->send_msg_perror == TRUE
+			  || (ahc->msgout_len != 0
+			   && ahc->msgout_index == 0))) {
+				ahc->msg_type = MSG_TYPE_INITIATOR_MSGOUT;
+				goto reswitch;
+			}
+			end_session = TRUE;
+			break;
+		}
+
+		/* Pull the byte in without acking it */
+		ahc->msgin_buf[ahc->msgin_index] = ahc_inb(ahc, SCSIBUSL);
+#ifdef AHC_DEBUG
+		if ((ahc_debug & AHC_SHOW_MESSAGES) != 0)
+			printf(" byte 0x%x\n",
+			       ahc->msgin_buf[ahc->msgin_index]);
+#endif
+
+		message_done = ahc_parse_msg(ahc, &devinfo);
+
+		if (message_done) {
+			/*
+			 * Clear our incoming message buffer in case there
+			 * is another message following this one.
+			 */
+			ahc->msgin_index = 0;
+
+			/*
+			 * If this message illicited a response,
+			 * assert ATN so the target takes us to the
+			 * message out phase.
+			 */
+			if (ahc->msgout_len != 0) {
+#ifdef AHC_DEBUG
+				if ((ahc_debug & AHC_SHOW_MESSAGES) != 0) {
+					ahc_print_devinfo(ahc, &devinfo);
+					printf("Asserting ATN for response\n");
+				}
+#endif
+				ahc_assert_atn(ahc);
+			}
+		} else 
+			ahc->msgin_index++;
+
+		if (message_done == MSGLOOP_TERMINATED) {
+			end_session = TRUE;
+		} else {
+			/* Ack the byte */
+			ahc_outb(ahc, CLRSINT1, CLRREQINIT);
+			ahc_inb(ahc, SCSIDATL);
+		}
+		break;
+	}
+	case MSG_TYPE_TARGET_MSGIN:
+	{
+		int msgdone;
+		int msgout_request;
+
+		if (ahc->msgout_len == 0)
+			panic("Target MSGIN with no active message");
+
+		/*
+		 * If we interrupted a mesgout session, the initiator
+		 * will not know this until our first REQ.  So, we
+		 * only honor mesgout requests after we've sent our
+		 * first byte.
+		 */
+		if ((ahc_inb(ahc, SCSISIGI) & ATNI) != 0
+		 && ahc->msgout_index > 0)
+			msgout_request = TRUE;
+		else
+			msgout_request = FALSE;
+
+		if (msgout_request) {
+
+			/*
+			 * Change gears and see if
+			 * this messages is of interest to
+			 * us or should be passed back to
+			 * the sequencer.
+			 */
+			ahc->msg_type = MSG_TYPE_TARGET_MSGOUT;
+			ahc_outb(ahc, SCSISIGO, P_MESGOUT | BSYO);
+			ahc->msgin_index = 0;
+			/* Dummy read to REQ for first byte */
+			ahc_inb(ahc, SCSIDATL);
+			ahc_outb(ahc, SXFRCTL0,
+				 ahc_inb(ahc, SXFRCTL0) | SPIOEN);
+			break;
+		}
+
+		msgdone = ahc->msgout_index == ahc->msgout_len;
+		if (msgdone) {
+			ahc_outb(ahc, SXFRCTL0,
+				 ahc_inb(ahc, SXFRCTL0) & ~SPIOEN);
+			end_session = TRUE;
+			break;
+		}
+
+		/*
+		 * Present the next byte on the bus.
+		 */
+		ahc_outb(ahc, SXFRCTL0, ahc_inb(ahc, SXFRCTL0) | SPIOEN);
+		ahc_outb(ahc, SCSIDATL, ahc->msgout_buf[ahc->msgout_index++]);
+		break;
+	}
+	case MSG_TYPE_TARGET_MSGOUT:
+	{
+		int lastbyte;
+		int msgdone;
+
+		/*
+		 * The initiator signals that this is
+		 * the last byte by dropping ATN.
+		 */
+		lastbyte = (ahc_inb(ahc, SCSISIGI) & ATNI) == 0;
+
+		/*
+		 * Read the latched byte, but turn off SPIOEN first
+		 * so that we don't inadvertently cause a REQ for the
+		 * next byte.
+		 */
+		ahc_outb(ahc, SXFRCTL0, ahc_inb(ahc, SXFRCTL0) & ~SPIOEN);
+		ahc->msgin_buf[ahc->msgin_index] = ahc_inb(ahc, SCSIDATL);
+		msgdone = ahc_parse_msg(ahc, &devinfo);
+		if (msgdone == MSGLOOP_TERMINATED) {
+			/*
+			 * The message is *really* done in that it caused
+			 * us to go to bus free.  The sequencer has already
+			 * been reset at this point, so pull the ejection
+			 * handle.
+			 */
+			return;
+		}
+		
+		ahc->msgin_index++;
+
+		/*
+		 * XXX Read spec about initiator dropping ATN too soon
+		 *     and use msgdone to detect it.
+		 */
+		if (msgdone == MSGLOOP_MSGCOMPLETE) {
+			ahc->msgin_index = 0;
+
+			/*
+			 * If this message illicited a response, transition
+			 * to the Message in phase and send it.
+			 */
+			if (ahc->msgout_len != 0) {
+				ahc_outb(ahc, SCSISIGO, P_MESGIN | BSYO);
+				ahc_outb(ahc, SXFRCTL0,
+					 ahc_inb(ahc, SXFRCTL0) | SPIOEN);
+				ahc->msg_type = MSG_TYPE_TARGET_MSGIN;
+				ahc->msgin_index = 0;
+				break;
+			}
+		}
+
+		if (lastbyte)
+			end_session = TRUE;
+		else {
+			/* Ask for the next byte. */
+			ahc_outb(ahc, SXFRCTL0,
+				 ahc_inb(ahc, SXFRCTL0) | SPIOEN);
+		}
+
+		break;
+	}
+	default:
+		panic("Unknown REQINIT message type");
+	}
+
+	if (end_session) {
+		ahc_clear_msg_state(ahc);
+		ahc_outb(ahc, RETURN_1, EXIT_MSG_LOOP);
+	} else
+		ahc_outb(ahc, RETURN_1, CONT_MSG_LOOP);
+}
+
+/*
+ * See if we sent a particular extended message to the target.
+ * If "full" is true, return true only if the target saw the full
+ * message.  If "full" is false, return true if the target saw at
+ * least the first byte of the message.
+ */
+static int
+ahc_sent_msg(struct ahc_softc *ahc, ahc_msgtype type, u_int msgval, int full)
+{
+	int found;
+	u_int index;
+
+	found = FALSE;
+	index = 0;
+
+	while (index < ahc->msgout_len) {
+		if (ahc->msgout_buf[index] == MSG_EXTENDED) {
+			u_int end_index;
+
+			end_index = index + 1 + ahc->msgout_buf[index + 1];
+			if (ahc->msgout_buf[index+2] == msgval
+			 && type == AHCMSG_EXT) {
+
+				if (full) {
+					if (ahc->msgout_index > end_index)
+						found = TRUE;
+				} else if (ahc->msgout_index > index)
+					found = TRUE;
+			}
+			index = end_index;
+		} else if (ahc->msgout_buf[index] >= MSG_SIMPLE_TASK
+			&& ahc->msgout_buf[index] <= MSG_IGN_WIDE_RESIDUE) {
+
+			/* Skip tag type and tag id or residue param*/
+			index += 2;
+		} else {
+			/* Single byte message */
+			if (type == AHCMSG_1B
+			 && ahc->msgout_buf[index] == msgval
+			 && ahc->msgout_index > index)
+				found = TRUE;
+			index++;
+		}
+
+		if (found)
+			break;
+	}
+	return (found);
+}
+
+/*
+ * Wait for a complete incoming message, parse it, and respond accordingly.
+ */
+static int
+ahc_parse_msg(struct ahc_softc *ahc, struct ahc_devinfo *devinfo)
+{
+	struct	ahc_initiator_tinfo *tinfo;
+	struct	ahc_tmode_tstate *tstate;
+	int	reject;
+	int	done;
+	int	response;
+	u_int	targ_scsirate;
+
+	done = MSGLOOP_IN_PROG;
+	response = FALSE;
+	reject = FALSE;
+	tinfo = ahc_fetch_transinfo(ahc, devinfo->channel, devinfo->our_scsiid,
+				    devinfo->target, &tstate);
+	targ_scsirate = tinfo->scsirate;
+
+	/*
+	 * Parse as much of the message as is available,
+	 * rejecting it if we don't support it.  When
+	 * the entire message is available and has been
+	 * handled, return MSGLOOP_MSGCOMPLETE, indicating
+	 * that we have parsed an entire message.
+	 *
+	 * In the case of extended messages, we accept the length
+	 * byte outright and perform more checking once we know the
+	 * extended message type.
+	 */
+	switch (ahc->msgin_buf[0]) {
+	case MSG_DISCONNECT:
+	case MSG_SAVEDATAPOINTER:
+	case MSG_CMDCOMPLETE:
+	case MSG_RESTOREPOINTERS:
+	case MSG_IGN_WIDE_RESIDUE:
+		/*
+		 * End our message loop as these are messages
+		 * the sequencer handles on its own.
+		 */
+		done = MSGLOOP_TERMINATED;
+		break;
+	case MSG_MESSAGE_REJECT:
+		response = ahc_handle_msg_reject(ahc, devinfo);
+		/* FALLTHROUGH */
+	case MSG_NOOP:
+		done = MSGLOOP_MSGCOMPLETE;
+		break;
+	case MSG_EXTENDED:
+	{
+		/* Wait for enough of the message to begin validation */
+		if (ahc->msgin_index < 2)
+			break;
+		switch (ahc->msgin_buf[2]) {
+		case MSG_EXT_SDTR:
+		{
+			const struct ahc_syncrate *syncrate;
+			u_int	 period;
+			u_int	 ppr_options;
+			u_int	 offset;
+			u_int	 saved_offset;
+			
+			if (ahc->msgin_buf[1] != MSG_EXT_SDTR_LEN) {
+				reject = TRUE;
+				break;
+			}
+
+			/*
+			 * Wait until we have both args before validating
+			 * and acting on this message.
+			 *
+			 * Add one to MSG_EXT_SDTR_LEN to account for
+			 * the extended message preamble.
+			 */
+			if (ahc->msgin_index < (MSG_EXT_SDTR_LEN + 1))
+				break;
+
+			period = ahc->msgin_buf[3];
+			ppr_options = 0;
+			saved_offset = offset = ahc->msgin_buf[4];
+			syncrate = ahc_devlimited_syncrate(ahc, tinfo, &period,
+							   &ppr_options,
+							   devinfo->role);
+			ahc_validate_offset(ahc, tinfo, syncrate, &offset,
+					    targ_scsirate & WIDEXFER,
+					    devinfo->role);
+			if (bootverbose) {
+				printf("(%s:%c:%d:%d): Received "
+				       "SDTR period %x, offset %x\n\t"
+				       "Filtered to period %x, offset %x\n",
+				       ahc_name(ahc), devinfo->channel,
+				       devinfo->target, devinfo->lun,
+				       ahc->msgin_buf[3], saved_offset,
+				       period, offset);
+			}
+			ahc_set_syncrate(ahc, devinfo, 
+					 syncrate, period,
+					 offset, ppr_options,
+					 AHC_TRANS_ACTIVE|AHC_TRANS_GOAL,
+					 /*paused*/TRUE);
+
+			/*
+			 * See if we initiated Sync Negotiation
+			 * and didn't have to fall down to async
+			 * transfers.
+			 */
+			if (ahc_sent_msg(ahc, AHCMSG_EXT, MSG_EXT_SDTR, TRUE)) {
+				/* We started it */
+				if (saved_offset != offset) {
+					/* Went too low - force async */
+					reject = TRUE;
+				}
+			} else {
+				/*
+				 * Send our own SDTR in reply
+				 */
+				if (bootverbose
+				 && devinfo->role == ROLE_INITIATOR) {
+					printf("(%s:%c:%d:%d): Target "
+					       "Initiated SDTR\n",
+					       ahc_name(ahc), devinfo->channel,
+					       devinfo->target, devinfo->lun);
+				}
+				ahc->msgout_index = 0;
+				ahc->msgout_len = 0;
+				ahc_construct_sdtr(ahc, devinfo,
+						   period, offset);
+				ahc->msgout_index = 0;
+				response = TRUE;
+			}
+			done = MSGLOOP_MSGCOMPLETE;
+			break;
+		}
+		case MSG_EXT_WDTR:
+		{
+			u_int bus_width;
+			u_int saved_width;
+			u_int sending_reply;
+
+			sending_reply = FALSE;
+			if (ahc->msgin_buf[1] != MSG_EXT_WDTR_LEN) {
+				reject = TRUE;
+				break;
+			}
+
+			/*
+			 * Wait until we have our arg before validating
+			 * and acting on this message.
+			 *
+			 * Add one to MSG_EXT_WDTR_LEN to account for
+			 * the extended message preamble.
+			 */
+			if (ahc->msgin_index < (MSG_EXT_WDTR_LEN + 1))
+				break;
+
+			bus_width = ahc->msgin_buf[3];
+			saved_width = bus_width;
+			ahc_validate_width(ahc, tinfo, &bus_width,
+					   devinfo->role);
+			if (bootverbose) {
+				printf("(%s:%c:%d:%d): Received WDTR "
+				       "%x filtered to %x\n",
+				       ahc_name(ahc), devinfo->channel,
+				       devinfo->target, devinfo->lun,
+				       saved_width, bus_width);
+			}
+
+			if (ahc_sent_msg(ahc, AHCMSG_EXT, MSG_EXT_WDTR, TRUE)) {
+				/*
+				 * Don't send a WDTR back to the
+				 * target, since we asked first.
+				 * If the width went higher than our
+				 * request, reject it.
+				 */
+				if (saved_width > bus_width) {
+					reject = TRUE;
+					printf("(%s:%c:%d:%d): requested %dBit "
+					       "transfers.  Rejecting...\n",
+					       ahc_name(ahc), devinfo->channel,
+					       devinfo->target, devinfo->lun,
+					       8 * (0x01 << bus_width));
+					bus_width = 0;
+				}
+			} else {
+				/*
+				 * Send our own WDTR in reply
+				 */
+				if (bootverbose
+				 && devinfo->role == ROLE_INITIATOR) {
+					printf("(%s:%c:%d:%d): Target "
+					       "Initiated WDTR\n",
+					       ahc_name(ahc), devinfo->channel,
+					       devinfo->target, devinfo->lun);
+				}
+				ahc->msgout_index = 0;
+				ahc->msgout_len = 0;
+				ahc_construct_wdtr(ahc, devinfo, bus_width);
+				ahc->msgout_index = 0;
+				response = TRUE;
+				sending_reply = TRUE;
+			}
+			/*
+			 * After a wide message, we are async, but
+			 * some devices don't seem to honor this portion
+			 * of the spec.  Force a renegotiation of the
+			 * sync component of our transfer agreement even
+			 * if our goal is async.  By updating our width
+			 * after forcing the negotiation, we avoid
+			 * renegotiating for width.
+			 */
+			ahc_update_neg_request(ahc, devinfo, tstate,
+					       tinfo, AHC_NEG_ALWAYS);
+			ahc_set_width(ahc, devinfo, bus_width,
+				      AHC_TRANS_ACTIVE|AHC_TRANS_GOAL,
+				      /*paused*/TRUE);
+			if (sending_reply == FALSE && reject == FALSE) {
+
+				/*
+				 * We will always have an SDTR to send.
+				 */
+				ahc->msgout_index = 0;
+				ahc->msgout_len = 0;
+				ahc_build_transfer_msg(ahc, devinfo);
+				ahc->msgout_index = 0;
+				response = TRUE;
+			}
+			done = MSGLOOP_MSGCOMPLETE;
+			break;
+		}
+		case MSG_EXT_PPR:
+		{
+			const struct ahc_syncrate *syncrate;
+			u_int	period;
+			u_int	offset;
+			u_int	bus_width;
+			u_int	ppr_options;
+			u_int	saved_width;
+			u_int	saved_offset;
+			u_int	saved_ppr_options;
+
+			if (ahc->msgin_buf[1] != MSG_EXT_PPR_LEN) {
+				reject = TRUE;
+				break;
+			}
+
+			/*
+			 * Wait until we have all args before validating
+			 * and acting on this message.
+			 *
+			 * Add one to MSG_EXT_PPR_LEN to account for
+			 * the extended message preamble.
+			 */
+			if (ahc->msgin_index < (MSG_EXT_PPR_LEN + 1))
+				break;
+
+			period = ahc->msgin_buf[3];
+			offset = ahc->msgin_buf[5];
+			bus_width = ahc->msgin_buf[6];
+			saved_width = bus_width;
+			ppr_options = ahc->msgin_buf[7];
+			/*
+			 * According to the spec, a DT only
+			 * period factor with no DT option
+			 * set implies async.
+			 */
+			if ((ppr_options & MSG_EXT_PPR_DT_REQ) == 0
+			 && period == 9)
+				offset = 0;
+			saved_ppr_options = ppr_options;
+			saved_offset = offset;
+
+			/*
+			 * Mask out any options we don't support
+			 * on any controller.  Transfer options are
+			 * only available if we are negotiating wide.
+			 */
+			ppr_options &= MSG_EXT_PPR_DT_REQ;
+			if (bus_width == 0)
+				ppr_options = 0;
+
+			ahc_validate_width(ahc, tinfo, &bus_width,
+					   devinfo->role);
+			syncrate = ahc_devlimited_syncrate(ahc, tinfo, &period,
+							   &ppr_options,
+							   devinfo->role);
+			ahc_validate_offset(ahc, tinfo, syncrate,
+					    &offset, bus_width,
+					    devinfo->role);
+
+			if (ahc_sent_msg(ahc, AHCMSG_EXT, MSG_EXT_PPR, TRUE)) {
+				/*
+				 * If we are unable to do any of the
+				 * requested options (we went too low),
+				 * then we'll have to reject the message.
+				 */
+				if (saved_width > bus_width
+				 || saved_offset != offset
+				 || saved_ppr_options != ppr_options) {
+					reject = TRUE;
+					period = 0;
+					offset = 0;
+					bus_width = 0;
+					ppr_options = 0;
+					syncrate = NULL;
+				}
+			} else {
+				if (devinfo->role != ROLE_TARGET)
+					printf("(%s:%c:%d:%d): Target "
+					       "Initiated PPR\n",
+					       ahc_name(ahc), devinfo->channel,
+					       devinfo->target, devinfo->lun);
+				else
+					printf("(%s:%c:%d:%d): Initiator "
+					       "Initiated PPR\n",
+					       ahc_name(ahc), devinfo->channel,
+					       devinfo->target, devinfo->lun);
+				ahc->msgout_index = 0;
+				ahc->msgout_len = 0;
+				ahc_construct_ppr(ahc, devinfo, period, offset,
+						  bus_width, ppr_options);
+				ahc->msgout_index = 0;
+				response = TRUE;
+			}
+			if (bootverbose) {
+				printf("(%s:%c:%d:%d): Received PPR width %x, "
+				       "period %x, offset %x,options %x\n"
+				       "\tFiltered to width %x, period %x, "
+				       "offset %x, options %x\n",
+				       ahc_name(ahc), devinfo->channel,
+				       devinfo->target, devinfo->lun,
+				       saved_width, ahc->msgin_buf[3],
+				       saved_offset, saved_ppr_options,
+				       bus_width, period, offset, ppr_options);
+			}
+			ahc_set_width(ahc, devinfo, bus_width,
+				      AHC_TRANS_ACTIVE|AHC_TRANS_GOAL,
+				      /*paused*/TRUE);
+			ahc_set_syncrate(ahc, devinfo,
+					 syncrate, period,
+					 offset, ppr_options,
+					 AHC_TRANS_ACTIVE|AHC_TRANS_GOAL,
+					 /*paused*/TRUE);
+			done = MSGLOOP_MSGCOMPLETE;
+			break;
+		}
+		default:
+			/* Unknown extended message.  Reject it. */
+			reject = TRUE;
+			break;
+		}
+		break;
+	}
+#ifdef AHC_TARGET_MODE
+	case MSG_BUS_DEV_RESET:
+		ahc_handle_devreset(ahc, devinfo,
+				    CAM_BDR_SENT,
+				    "Bus Device Reset Received",
+				    /*verbose_level*/0);
+		ahc_restart(ahc);
+		done = MSGLOOP_TERMINATED;
+		break;
+	case MSG_ABORT_TAG:
+	case MSG_ABORT:
+	case MSG_CLEAR_QUEUE:
+	{
+		int tag;
+
+		/* Target mode messages */
+		if (devinfo->role != ROLE_TARGET) {
+			reject = TRUE;
+			break;
+		}
+		tag = SCB_LIST_NULL;
+		if (ahc->msgin_buf[0] == MSG_ABORT_TAG)
+			tag = ahc_inb(ahc, INITIATOR_TAG);
+		ahc_abort_scbs(ahc, devinfo->target, devinfo->channel,
+			       devinfo->lun, tag, ROLE_TARGET,
+			       CAM_REQ_ABORTED);
+
+		tstate = ahc->enabled_targets[devinfo->our_scsiid];
+		if (tstate != NULL) {
+			struct ahc_tmode_lstate* lstate;
+
+			lstate = tstate->enabled_luns[devinfo->lun];
+			if (lstate != NULL) {
+				ahc_queue_lstate_event(ahc, lstate,
+						       devinfo->our_scsiid,
+						       ahc->msgin_buf[0],
+						       /*arg*/tag);
+				ahc_send_lstate_events(ahc, lstate);
+			}
+		}
+		ahc_restart(ahc);
+		done = MSGLOOP_TERMINATED;
+		break;
+	}
+#endif
+	case MSG_TERM_IO_PROC:
+	default:
+		reject = TRUE;
+		break;
+	}
+
+	if (reject) {
+		/*
+		 * Setup to reject the message.
+		 */
+		ahc->msgout_index = 0;
+		ahc->msgout_len = 1;
+		ahc->msgout_buf[0] = MSG_MESSAGE_REJECT;
+		done = MSGLOOP_MSGCOMPLETE;
+		response = TRUE;
+	}
+
+	if (done != MSGLOOP_IN_PROG && !response)
+		/* Clear the outgoing message buffer */
+		ahc->msgout_len = 0;
+
+	return (done);
+}
+
+/*
+ * Process a message reject message.
+ */
+static int
+ahc_handle_msg_reject(struct ahc_softc *ahc, struct ahc_devinfo *devinfo)
+{
+	/*
+	 * What we care about here is if we had an
+	 * outstanding SDTR or WDTR message for this
+	 * target.  If we did, this is a signal that
+	 * the target is refusing negotiation.
+	 */
+	struct scb *scb;
+	struct ahc_initiator_tinfo *tinfo;
+	struct ahc_tmode_tstate *tstate;
+	u_int scb_index;
+	u_int last_msg;
+	int   response = 0;
+
+	scb_index = ahc_inb(ahc, SCB_TAG);
+	scb = ahc_lookup_scb(ahc, scb_index);
+	tinfo = ahc_fetch_transinfo(ahc, devinfo->channel,
+				    devinfo->our_scsiid,
+				    devinfo->target, &tstate);
+	/* Might be necessary */
+	last_msg = ahc_inb(ahc, LAST_MSG);
+
+	if (ahc_sent_msg(ahc, AHCMSG_EXT, MSG_EXT_PPR, /*full*/FALSE)) {
+		/*
+		 * Target does not support the PPR message.
+		 * Attempt to negotiate SPI-2 style.
+		 */
+		if (bootverbose) {
+			printf("(%s:%c:%d:%d): PPR Rejected. "
+			       "Trying WDTR/SDTR\n",
+			       ahc_name(ahc), devinfo->channel,
+			       devinfo->target, devinfo->lun);
+		}
+		tinfo->goal.ppr_options = 0;
+		tinfo->curr.transport_version = 2;
+		tinfo->goal.transport_version = 2;
+		ahc->msgout_index = 0;
+		ahc->msgout_len = 0;
+		ahc_build_transfer_msg(ahc, devinfo);
+		ahc->msgout_index = 0;
+		response = 1;
+	} else if (ahc_sent_msg(ahc, AHCMSG_EXT, MSG_EXT_WDTR, /*full*/FALSE)) {
+
+		/* note 8bit xfers */
+		printf("(%s:%c:%d:%d): refuses WIDE negotiation.  Using "
+		       "8bit transfers\n", ahc_name(ahc),
+		       devinfo->channel, devinfo->target, devinfo->lun);
+		ahc_set_width(ahc, devinfo, MSG_EXT_WDTR_BUS_8_BIT,
+			      AHC_TRANS_ACTIVE|AHC_TRANS_GOAL,
+			      /*paused*/TRUE);
+		/*
+		 * No need to clear the sync rate.  If the target
+		 * did not accept the command, our syncrate is
+		 * unaffected.  If the target started the negotiation,
+		 * but rejected our response, we already cleared the
+		 * sync rate before sending our WDTR.
+		 */
+		if (tinfo->goal.offset != tinfo->curr.offset) {
+
+			/* Start the sync negotiation */
+			ahc->msgout_index = 0;
+			ahc->msgout_len = 0;
+			ahc_build_transfer_msg(ahc, devinfo);
+			ahc->msgout_index = 0;
+			response = 1;
+		}
+	} else if (ahc_sent_msg(ahc, AHCMSG_EXT, MSG_EXT_SDTR, /*full*/FALSE)) {
+		/* note asynch xfers and clear flag */
+		ahc_set_syncrate(ahc, devinfo, /*syncrate*/NULL, /*period*/0,
+				 /*offset*/0, /*ppr_options*/0,
+				 AHC_TRANS_ACTIVE|AHC_TRANS_GOAL,
+				 /*paused*/TRUE);
+		printf("(%s:%c:%d:%d): refuses synchronous negotiation. "
+		       "Using asynchronous transfers\n",
+		       ahc_name(ahc), devinfo->channel,
+		       devinfo->target, devinfo->lun);
+	} else if ((scb->hscb->control & MSG_SIMPLE_TASK) != 0) {
+		int tag_type;
+		int mask;
+
+		tag_type = (scb->hscb->control & MSG_SIMPLE_TASK);
+
+		if (tag_type == MSG_SIMPLE_TASK) {
+			printf("(%s:%c:%d:%d): refuses tagged commands.  "
+			       "Performing non-tagged I/O\n", ahc_name(ahc),
+			       devinfo->channel, devinfo->target, devinfo->lun);
+			ahc_set_tags(ahc, scb->io_ctx, devinfo, AHC_QUEUE_NONE);
+			mask = ~0x23;
+		} else {
+			printf("(%s:%c:%d:%d): refuses %s tagged commands.  "
+			       "Performing simple queue tagged I/O only\n",
+			       ahc_name(ahc), devinfo->channel, devinfo->target,
+			       devinfo->lun, tag_type == MSG_ORDERED_TASK
+			       ? "ordered" : "head of queue");
+			ahc_set_tags(ahc, scb->io_ctx, devinfo, AHC_QUEUE_BASIC);
+			mask = ~0x03;
+		}
+
+		/*
+		 * Resend the identify for this CCB as the target
+		 * may believe that the selection is invalid otherwise.
+		 */
+		ahc_outb(ahc, SCB_CONTROL,
+			 ahc_inb(ahc, SCB_CONTROL) & mask);
+	 	scb->hscb->control &= mask;
+		ahc_set_transaction_tag(scb, /*enabled*/FALSE,
+					/*type*/MSG_SIMPLE_TASK);
+		ahc_outb(ahc, MSG_OUT, MSG_IDENTIFYFLAG);
+		ahc_assert_atn(ahc);
+
+		/*
+		 * This transaction is now at the head of
+		 * the untagged queue for this target.
+		 */
+		if ((ahc->flags & AHC_SCB_BTT) == 0) {
+			struct scb_tailq *untagged_q;
+
+			untagged_q =
+			    &(ahc->untagged_queues[devinfo->target_offset]);
+			TAILQ_INSERT_HEAD(untagged_q, scb, links.tqe);
+			scb->flags |= SCB_UNTAGGEDQ;
+		}
+		ahc_busy_tcl(ahc, BUILD_TCL(scb->hscb->scsiid, devinfo->lun),
+			     scb->hscb->tag);
+
+		/*
+		 * Requeue all tagged commands for this target
+		 * currently in our posession so they can be
+		 * converted to untagged commands.
+		 */
+		ahc_search_qinfifo(ahc, SCB_GET_TARGET(ahc, scb),
+				   SCB_GET_CHANNEL(ahc, scb),
+				   SCB_GET_LUN(scb), /*tag*/SCB_LIST_NULL,
+				   ROLE_INITIATOR, CAM_REQUEUE_REQ,
+				   SEARCH_COMPLETE);
+	} else {
+		/*
+		 * Otherwise, we ignore it.
+		 */
+		printf("%s:%c:%d: Message reject for %x -- ignored\n",
+		       ahc_name(ahc), devinfo->channel, devinfo->target,
+		       last_msg);
+	}
+	return (response);
+}
+
+/*
+ * Process an ingnore wide residue message.
+ */
+static void
+ahc_handle_ign_wide_residue(struct ahc_softc *ahc, struct ahc_devinfo *devinfo)
+{
+	u_int scb_index;
+	struct scb *scb;
+
+	scb_index = ahc_inb(ahc, SCB_TAG);
+	scb = ahc_lookup_scb(ahc, scb_index);
+	/*
+	 * XXX Actually check data direction in the sequencer?
+	 * Perhaps add datadir to some spare bits in the hscb?
+	 */
+	if ((ahc_inb(ahc, SEQ_FLAGS) & DPHASE) == 0
+	 || ahc_get_transfer_dir(scb) != CAM_DIR_IN) {
+		/*
+		 * Ignore the message if we haven't
+		 * seen an appropriate data phase yet.
+		 */
+	} else {
+		/*
+		 * If the residual occurred on the last
+		 * transfer and the transfer request was
+		 * expected to end on an odd count, do
+		 * nothing.  Otherwise, subtract a byte
+		 * and update the residual count accordingly.
+		 */
+		uint32_t sgptr;
+
+		sgptr = ahc_inb(ahc, SCB_RESIDUAL_SGPTR);
+		if ((sgptr & SG_LIST_NULL) != 0
+		 && (ahc_inb(ahc, SCB_LUN) & SCB_XFERLEN_ODD) != 0) {
+			/*
+			 * If the residual occurred on the last
+			 * transfer and the transfer request was
+			 * expected to end on an odd count, do
+			 * nothing.
+			 */
+		} else {
+			struct ahc_dma_seg *sg;
+			uint32_t data_cnt;
+			uint32_t data_addr;
+			uint32_t sglen;
+
+			/* Pull in all of the sgptr */
+			sgptr = ahc_inl(ahc, SCB_RESIDUAL_SGPTR);
+			data_cnt = ahc_inl(ahc, SCB_RESIDUAL_DATACNT);
+
+			if ((sgptr & SG_LIST_NULL) != 0) {
+				/*
+				 * The residual data count is not updated
+				 * for the command run to completion case.
+				 * Explicitly zero the count.
+				 */
+				data_cnt &= ~AHC_SG_LEN_MASK;
+			}
+
+			data_addr = ahc_inl(ahc, SHADDR);
+
+			data_cnt += 1;
+			data_addr -= 1;
+			sgptr &= SG_PTR_MASK;
+
+			sg = ahc_sg_bus_to_virt(scb, sgptr);
+
+			/*
+			 * The r

@@ -1,0 +1,299 @@
+/*
+ *
+ * Hardware accelerated Matrox Millennium I, II, Mystique, G100, G200, G400 and G450
+ *
+ * (c) 1998-2002 Petr Vandrovec <vandrove@vc.cvut.cz>
+ *
+ */
+#ifndef __MATROXFB_H__
+#define __MATROXFB_H__
+
+/* general, but fairly heavy, debugging */
+#undef MATROXFB_DEBUG
+
+/* heavy debugging: */
+/* -- logs putc[s], so everytime a char is displayed, it's logged */
+#undef MATROXFB_DEBUG_HEAVY
+
+/* This one _could_ cause infinite loops */
+/* It _does_ cause lots and lots of messages during idle loops */
+#undef MATROXFB_DEBUG_LOOP
+
+/* Debug register calls, too? */
+#undef MATROXFB_DEBUG_REG
+
+/* Guard accelerator accesses with spin_lock_irqsave... */
+#undef MATROXFB_USE_SPINLOCKS
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/errno.h>
+#include <linux/string.h>
+#include <linux/mm.h>
+#include <linux/slab.h>
+#include <linux/delay.h>
+#include <linux/fb.h>
+#include <linux/console.h>
+#include <linux/selection.h>
+#include <linux/ioport.h>
+#include <linux/init.h>
+#include <linux/timer.h>
+#include <linux/pci.h>
+#include <linux/spinlock.h>
+#include <linux/kd.h>
+
+#include <asm/io.h>
+#include <asm/unaligned.h>
+#ifdef CONFIG_MTRR
+#include <asm/mtrr.h>
+#endif
+
+#if defined(CONFIG_PPC_PMAC)
+#include <asm/prom.h>
+#include <asm/pci-bridge.h>
+#include "../macmodes.h"
+#endif
+
+/* always compile support for 32MB... It cost almost nothing */
+#define CONFIG_FB_MATROX_32MB
+
+#ifdef MATROXFB_DEBUG
+
+#define DEBUG
+#define DBG(x)		printk(KERN_DEBUG "matroxfb: %s\n", (x));
+
+#ifdef MATROXFB_DEBUG_HEAVY
+#define DBG_HEAVY(x)	DBG(x)
+#else /* MATROXFB_DEBUG_HEAVY */
+#define DBG_HEAVY(x)	/* DBG_HEAVY */
+#endif /* MATROXFB_DEBUG_HEAVY */
+
+#ifdef MATROXFB_DEBUG_LOOP
+#define DBG_LOOP(x)	DBG(x)
+#else /* MATROXFB_DEBUG_LOOP */
+#define DBG_LOOP(x)	/* DBG_LOOP */
+#endif /* MATROXFB_DEBUG_LOOP */
+
+#ifdef MATROXFB_DEBUG_REG
+#define DBG_REG(x)	DBG(x)
+#else /* MATROXFB_DEBUG_REG */
+#define DBG_REG(x)	/* DBG_REG */
+#endif /* MATROXFB_DEBUG_REG */
+
+#else /* MATROXFB_DEBUG */
+
+#define DBG(x)		/* DBG */
+#define DBG_HEAVY(x)	/* DBG_HEAVY */
+#define DBG_REG(x)	/* DBG_REG */
+#define DBG_LOOP(x)	/* DBG_LOOP */
+
+#endif /* MATROXFB_DEBUG */
+
+#ifdef DEBUG
+#define dprintk(X...)	printk(X)
+#else
+#define dprintk(X...)
+#endif
+
+#ifndef PCI_SS_VENDOR_ID_SIEMENS_NIXDORF
+#define PCI_SS_VENDOR_ID_SIEMENS_NIXDORF	0x110A
+#endif
+#ifndef PCI_SS_VENDOR_ID_MATROX
+#define PCI_SS_VENDOR_ID_MATROX		PCI_VENDOR_ID_MATROX
+#endif
+
+#ifndef PCI_SS_ID_MATROX_PRODUCTIVA_G100_AGP
+#define PCI_SS_ID_MATROX_GENERIC		0xFF00
+#define PCI_SS_ID_MATROX_PRODUCTIVA_G100_AGP	0xFF01
+#define PCI_SS_ID_MATROX_MYSTIQUE_G200_AGP	0xFF02
+#define PCI_SS_ID_MATROX_MILLENIUM_G200_AGP	0xFF03
+#define PCI_SS_ID_MATROX_MARVEL_G200_AGP	0xFF04
+#define PCI_SS_ID_MATROX_MGA_G100_PCI		0xFF05
+#define PCI_SS_ID_MATROX_MGA_G100_AGP		0x1001
+#define PCI_SS_ID_MATROX_MILLENNIUM_G400_MAX_AGP	0x2179
+#define PCI_SS_ID_SIEMENS_MGA_G100_AGP		0x001E /* 30 */
+#define PCI_SS_ID_SIEMENS_MGA_G200_AGP		0x0032 /* 50 */
+#endif
+
+#define MX_VISUAL_TRUECOLOR	FB_VISUAL_DIRECTCOLOR
+#define MX_VISUAL_DIRECTCOLOR	FB_VISUAL_TRUECOLOR
+#define MX_VISUAL_PSEUDOCOLOR	FB_VISUAL_PSEUDOCOLOR
+
+#define CNVT_TOHW(val,width) ((((val)<<(width))+0x7FFF-(val))>>16)
+
+/* G-series and Mystique have (almost) same DAC */
+#undef NEED_DAC1064
+#if defined(CONFIG_FB_MATROX_MYSTIQUE) || defined(CONFIG_FB_MATROX_G)
+#define NEED_DAC1064 1
+#endif
+
+typedef struct {
+	void __iomem*	vaddr;
+} vaddr_t;
+
+static inline unsigned int mga_readb(vaddr_t va, unsigned int offs) {
+	return readb(va.vaddr + offs);
+}
+
+static inline void mga_writeb(vaddr_t va, unsigned int offs, u_int8_t value) {
+	writeb(value, va.vaddr + offs);
+}
+
+static inline void mga_writew(vaddr_t va, unsigned int offs, u_int16_t value) {
+	writew(value, va.vaddr + offs);
+}
+
+static inline u_int32_t mga_readl(vaddr_t va, unsigned int offs) {
+	return readl(va.vaddr + offs);
+}
+
+static inline void mga_writel(vaddr_t va, unsigned int offs, u_int32_t value) {
+	writel(value, va.vaddr + offs);
+}
+
+static inline void mga_memcpy_toio(vaddr_t va, const void* src, int len) {
+#if defined(__alpha__) || defined(__i386__) || defined(__x86_64__)
+	/*
+	 * memcpy_toio works for us if:
+	 *  (1) Copies data as 32bit quantities, not byte after byte,
+	 *  (2) Performs LE ordered stores, and
+	 *  (3) It copes with unaligned source (destination is guaranteed to be page
+	 *      aligned and length is guaranteed to be multiple of 4).
+	 */
+	memcpy_toio(va.vaddr, src, len);
+#else
+        u_int32_t __iomem* addr = va.vaddr;
+
+	if ((unsigned long)src & 3) {
+		while (len >= 4) {
+			fb_writel(get_unaligned((u32 *)src), addr);
+			addr++;
+			len -= 4;
+			src += 4;
+		}
+	} else {
+		while (len >= 4) {
+			fb_writel(*(u32 *)src, addr);
+			addr++;
+			len -= 4;
+			src += 4;
+		}
+	}
+#endif
+}
+
+static inline void vaddr_add(vaddr_t* va, unsigned long offs) {
+	va->vaddr += offs;
+}
+
+static inline void __iomem* vaddr_va(vaddr_t va) {
+	return va.vaddr;
+}
+
+#define MGA_IOREMAP_NORMAL	0
+#define MGA_IOREMAP_NOCACHE	1
+
+#define MGA_IOREMAP_FB		MGA_IOREMAP_NOCACHE
+#define MGA_IOREMAP_MMIO	MGA_IOREMAP_NOCACHE
+static inline int mga_ioremap(unsigned long phys, unsigned long size, int flags, vaddr_t* virt) {
+	if (flags & MGA_IOREMAP_NOCACHE)
+		virt->vaddr = ioremap_nocache(phys, size);
+	else
+		virt->vaddr = ioremap(phys, size);
+	return (virt->vaddr == NULL); /* 0, !0... 0, error_code in future */
+}
+
+static inline void mga_iounmap(vaddr_t va) {
+	iounmap(va.vaddr);
+}
+
+struct my_timming {
+	unsigned int pixclock;
+	int mnp;
+	unsigned int crtc;
+	unsigned int HDisplay;
+	unsigned int HSyncStart;
+	unsigned int HSyncEnd;
+	unsigned int HTotal;
+	unsigned int VDisplay;
+	unsigned int VSyncStart;
+	unsigned int VSyncEnd;
+	unsigned int VTotal;
+	unsigned int sync;
+	int	     dblscan;
+	int	     interlaced;
+	unsigned int delay;	/* CRTC delay */
+};
+
+enum { M_SYSTEM_PLL, M_PIXEL_PLL_A, M_PIXEL_PLL_B, M_PIXEL_PLL_C, M_VIDEO_PLL };
+
+struct matrox_pll_cache {
+	unsigned int	valid;
+	struct {
+		unsigned int	mnp_key;
+		unsigned int	mnp_value;
+		      } data[4];
+};
+
+struct matrox_pll_limits {
+	unsigned int	vcomin;
+	unsigned int	vcomax;
+};
+
+struct matrox_pll_features {
+	unsigned int	vco_freq_min;
+	unsigned int	ref_freq;
+	unsigned int	feed_div_min;
+	unsigned int	feed_div_max;
+	unsigned int	in_div_min;
+	unsigned int	in_div_max;
+	unsigned int	post_shift_max;
+};
+
+struct matroxfb_par
+{
+	unsigned int	final_bppShift;
+	unsigned int	cmap_len;
+	struct {
+		unsigned int bytes;
+		unsigned int pixels;
+		unsigned int chunks;
+		      } ydstorg;
+};
+
+struct matrox_fb_info;
+
+struct matrox_DAC1064_features {
+	u_int8_t	xvrefctrl;
+	u_int8_t	xmiscctrl;
+};
+
+/* current hardware status */
+struct mavenregs {
+	u_int8_t regs[256];
+	int	 mode;
+	int	 vlines;
+	int	 xtal;
+	int	 fv;
+
+	u_int16_t htotal;
+	u_int16_t hcorr;
+};
+
+struct matrox_crtc2 {
+	u_int32_t ctl;
+};
+
+struct matrox_hw_state {
+	u_int32_t	MXoptionReg;
+	unsigned char	DACclk[6];
+	unsigned char	DACreg[80];
+	unsigned char	MiscOutReg;
+	unsigned char	DACpal[768];
+	unsigned char	CRTC[25];
+	unsigned char	CRTCEXT[9];
+	unsigned char	SEQ[5];
+	/* unused for MGA mode, but who knows... */
+	unsigned char	GCTL[9];
+	/* unused for MGA mode, but who knows... */
+	

@@ -1,0 +1,95 @@
+vtv_vapi(itv, CX2341X_DEC_SET_EVENT_NOTIFICATION, 4, 0, 1, IVTV_IRQ_DEC_AUD_MODE_CHG, -1);
+
+	/* start playback */
+	ivtv_vapi(itv, CX2341X_DEC_START_PLAYBACK, 2, gop_offset, 0);
+
+	/* Clear the following Interrupt mask bits for decoding */
+	ivtv_clear_irq_mask(itv, IVTV_IRQ_MASK_DECODE);
+	IVTV_DEBUG_IRQ("IRQ Mask is now: 0x%08x\n", itv->irqmask);
+
+	/* you're live! sit back and await interrupts :) */
+	atomic_inc(&itv->decoding);
+	return 0;
+}
+
+void ivtv_stop_all_captures(struct ivtv *itv)
+{
+	int i;
+
+	for (i = IVTV_MAX_STREAMS - 1; i >= 0; i--) {
+		struct ivtv_stream *s = &itv->streams[i];
+
+		if (s->vdev == NULL)
+			continue;
+		if (test_bit(IVTV_F_S_STREAMING, &s->s_flags)) {
+			ivtv_stop_v4l2_encode_stream(s, 0);
+		}
+	}
+}
+
+int ivtv_stop_v4l2_encode_stream(struct ivtv_stream *s, int gop_end)
+{
+	struct ivtv *itv = s->itv;
+	DECLARE_WAITQUEUE(wait, current);
+	int cap_type;
+	int stopmode;
+
+	if (s->vdev == NULL)
+		return -EINVAL;
+
+	/* This function assumes that you are allowed to stop the capture
+	   and that we are actually capturing */
+
+	IVTV_DEBUG_INFO("Stop Capture\n");
+
+	if (s->type == IVTV_DEC_STREAM_TYPE_VOUT)
+		return 0;
+	if (atomic_read(&itv->capturing) == 0)
+		return 0;
+
+	switch (s->type) {
+	case IVTV_ENC_STREAM_TYPE_YUV:
+		cap_type = 1;
+		break;
+	case IVTV_ENC_STREAM_TYPE_PCM:
+		cap_type = 1;
+		break;
+	case IVTV_ENC_STREAM_TYPE_VBI:
+		cap_type = 1;
+		break;
+	case IVTV_ENC_STREAM_TYPE_MPG:
+	default:
+		cap_type = 0;
+		break;
+	}
+
+	/* Stop Capture Mode */
+	if (s->type == IVTV_ENC_STREAM_TYPE_MPG && gop_end) {
+		stopmode = 0;
+	} else {
+		stopmode = 1;
+	}
+
+	/* end_capture */
+	/* when: 0 =  end of GOP  1 = NOW!, type: 0 = mpeg, subtype: 3 = video+audio */
+	ivtv_vapi(itv, CX2341X_ENC_STOP_CAPTURE, 3, stopmode, cap_type, s->subtype);
+
+	if (!test_bit(IVTV_F_S_PASSTHROUGH, &s->s_flags)) {
+		if (s->type == IVTV_ENC_STREAM_TYPE_MPG && gop_end) {
+			/* only run these if we're shutting down the last cap */
+			unsigned long duration;
+			unsigned long then = jiffies;
+
+			add_wait_queue(&itv->eos_waitq, &wait);
+
+			set_current_state(TASK_INTERRUPTIBLE);
+
+			/* wait 2s for EOS interrupt */
+			while (!test_bit(IVTV_F_I_EOS, &itv->i_flags) &&
+				time_before(jiffies,
+					    then + msecs_to_jiffies(2000))) {
+				schedule_timeout(msecs_to_jiffies(10));
+			}
+
+			/* To convert jiffies to ms, we must multiply by 1000
+			 * and divide by HZ.  To av

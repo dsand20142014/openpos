@@ -1,0 +1,62 @@
+
+#define VIDIOC_QBUF32		_IOWR('V', 15, struct v4l2_buffer32)
+#define VIDIOC_DQBUF32		_IOWR('V', 17, struct v4l2_buffer32)
+#define VIDIOC_ENUMSTD32	_IOWR('V', 25, struct v4l2_standard32)
+#define VIDIOC_ENUMINPUT32	_IOWR('V', 26, struct v4l2_input32)
+#define VIDIOC_TRY_FMT32      	_IOWR('V', 64, struct v4l2_format32)
+#define VIDIOC_G_EXT_CTRLS32    _IOWR('V', 71, struct v4l2_ext_controls32)
+#define VIDIOC_S_EXT_CTRLS32    _IOWR('V', 72, struct v4l2_ext_controls32)
+#define VIDIOC_TRY_EXT_CTRLS32  _IOWR('V', 73, struct v4l2_ext_controls32)
+
+#define VIDIOC_OVERLAY32	_IOW ('V', 14, s32)
+#ifdef __OLD_VIDIOC_
+#define VIDIOC_OVERLAY32_OLD	_IOWR('V', 14, s32)
+#endif
+#define VIDIOC_STREAMON32	_IOW ('V', 18, s32)
+#define VIDIOC_STREAMOFF32	_IOW ('V', 19, s32)
+#define VIDIOC_G_INPUT32	_IOR ('V', 38, s32)
+#define VIDIOC_S_INPUT32	_IOWR('V', 39, s32)
+#define VIDIOC_G_OUTPUT32	_IOR ('V', 46, s32)
+#define VIDIOC_S_OUTPUT32	_IOWR('V', 47, s32)
+
+static long do_video_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	union {
+#ifdef CONFIG_VIDEO_V4L1_COMPAT
+		struct video_tuner vt;
+		struct video_buffer vb;
+		struct video_window vw;
+		struct video_code vc;
+		struct video_audio va;
+#endif
+		struct v4l2_format v2f;
+		struct v4l2_buffer v2b;
+		struct v4l2_framebuffer v2fb;
+		struct v4l2_input v2i;
+		struct v4l2_standard v2s;
+		struct v4l2_ext_controls v2ecs;
+		unsigned long vx;
+		int vi;
+	} karg;
+	void __user *up = compat_ptr(arg);
+	int compatible_arg = 1;
+	long err = 0;
+
+	/* First, convert the command. */
+	switch (cmd) {
+#ifdef CONFIG_VIDEO_V4L1_COMPAT
+	case VIDIOCGTUNER32: cmd = VIDIOCGTUNER; break;
+	case VIDIOCSTUNER32: cmd = VIDIOCSTUNER; break;
+	case VIDIOCGWIN32: cmd = VIDIOCGWIN; break;
+	case VIDIOCSWIN32: cmd = VIDIOCSWIN; break;
+	case VIDIOCGFBUF32: cmd = VIDIOCGFBUF; break;
+	case VIDIOCSFBUF32: cmd = VIDIOCSFBUF; break;
+	case VIDIOCGFREQ32: cmd = VIDIOCGFREQ; break;
+	case VIDIOCSFREQ32: cmd = VIDIOCSFREQ; break;
+	case VIDIOCSMICROCODE32: cmd = VIDIOCSMICROCODE; break;
+#endif
+	case VIDIOC_G_FMT32: cmd = VIDIOC_G_FMT; break;
+	case VIDIOC_S_FMT32: cmd = VIDIOC_S_FMT; break;
+	case VIDIOC_QUERYBUF32: cmd = VIDIOC_QUERYBUF; break;
+	case VIDIOC_G_FBUF32: cmd = VIDIOC_G_FBUF; break;
+	case VIDIOC_S_FBUF32: cmd = VI

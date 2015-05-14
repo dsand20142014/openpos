@@ -1,0 +1,93 @@
+{
+			mutex_unlock(&video->mtx);
+			return ret;
+		}
+		video->continuity_counter = -1;
+
+		receive_packets(video);
+
+		start_dma_receive(video);
+	}
+
+	ret = 0;
+	add_wait_queue(&video->waitq, &wait);
+
+	while (count > 0) {
+
+		/* must set TASK_INTERRUPTIBLE *before* checking for free
+		   buffers; otherwise we could miss a wakeup if the interrupt
+		   fires between the check and the schedule() */
+
+		set_current_state(TASK_INTERRUPTIBLE);
+
+		spin_lock_irqsave(&video->spinlock, flags);
+
+		target_frame = video->first_clear_frame;
+
+		spin_unlock_irqrestore(&video->spinlock, flags);
+
+		if (target_frame >= 0 &&
+			video->n_clear_frames > 0 &&
+			video->frames[target_frame]->state == FRAME_CLEAR) {
+
+			/* how much room is left in the target frame buffer */
+			cnt = video->frame_size - (video->write_off - target_frame * video->frame_size);
+
+		} else {
+			/* buffer is already used */
+			cnt = 0;
+		}
+
+		if (cnt > count)
+			cnt = count;
+
+		if (cnt <= 0) {
+			/* no room left, gotta wait */
+			if (file->f_flags & O_NONBLOCK) {
+				if (!ret)
+					ret = -EAGAIN;
+				break;
+			}
+			if (signal_pending(current)) {
+				if (!ret)
+					ret = -ERESTARTSYS;
+				break;
+			}
+
+			schedule();
+
+			continue; /* start over from 'while(count > 0)...' */
+		}
+
+		if (copy_to_user(buffer, video->dv_buf.kvirt + video->write_off, cnt)) {
+				if (!ret)
+					ret = -EFAULT;
+				break;
+		}
+
+		video->write_off = (video->write_off + cnt) % (video->n_frames * video->frame_size);
+
+		count -= cnt;
+		buffer += cnt;
+		ret += cnt;
+
+		if (video->write_off == video->frame_size * ((target_frame + 1) % video->n_frames)) {
+			spin_lock_irqsave(&video->spinlock, flags);
+			video->n_clear_frames--;
+			video->first_clear_frame = (video->first_clear_frame + 1) % video->n_frames;
+			spin_unlock_irqrestore(&video->spinlock, flags);
+		}
+	}
+
+	remove_wait_queue(&video->waitq, &wait);
+	set_current_state(TASK_RUNNING);
+	mutex_unlock(&video->mtx);
+	return ret;
+}
+
+
+/*** DEVICE IOCTL INTERFACE ************************************************/
+
+static long dv1394_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+	struct video_card *video = file_to_video_ca

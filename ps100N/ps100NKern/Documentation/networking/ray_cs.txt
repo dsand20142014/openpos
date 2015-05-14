@@ -1,0 +1,216 @@
+if (hccr & (BIT_15 | BIT_13 | BIT_11 | BIT_8))
+				qla_printk(KERN_INFO, ha, "Parity error -- "
+				    "HCCR=%x, Dumping firmware!\n", hccr);
+			else
+				qla_printk(KERN_INFO, ha, "RISC paused -- "
+				    "HCCR=%x, Dumping firmware!\n", hccr);
+
+			/*
+			 * Issue a "HARD" reset in order for the RISC
+			 * interrupt bit to be cleared.  Schedule a big
+			 * hammmer to get out of the RISC PAUSED state.
+			 */
+			WRT_REG_WORD(&reg->hccr, HCCR_RESET_RISC);
+			RD_REG_WORD(&reg->hccr);
+
+			ha->isp_ops->fw_dump(vha, 1);
+			set_bit(ISP_ABORT_NEEDED, &vha->dpc_flags);
+			break;
+		} else if ((stat & HSR_RISC_INT) == 0)
+			break;
+
+		switch (stat & 0xff) {
+		case 0x1:
+		case 0x2:
+		case 0x10:
+		case 0x11:
+			qla2x00_mbx_completion(vha, MSW(stat));
+			status |= MBX_INTERRUPT;
+
+			/* Release mailbox registers. */
+			WRT_REG_WORD(&reg->semaphore, 0);
+			break;
+		case 0x12:
+			mb[0] = MSW(stat);
+			mb[1] = RD_MAILBOX_REG(ha, reg, 1);
+			mb[2] = RD_MAILBOX_REG(ha, reg, 2);
+			mb[3] = RD_MAILBOX_REG(ha, reg, 3);
+			qla2x00_async_event(vha, rsp, mb);
+			break;
+		case 0x13:
+			qla2x00_process_response_queue(rsp);
+			break;
+		case 0x15:
+			mb[0] = MBA_CMPLT_1_16BIT;
+			mb[1] = MSW(stat);
+			qla2x00_async_event(vha, rsp, mb);
+			break;
+		case 0x16:
+			mb[0] = MBA_SCSI_COMPLETION;
+			mb[1] = MSW(stat);
+			mb[2] = RD_MAILBOX_REG(ha, reg, 2);
+			qla2x00_async_event(vha, rsp, mb);
+			break;
+		default:
+			DEBUG2(printk("scsi(%ld): Unrecognized interrupt type "
+			    "(%d).\n",
+			    vha->host_no, stat & 0xff));
+			break;
+		}
+		WRT_REG_WORD(&reg->hccr, HCCR_CLR_RISC_INT);
+		RD_REG_WORD_RELAXED(&reg->hccr);
+	}
+	spin_unlock_irqrestore(&ha->hardware_lock, flags);
+
+	if (test_bit(MBX_INTR_WAIT, &ha->mbx_cmd_flags) &&
+	    (status & MBX_INTERRUPT) && ha->flags.mbox_int) {
+		set_bit(MBX_INTERRUPT, &ha->mbx_cmd_flags);
+		complete(&ha->mbx_intr_comp);
+	}
+
+	return (IRQ_HANDLED);
+}
+
+/**
+ * qla2x00_mbx_completion() - Process mailbox command completions.
+ * @ha: SCSI driver HA context
+ * @mb0: Mailbox0 register
+ */
+static void
+qla2x00_mbx_completion(scsi_qla_host_t *vha, uint16_t mb0)
+{
+	uint16_t	cnt;
+	uint16_t __iomem *wptr;
+	struct qla_hw_data *ha = vha->hw;
+	struct device_reg_2xxx __iomem *reg = &ha->iobase->isp;
+
+	/* Load return mailbox registers. */
+	ha->flags.mbox_int = 1;
+	ha->mailbox_out[0] = mb0;
+	wptr = (uint16_t __iomem *)MAILBOX_REG(ha, reg, 1);
+
+	for (cnt = 1; cnt < ha->mbx_count; cnt++) {
+		if (IS_QLA2200(ha) && cnt == 8)
+			wptr = (uint16_t __iomem *)MAILBOX_REG(ha, reg, 8);
+		if (cnt == 4 || cnt == 5)
+			ha->mailbox_out[cnt] = qla2x00_debounce_register(wptr);
+		else
+			ha->mailbox_out[cnt] = RD_REG_WORD(wptr);
+
+		wptr++;
+	}
+
+	if (ha->mcp) {
+		DEBUG3(printk("%s(%ld): Got mailbox completion. cmd=%x.\n",
+		    __func__, vha->host_no, ha->mcp->mb[0]));
+	} else {
+		DEBUG2_3(printk("%s(%ld): MBX pointer ERROR!\n",
+		    __func__, vha->host_no));
+	}
+}
+
+static void
+qla81xx_idc_event(scsi_qla_host_t *vha, uint16_t aen, uint16_t descr)
+{
+	static char *event[] =
+		{ "Complete", "Request Notification", "Time Extension" };
+	int rval;
+	struct device_reg_24xx __iomem *reg24 = &vha->hw->iobase->isp24;
+	uint16_t __iomem *wptr;
+	uint16_t cnt, timeout, mb[QLA_IDC_ACK_REGS];
+
+	/* Seed data -- mailbox1 -> mailbox7. */
+	wptr = (uint16_t __iomem *)&reg24->mailbox1;
+	for (cnt = 0; cnt < QLA_IDC_ACK_REGS; cnt++, wptr++)
+		mb[cnt] = RD_REG_WORD(wptr);
+
+	DEBUG2(printk("scsi(%ld): Inter-Driver Commucation %s -- "
+	    "%04x %04x %04x %04x %04x %04x %04x.\n", vha->host_no,
+	    event[aen & 0xff],
+	    mb[0], mb[1], mb[2], mb[3], mb[4], mb[5], mb[6]));
+
+	/* Acknowledgement needed? [Notify && non-zero timeout]. */
+	timeout = (descr >> 8) & 0xf;
+	if (aen != MBA_IDC_NOTIFY || !timeout)
+		return;
+
+	DEBUG2(printk("scsi(%ld): Inter-Driver Commucation %s -- "
+	    "ACK timeout=%d.\n", vha->host_no, event[aen & 0xff], timeout));
+
+	rval = qla2x00_post_idc_ack_work(vha, mb);
+	if (rval != QLA_SUCCESS)
+		qla_printk(KERN_WARNING, vha->hw,
+		    "IDC failed to post ACK.\n");
+}
+
+/**
+ * qla2x00_async_event() - Process aynchronous events.
+ * @ha: SCSI driver HA context
+ * @mb: Mailbox registers (0 - 3)
+ */
+void
+qla2x00_async_event(scsi_qla_host_t *vha, struct rsp_que *rsp, uint16_t *mb)
+{
+#define LS_UNKNOWN	2
+	static char	*link_speeds[] = { "1", "2", "?", "4", "8", "10" };
+	char		*link_speed;
+	uint16_t	handle_cnt;
+	uint16_t	cnt;
+	uint32_t	handles[5];
+	struct qla_hw_data *ha = vha->hw;
+	struct device_reg_2xxx __iomem *reg = &ha->iobase->isp;
+	uint32_t	rscn_entry, host_pid;
+	uint8_t		rscn_queue_index;
+	unsigned long	flags;
+
+	/* Setup to process RIO completion. */
+	handle_cnt = 0;
+	if (IS_QLA81XX(ha))
+		goto skip_rio;
+	switch (mb[0]) {
+	case MBA_SCSI_COMPLETION:
+		handles[0] = le32_to_cpu((uint32_t)((mb[2] << 16) | mb[1]));
+		handle_cnt = 1;
+		break;
+	case MBA_CMPLT_1_16BIT:
+		handles[0] = mb[1];
+		handle_cnt = 1;
+		mb[0] = MBA_SCSI_COMPLETION;
+		break;
+	case MBA_CMPLT_2_16BIT:
+		handles[0] = mb[1];
+		handles[1] = mb[2];
+		handle_cnt = 2;
+		mb[0] = MBA_SCSI_COMPLETION;
+		break;
+	case MBA_CMPLT_3_16BIT:
+		handles[0] = mb[1];
+		handles[1] = mb[2];
+		handles[2] = mb[3];
+		handle_cnt = 3;
+		mb[0] = MBA_SCSI_COMPLETION;
+		break;
+	case MBA_CMPLT_4_16BIT:
+		handles[0] = mb[1];
+		handles[1] = mb[2];
+		handles[2] = mb[3];
+		handles[3] = (uint32_t)RD_MAILBOX_REG(ha, reg, 6);
+		handle_cnt = 4;
+		mb[0] = MBA_SCSI_COMPLETION;
+		break;
+	case MBA_CMPLT_5_16BIT:
+		handles[0] = mb[1];
+		handles[1] = mb[2];
+		handles[2] = mb[3];
+		handles[3] = (uint32_t)RD_MAILBOX_REG(ha, reg, 6);
+		handles[4] = (uint32_t)RD_MAILBOX_REG(ha, reg, 7);
+		handle_cnt = 5;
+		mb[0] = MBA_SCSI_COMPLETION;
+		break;
+	case MBA_CMPLT_2_32BIT:
+		handles[0] = le32_to_cpu((uint32_t)((mb[2] << 16) | mb[1]));
+		handles[1] = le32_to_cpu(
+		    ((uint32_t)(RD_MAILBOX_REG(ha, reg, 7) << 16)) |
+		    RD_MAILBOX_REG(ha, reg, 6));
+		handle_cnt = 2;
+		mb

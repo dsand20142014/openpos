@@ -1,0 +1,975 @@
+es		M_DFF0, M_DFF1
+	count		2
+	field	STAETERM	0x80
+	field	SCBCERR		0x40
+	field	SCADERR		0x20
+	field	SCDATBUCKET	0x10
+	field	CNTNOTCMPLT	0x08
+	field	RXOVRUN		0x04
+	field	RXSCEMSG	0x02
+	field	RXSPLTRSP	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * CMC Split Status 0
+ */
+register CMCSPLTSTAT0 {
+	address			0x096
+	access_mode	RW
+	modes		M_CCHAN
+	field	STAETERM	0x80
+	field	SCBCERR		0x40
+	field	SCADERR		0x20
+	field	SCDATBUCKET	0x10
+	field	CNTNOTCMPLT	0x08
+	field	RXOVRUN		0x04
+	field	RXSCEMSG	0x02
+	field	RXSPLTRSP	0x01
+}
+
+/*
+ * Overlay Split Status 0
+ */
+register OVLYSPLTSTAT0 {
+	address			0x096
+	access_mode	RW
+	modes		M_SCSI
+	field	STAETERM	0x80
+	field	SCBCERR		0x40
+	field	SCADERR		0x20
+	field	SCDATBUCKET	0x10
+	field	CNTNOTCMPLT	0x08
+	field	RXOVRUN		0x04
+	field	RXSCEMSG	0x02
+	field	RXSPLTRSP	0x01
+}
+
+/*
+ * Data Channel Split Status 1
+ */
+register DCHSPLTSTAT1 {
+	address			0x097
+	access_mode	RW
+	modes		M_DFF0, M_DFF1
+	count		2
+	field	RXDATABUCKET	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * CMC Split Status 1
+ */
+register CMCSPLTSTAT1 {
+	address			0x097
+	access_mode	RW
+	modes		M_CCHAN
+	field	RXDATABUCKET	0x01
+}
+
+/*
+ * Overlay Split Status 1
+ */
+register OVLYSPLTSTAT1 {
+	address			0x097
+	access_mode	RW
+	modes		M_SCSI
+	field	RXDATABUCKET	0x01
+}
+
+/*
+ * S/G Receive Message 0
+ */
+register SGRXMSG0 {
+	address			0x098
+	access_mode	RO
+	modes		M_DFF0, M_DFF1
+	field		CDNUM	0xF8
+	field		CFNUM	0x07
+}
+
+/*
+ * S/G Receive Message 1
+ */
+register SGRXMSG1 {
+	address			0x099
+	access_mode	RO
+	modes		M_DFF0, M_DFF1
+	field	CBNUM		0xFF
+}
+
+/*
+ * S/G Receive Message 2
+ */
+register SGRXMSG2 {
+	address			0x09A
+	access_mode	RO
+	modes		M_DFF0, M_DFF1
+	field	MINDEX		0xFF
+}
+
+/*
+ * S/G Receive Message 3
+ */
+register SGRXMSG3 {
+	address			0x09B
+	access_mode	RO
+	modes		M_DFF0, M_DFF1
+	field	MCLASS		0x0F
+}
+
+/*
+ * Slave Split Out Address 0
+ */
+register SLVSPLTOUTADR0 {
+	address			0x098
+	access_mode	RO
+	modes		M_SCSI
+	field	LOWER_ADDR	0x7F
+}
+
+/*
+ * Slave Split Out Address 1
+ */
+register SLVSPLTOUTADR1 {
+	address			0x099
+	access_mode	RO
+	modes		M_SCSI
+	field	REQ_DNUM	0xF8
+	field	REQ_FNUM	0x07
+}
+
+/*
+ * Slave Split Out Address 2
+ */
+register SLVSPLTOUTADR2 {
+	address			0x09A
+	access_mode	RO
+	modes		M_SCSI
+	field	REQ_BNUM	0xFF
+}
+
+/*
+ * Slave Split Out Address 3
+ */
+register SLVSPLTOUTADR3 {
+	address			0x09B
+	access_mode	RO
+	modes		M_SCSI
+	field	RLXORD		020
+	field	TAG_NUM		0x1F
+}
+
+/*
+ * SG Sequencer Byte Count
+ */
+register SGSEQBCNT {
+	address			0x09C
+	access_mode	RO
+	modes		M_DFF0, M_DFF1
+}
+
+/*
+ * Slave Split Out Attribute 0
+ */
+register SLVSPLTOUTATTR0 {
+	address			0x09C
+	access_mode	RO
+	modes		M_SCSI
+	field	LOWER_BCNT	0xFF
+}
+
+/*
+ * Slave Split Out Attribute 1
+ */
+register SLVSPLTOUTATTR1 {
+	address			0x09D
+	access_mode	RO
+	modes		M_SCSI
+	field	CMPLT_DNUM	0xF8
+	field	CMPLT_FNUM	0x07
+}
+
+/*
+ * Slave Split Out Attribute 2
+ */
+register SLVSPLTOUTATTR2 {
+	address			0x09E
+	access_mode	RO
+	size		2
+	modes		M_SCSI
+	field	CMPLT_BNUM	0xFF
+}
+/*
+ * S/G Split Status 0
+ */
+register SGSPLTSTAT0 {
+	address			0x09E
+	access_mode	RW
+	modes		M_DFF0, M_DFF1
+	count		2
+	field	STAETERM	0x80
+	field	SCBCERR		0x40
+	field	SCADERR		0x20
+	field	SCDATBUCKET	0x10
+	field	CNTNOTCMPLT	0x08
+	field	RXOVRUN		0x04
+	field	RXSCEMSG	0x02
+	field	RXSPLTRSP	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * S/G Split Status 1
+ */
+register SGSPLTSTAT1 {
+	address			0x09F
+	access_mode	RW
+	modes		M_DFF0, M_DFF1
+	count		2
+	field	RXDATABUCKET	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * Special Function
+ */
+register SFUNCT {
+	address			0x09f
+	access_mode	RW
+	modes		M_CFG
+	field	TEST_GROUP	0xF0
+	field	TEST_NUM	0x0F
+	dont_generate_debug_code
+}
+
+/*
+ * Data FIFO 0 PCI Status 
+ */
+register DF0PCISTAT {
+	address			0x0A0
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	field	DPE		0x80
+	field	SSE		0x40
+	field	RMA		0x20
+	field	RTA		0x10
+	field	SCAAPERR	0x08
+	field	RDPERR		0x04
+	field	TWATERR		0x02
+	field	DPR		0x01
+	dont_generate_debug_code
+}
+
+/*
+ * Data FIFO 1 PCI Status 
+ */
+register DF1PCISTAT {
+	address			0x0A1
+	access_mode	RW
+	modes		M_CFG
+	field	DPE		0x80
+	field	SSE		0x40
+	field	RMA		0x20
+	field	RTA		0x10
+	field	SCAAPERR	0x08
+	field	RDPERR		0x04
+	field	TWATERR		0x02
+	field	DPR		0x01
+}
+
+/*
+ * S/G PCI Status 
+ */
+register SGPCISTAT {
+	address			0x0A2
+	access_mode	RW
+	modes		M_CFG
+	field	DPE		0x80
+	field	SSE		0x40
+	field	RMA		0x20
+	field	RTA		0x10
+	field	SCAAPERR	0x08
+	field	RDPERR		0x04
+	field	DPR		0x01
+}
+
+/*
+ * CMC PCI Status 
+ */
+register CMCPCISTAT {
+	address			0x0A3
+	access_mode	RW
+	modes		M_CFG
+	field	DPE		0x80
+	field	SSE		0x40
+	field	RMA		0x20
+	field	RTA		0x10
+	field	SCAAPERR	0x08
+	field	RDPERR		0x04
+	field	TWATERR		0x02
+	field	DPR		0x01
+}
+
+/*
+ * Overlay PCI Status 
+ */
+register OVLYPCISTAT {
+	address			0x0A4
+	access_mode	RW
+	modes		M_CFG
+	field	DPE		0x80
+	field	SSE		0x40
+	field	RMA		0x20
+	field	RTA		0x10
+	field	SCAAPERR	0x08
+	field	RDPERR		0x04
+	field	DPR		0x01
+}
+
+/*
+ * PCI Status for MSI Master DMA Transfer
+ */
+register MSIPCISTAT {
+	address			0x0A6
+	access_mode	RW
+	modes		M_CFG
+	field	SSE		0x40
+	field	RMA		0x20
+	field	RTA		0x10
+	field	CLRPENDMSI	0x08
+	field	TWATERR		0x02
+	field	DPR		0x01
+}
+
+/*
+ * PCI Status for Target
+ */
+register TARGPCISTAT {
+	address			0x0A7
+	access_mode	RW
+	modes		M_CFG
+	count		5
+	field	DPE		0x80
+	field	SSE		0x40
+	field	STA		0x08
+	field	TWATERR		0x02
+	dont_generate_debug_code
+}
+
+/*
+ * LQ Packet In
+ * The last LQ Packet recieved
+ */
+register LQIN {
+	address			0x020
+	access_mode	RW
+	size		20
+	count		2
+	modes		M_DFF0, M_DFF1, M_SCSI
+	dont_generate_debug_code
+}
+
+/*
+ * SCB Type Pointer
+ * SCB offset for Target Mode SCB type information
+ */
+register TYPEPTR {
+	address			0x020
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * Queue Tag Pointer
+ * SCB offset to the Two Byte tag identifier used for target mode.
+ */
+register TAGPTR {
+	address			0x021
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * Logical Unit Number Pointer
+ * SCB offset to the LSB (little endian) of the lun field.
+ */
+register LUNPTR {
+	address			0x022
+	access_mode	RW
+	modes		M_CFG
+	count		2
+	dont_generate_debug_code
+}
+
+/*
+ * Data Length Pointer
+ * SCB offset for the 4 byte data length field in target mode.
+ */
+register DATALENPTR {
+	address			0x023
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * Status Length Pointer
+ * SCB offset to the two byte status field in target SCBs.
+ */
+register STATLENPTR {
+	address			0x024
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * Command Length Pointer
+ * Scb offset for the CDB length field in initiator SCBs.
+ */
+register CMDLENPTR {
+	address			0x025
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	dont_generate_debug_code
+}
+
+/*
+ * Task Attribute Pointer
+ * Scb offset for the byte field specifying the attribute byte
+ * to be used in command packets.
+ */ 
+register ATTRPTR {
+	address			0x026
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	dont_generate_debug_code
+}
+
+/*
+ * Task Management Flags Pointer
+ * Scb offset for the byte field specifying the attribute flags
+ * byte to be used in command packets.
+ */ 
+register FLAGPTR {
+	address			0x027
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	dont_generate_debug_code
+}
+
+/*
+ * Command Pointer
+ * Scb offset for the first byte in the CDB for initiator SCBs.
+ */
+register CMDPTR {
+	address			0x028
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	dont_generate_debug_code
+}
+
+/*
+ * Queue Next Pointer
+ * Scb offset for the 2 byte "next scb link".
+ */
+register QNEXTPTR {
+	address			0x029
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	dont_generate_debug_code
+}
+
+/*
+ * SCSI ID Pointer
+ * Scb offset to the value to place in the SCSIID register
+ * during target mode connections.
+ */
+register IDPTR {
+	address			0x02A
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * Command Aborted Byte Pointer
+ * Offset to the SCB flags field that includes the
+ * "SCB aborted" status bit.
+ */
+register ABRTBYTEPTR {
+	address			0x02B
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	dont_generate_debug_code
+}
+
+/*
+ * Command Aborted Bit Pointer
+ * Bit offset in the SCB flags field for "SCB aborted" status.
+ */
+register ABRTBITPTR {
+	address			0x02C
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	dont_generate_debug_code
+}
+
+/*
+ * Rev B or greater.
+ */
+register MAXCMDBYTES {
+	address			0x02D
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * Rev B or greater.
+ */
+register MAXCMD2RCV {
+	address			0x02E
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * Rev B or greater.
+ */
+register SHORTTHRESH {
+	address			0x02F
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * Logical Unit Number Length
+ * The length, in bytes, of the SCB lun field.
+ */
+register LUNLEN {
+	address			0x030
+	access_mode	RW
+	modes		M_CFG
+	count		2
+	mask		ILUNLEN	0x0F
+	mask		TLUNLEN	0xF0
+	dont_generate_debug_code
+}
+const LUNLEN_SINGLE_LEVEL_LUN 0xF
+
+/*
+ * CDB Limit
+ * The size, in bytes, of the embedded CDB field in initator SCBs.
+ */
+register CDBLIMIT {
+	address			0x031
+	access_mode	RW
+	modes		M_CFG
+	count		1
+	dont_generate_debug_code
+}
+
+/*
+ * Maximum Commands
+ * The maximum number of commands to issue during a
+ * single packetized connection.
+ */
+register MAXCMD {
+	address			0x032
+	access_mode	RW
+	modes		M_CFG
+	count		9
+	dont_generate_debug_code
+}
+
+/*
+ * Maximum Command Counter
+ * The number of commands already sent during this connection
+ */
+register MAXCMDCNT {
+	address			0x033
+	access_mode	RW
+	modes		M_CFG
+	dont_generate_debug_code
+}
+
+/*
+ * LQ Packet Reserved Bytes
+ * The bytes to be sent in the currently reserved fileds
+ * of all LQ packets.
+ */
+register LQRSVD01 {
+	address			0x034
+	access_mode	RW
+	modes		M_SCSI
+}
+register LQRSVD16 {
+	address			0x035
+	access_mode	RW
+	modes		M_SCSI
+}
+register LQRSVD17 {
+	address			0x036
+	access_mode	RW
+	modes		M_SCSI
+}
+
+/*
+ * Command Reserved 0
+ * The byte to be sent for the reserved byte 0 of
+ * outgoing command packets.
+ */
+register CMDRSVD0 {
+	address			0x037
+	access_mode	RW
+	modes		M_CFG
+}
+
+/*
+ * LQ Manager Control 0
+ */
+register LQCTL0 {
+	address			0x038
+	access_mode	RW
+	modes		M_CFG
+	field	LQITARGCLT	0xC0
+	field	LQIINITGCLT	0x30
+	field	LQ0TARGCLT	0x0C
+	field	LQ0INITGCLT	0x03
+}
+
+/*
+ * LQ Manager Control 1
+ */
+register LQCTL1 {
+	address			0x038
+	access_mode	RW
+	modes		M_DFF0, M_DFF1, M_SCSI
+	count		2
+	field	PCI2PCI		0x04
+	field	SINGLECMD	0x02
+	field	ABORTPENDING	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * LQ Manager Control 2
+ */
+register LQCTL2 {
+	address			0x039
+	access_mode	RW
+	modes		M_DFF0, M_DFF1, M_SCSI
+	count		5
+	field	LQIRETRY	0x80
+	field	LQICONTINUE	0x40
+	field	LQITOIDLE	0x20
+	field	LQIPAUSE	0x10
+	field	LQORETRY	0x08
+	field	LQOCONTINUE	0x04
+	field	LQOTOIDLE	0x02
+	field	LQOPAUSE	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * SCSI RAM BIST0
+ */
+register SCSBIST0 {
+	address			0x039
+	access_mode	RW
+	modes		M_CFG
+	field	GSBISTERR	0x40
+	field	GSBISTDONE	0x20
+	field	GSBISTRUN	0x10
+	field	OSBISTERR	0x04
+	field	OSBISTDONE	0x02
+	field	OSBISTRUN	0x01
+}
+
+/*
+ * SCSI Sequence Control0
+ */
+register SCSISEQ0 {
+	address			0x03A
+	access_mode	RW
+	modes		M_DFF0, M_DFF1, M_SCSI
+	field	TEMODEO		0x80
+	field	ENSELO		0x40
+	field	ENARBO		0x20
+	field	FORCEBUSFREE	0x10
+	field	SCSIRSTO	0x01
+}
+
+/*
+ * SCSI RAM BIST 1
+ */
+register SCSBIST1 {
+	address			0x03A
+	access_mode	RW
+	modes		M_CFG
+	field	NTBISTERR	0x04
+	field	NTBISTDONE	0x02
+	field	NTBISTRUN	0x01
+}
+
+/*
+ * SCSI Sequence Control 1
+ */
+register SCSISEQ1 {
+	address			0x03B
+	access_mode	RW
+	modes		M_DFF0, M_DFF1, M_SCSI
+	count		8
+	field	MANUALCTL	0x40
+	field	ENSELI		0x20
+	field	ENRSELI		0x10
+	field	MANUALP		0x0C
+	field	ENAUTOATNP	0x02
+	field	ALTSTIM		0x01
+}
+
+/*
+ * SCSI Transfer Control 0
+ */
+register SXFRCTL0 {
+	address			0x03C
+	access_mode	RW
+	modes		M_SCSI
+	field	DFON		0x80
+	field	DFPEXP		0x40
+	field	BIOSCANCELEN	0x10
+	field	SPIOEN		0x08
+	dont_generate_debug_code
+}
+
+/*
+ * SCSI Transfer Control 1
+ */
+register SXFRCTL1 {
+	address			0x03D
+	access_mode	RW
+	modes		M_SCSI
+	field	BITBUCKET	0x80
+	field	ENSACHK		0x40
+	field	ENSPCHK		0x20
+	field	STIMESEL	0x18
+	field	ENSTIMER	0x04
+	field	ACTNEGEN	0x02
+	field	STPWEN		0x01
+	dont_generate_debug_code
+}
+
+/*
+ * SCSI Transfer Control 2
+ */
+register SXFRCTL2 {
+	address			0x03E
+	access_mode	RW
+	modes		M_SCSI
+	field	AUTORSTDIS	0x10
+	field	CMDDMAEN	0x08
+	field	ASU		0x07
+}
+
+/*
+ * SCSI Bus Initiator IDs
+ * Bitmask of observed initiators on the bus.
+ */
+register BUSINITID {
+	address			0x03C
+	access_mode	RW
+	modes		M_CFG
+	size		2
+}
+
+/*
+ * Data Length Counters
+ * Packet byte counter.
+ */
+register DLCOUNT {
+	address			0x03C
+	access_mode	RW
+	modes		M_DFF0, M_DFF1
+	size		3
+}
+
+/*
+ * Data FIFO Status
+ */
+register DFFSTAT {
+	address			0x03F
+	access_mode	RW
+	modes		M_SCSI
+	field	FIFO1FREE	0x20
+	field	FIFO0FREE	0x10
+	/*
+	 * On the B, this enum only works
+	 * in the read direction.  For writes,
+	 * you must use the B version of the
+	 * CURRFIFO_0 definition which is defined
+	 * as a constant outside of this register
+	 * definition to avoid confusing the
+	 * register pretty printing code.
+	 */
+	enum	CURRFIFO	0x03 {
+		CURRFIFO_0,
+		CURRFIFO_1,
+		CURRFIFO_NONE	0x3
+	}
+}
+
+const B_CURRFIFO_0 0x2
+
+/*
+ * SCSI Bus Target IDs
+ * Bitmask of observed targets on the bus.
+ */
+register BUSTARGID {
+	address			0x03E
+	access_mode	RW
+	modes		M_CFG
+	size		2
+}
+
+/*
+ * SCSI Control Signal Out
+ */
+register SCSISIGO {
+	address			0x040
+	access_mode	RW
+	modes		M_DFF0, M_DFF1, M_SCSI
+	field	CDO		0x80
+	field	IOO		0x40
+	field	MSGO		0x20
+	field	ATNO		0x10
+	field	SELO		0x08
+	field	BSYO		0x04
+	field	REQO		0x02
+	field	ACKO		0x01
+/*
+ * Possible phases to write into SCSISIG0
+ */
+	enum	PHASE_MASK  CDO|IOO|MSGO {
+		P_DATAOUT	0x0,
+		P_DATAIN	IOO,
+		P_DATAOUT_DT	P_DATAOUT|MSGO,
+		P_DATAIN_DT	P_DATAIN|MSGO,
+		P_COMMAND	CDO,
+		P_MESGOUT	CDO|MSGO,
+		P_STATUS	CDO|IOO,
+		P_MESGIN	CDO|IOO|MSGO
+	}
+	dont_generate_debug_code
+}
+
+/*
+ * SCSI Control Signal In
+ */
+register SCSISIGI {
+	address			0x041
+	access_mode	RO
+	modes		M_DFF0, M_DFF1, M_SCSI
+	field	CDI		0x80
+	field	IOI		0x40
+	field	MSGI		0x20
+	field	ATNI		0x10
+	field	SELI		0x08
+	field	BSYI		0x04
+	field	REQI		0x02
+	field	ACKI		0x01
+/*
+ * Possible phases in SCSISIGI
+ */
+	enum	PHASE_MASK  CDO|IOO|MSGO {
+		P_DATAOUT	0x0,
+		P_DATAIN	IOO,
+		P_DATAOUT_DT	P_DATAOUT|MSGO,
+		P_DATAIN_DT	P_DATAIN|MSGO,
+		P_COMMAND	CDO,
+		P_MESGOUT	CDO|MSGO,
+		P_STATUS	CDO|IOO,
+		P_MESGIN	CDO|IOO|MSGO
+	}
+}
+
+/*
+ * Multiple Target IDs
+ * Bitmask of ids to respond as a target.
+ */
+register MULTARGID {
+	address			0x040
+	access_mode	RW
+	modes		M_CFG
+	size		2
+	count		2
+	dont_generate_debug_code
+}
+
+/*
+ * SCSI Phase
+ */
+register SCSIPHASE {
+	address			0x042
+	access_mode	RO
+	modes		M_DFF0, M_DFF1, M_SCSI
+	field	STATUS_PHASE	0x20
+	field	COMMAND_PHASE	0x10
+	field	MSG_IN_PHASE	0x08
+	field	MSG_OUT_PHASE	0x04
+	field	DATA_PHASE_MASK	0x03 {
+		DATA_OUT_PHASE	0x01,
+		DATA_IN_PHASE	0x02
+	}
+}
+
+/*
+ * SCSI Data 0 Image
+ */
+register SCSIDAT0_IMG {
+	address			0x043
+	access_mode	RW
+	modes		M_DFF0, M_DFF1, M_SCSI
+}
+
+/*
+ * SCSI Latched Data
+ */
+register SCSIDAT {
+	address			0x044
+	access_mode	RW
+	modes		M_DFF0, M_DFF1, M_SCSI
+	size		2
+	dont_generate_debug_code
+}
+
+/*
+ * SCSI Data Bus
+ */
+register SCSIBUS {
+	address			0x046
+	access_mode	RW
+	modes		M_DFF0, M_DFF1, M_SCSI
+	size		2
+}
+
+/*
+ * Target ID In
+ */
+register TARGIDIN {
+	address			0x048
+	access_mode	RO
+	modes		M_DFF0, M_DFF1, M_SCSI
+	count		2
+	field	CLKOUT		0x80
+	field	TARGID		0x0F
+	dont_generate_debug_code
+}
+
+/*
+ * Selection/Reselection

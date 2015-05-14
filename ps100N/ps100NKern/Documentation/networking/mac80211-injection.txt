@@ -1,0 +1,95 @@
+/*
+ *  scsi_lib.c Copyright (C) 1999 Eric Youngdale
+ *
+ *  SCSI queueing library.
+ *      Initial versions: Eric Youngdale (eric@andante.org).
+ *                        Based upon conversations with large numbers
+ *                        of people at Linux Expo.
+ */
+
+#include <linux/bio.h>
+#include <linux/bitops.h>
+#include <linux/blkdev.h>
+#include <linux/completion.h>
+#include <linux/kernel.h>
+#include <linux/mempool.h>
+#include <linux/slab.h>
+#include <linux/init.h>
+#include <linux/pci.h>
+#include <linux/delay.h>
+#include <linux/hardirq.h>
+#include <linux/scatterlist.h>
+
+#include <scsi/scsi.h>
+#include <scsi/scsi_cmnd.h>
+#include <scsi/scsi_dbg.h>
+#include <scsi/scsi_device.h>
+#include <scsi/scsi_driver.h>
+#include <scsi/scsi_eh.h>
+#include <scsi/scsi_host.h>
+
+#include "scsi_priv.h"
+#include "scsi_logging.h"
+
+
+#define SG_MEMPOOL_NR		ARRAY_SIZE(scsi_sg_pools)
+#define SG_MEMPOOL_SIZE		2
+
+struct scsi_host_sg_pool {
+	size_t		size;
+	char		*name;
+	struct kmem_cache	*slab;
+	mempool_t	*pool;
+};
+
+#define SP(x) { x, "sgpool-" __stringify(x) }
+#if (SCSI_MAX_SG_SEGMENTS < 32)
+#error SCSI_MAX_SG_SEGMENTS is too small (must be 32 or greater)
+#endif
+static struct scsi_host_sg_pool scsi_sg_pools[] = {
+	SP(8),
+	SP(16),
+#if (SCSI_MAX_SG_SEGMENTS > 32)
+	SP(32),
+#if (SCSI_MAX_SG_SEGMENTS > 64)
+	SP(64),
+#if (SCSI_MAX_SG_SEGMENTS > 128)
+	SP(128),
+#if (SCSI_MAX_SG_SEGMENTS > 256)
+#error SCSI_MAX_SG_SEGMENTS is too large (256 MAX)
+#endif
+#endif
+#endif
+#endif
+	SP(SCSI_MAX_SG_SEGMENTS)
+};
+#undef SP
+
+struct kmem_cache *scsi_sdb_cache;
+
+static void scsi_run_queue(struct request_queue *q);
+
+/*
+ * Function:	scsi_unprep_request()
+ *
+ * Purpose:	Remove all preparation done for a request, including its
+ *		associated scsi_cmnd, so that it can be requeued.
+ *
+ * Arguments:	req	- request to unprepare
+ *
+ * Lock status:	Assumed that no locks are held upon entry.
+ *
+ * Returns:	Nothing.
+ */
+static void scsi_unprep_request(struct request *req)
+{
+	struct scsi_cmnd *cmd = req->special;
+
+	req->cmd_flags &= ~REQ_DONTPREP;
+	req->special = NULL;
+
+	scsi_put_command(cmd);
+}
+
+/**
+ *

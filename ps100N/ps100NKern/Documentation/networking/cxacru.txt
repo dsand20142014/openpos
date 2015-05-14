@@ -1,0 +1,81 @@
+e V4L2_CID_BLUE_BALANCE:
+		cam->blue = c->value;
+		csi_enable_mclk(CSI_MCLK_I2C, true, true);
+		cam->cam_sensor->set_color(cam->bright, cam->saturation,
+					   cam->red, cam->green, cam->blue);
+		csi_enable_mclk(CSI_MCLK_I2C, false, false);
+		break;
+	case V4L2_CID_BLACK_LEVEL:
+		cam->ae_mode = c->value & 0x03;
+		csi_enable_mclk(CSI_MCLK_I2C, true, true);
+		if (cam->cam_sensor->set_ae_mode)
+			cam->cam_sensor->set_ae_mode(cam->ae_mode);
+		csi_enable_mclk(CSI_MCLK_I2C, false, false);
+		break;
+	case V4L2_CID_MXC_FLASH:
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+/*!
+ * V4L2 - mxc_v4l2_s_param function
+ *
+ * @param cam         structure cam_data *
+ *
+ * @param parm        structure v4l2_streamparm *
+ *
+ * @return  status    0 success, EINVAL failed
+ */
+static int mxc_v4l2_s_param(cam_data *cam, struct v4l2_streamparm *parm)
+{
+	sensor_interface *param;
+	csi_signal_cfg_t csi_param;
+
+	if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
+		pr_debug("mxc_v4l2_s_param invalid type\n");
+		return -EINVAL;
+	}
+
+	if (parm->parm.capture.timeperframe.denominator >
+	    cam->standard.frameperiod.denominator) {
+		pr_debug("mxc_v4l2_s_param frame rate %d larger "
+			 "than standard supported %d\n",
+			 parm->parm.capture.timeperframe.denominator,
+			 cam->standard.frameperiod.denominator);
+		return -EINVAL;
+	}
+
+	cam->streamparm.parm.capture.capability = V4L2_CAP_TIMEPERFRAME;
+
+	csi_enable_mclk(CSI_MCLK_I2C, true, true);
+	param = cam->cam_sensor->config
+	    (&parm->parm.capture.timeperframe.denominator,
+	     parm->parm.capture.capturemode);
+	csi_enable_mclk(CSI_MCLK_I2C, false, false);
+
+	cam->streamparm.parm.capture.timeperframe =
+	    parm->parm.capture.timeperframe;
+
+	if ((parm->parm.capture.capturemode != 0) &&
+	    (parm->parm.capture.capturemode != V4L2_MODE_HIGHQUALITY)) {
+		pr_debug("mxc_v4l2_s_param frame un-supported capture mode\n");
+		return -EINVAL;
+	}
+
+	if (parm->parm.capture.capturemode ==
+	    cam->streamparm.parm.capture.capturemode) {
+		return 0;
+	}
+
+	/* resolution changed, so need to re-program the CSI */
+	csi_param.sens_clksrc = 0;
+	csi_param.clk_mode = param->clk_mode;
+	csi_param.pixclk_pol = param->pixclk_pol;
+	csi_param.data_width = param->data_width;
+	csi_param.data_pol = param->data_pol;
+	csi_param.ext_vsync = param->ext_vsync;
+	csi_param.Vsync_pol = param->Vsync_pol;
+	csi

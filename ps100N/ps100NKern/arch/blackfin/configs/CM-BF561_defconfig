@@ -1,0 +1,766 @@
+r_width = 0;
+	}
+
+	/* Post events
+	 * BTN_TOUCH has to be first as mousedev relies on it when doing
+	 * absolute -> relative conversion
+	 */
+	if (hw.z > 30) input_report_key(dev, BTN_TOUCH, 1);
+	if (hw.z < 25) input_report_key(dev, BTN_TOUCH, 0);
+
+	if (hw.z > 0) {
+		input_report_abs(dev, ABS_X, hw.x);
+		input_report_abs(dev, ABS_Y, YMAX_NOMINAL + YMIN_NOMINAL - hw.y);
+	}
+	input_report_abs(dev, ABS_PRESSURE, hw.z);
+
+	input_report_abs(dev, ABS_TOOL_WIDTH, finger_width);
+	input_report_key(dev, BTN_TOOL_FINGER, num_fingers == 1);
+	input_report_key(dev, BTN_LEFT, hw.left);
+	input_report_key(dev, BTN_RIGHT, hw.right);
+
+	if (SYN_CAP_MULTIFINGER(priv->capabilities)) {
+		input_report_key(dev, BTN_TOOL_DOUBLETAP, num_fingers == 2);
+		input_report_key(dev, BTN_TOOL_TRIPLETAP, num_fingers == 3);
+	}
+
+	if (SYN_CAP_MIDDLE_BUTTON(priv->capabilities))
+		input_report_key(dev, BTN_MIDDLE, hw.middle);
+
+	if (SYN_CAP_FOUR_BUTTON(priv->capabilities)) {
+		input_report_key(dev, BTN_FORWARD, hw.up);
+		input_report_key(dev, BTN_BACK, hw.down);
+	}
+
+	for (i = 0; i < SYN_CAP_MULTI_BUTTON_NO(priv->ext_cap); i++)
+		input_report_key(dev, BTN_0 + i, hw.ext_buttons & (1 << i));
+
+	input_sync(dev);
+}
+
+static int synaptics_validate_byte(unsigned char packet[], int idx, unsigned char pkt_type)
+{
+	static const unsigned char newabs_mask[]	= { 0xC8, 0x00, 0x00, 0xC8, 0x00 };
+	static const unsigned char newabs_rel_mask[]	= { 0xC0, 0x00, 0x00, 0xC0, 0x00 };
+	static const unsigned char newabs_rslt[]	= { 0x80, 0x00, 0x00, 0xC0, 0x00 };
+	static const unsigned char oldabs_mask[]	= { 0xC0, 0x60, 0x00, 0xC0, 0x60 };
+	static const unsigned char oldabs_rslt[]	= { 0xC0, 0x00, 0x00, 0x80, 0x00 };
+
+	if (idx < 0 || idx > 4)
+		return 0;
+
+	switch (pkt_type) {
+		case SYN_NEWABS:
+		case SYN_NEWABS_RELAXED:
+			return (packet[idx] & newabs_rel_mask[idx]) == newabs_rslt[idx];
+
+		case SYN_NEWABS_STRICT:
+			return (packet[idx] & newabs_mask[idx]) == newabs_rslt[idx];
+
+		case SYN_OLDABS:
+			return (packet[idx] & oldabs_mask[idx]) == oldabs_rslt[idx];
+
+		default:
+			printk(KERN_ERR "synaptics: unknown packet type %d\n", pkt_type);
+			return 0;
+	}
+}
+
+static unsigned char synaptics_detect_pkt_type(struct psmouse *psmouse)
+{
+	int i;
+
+	for (i = 0; i < 5; i++)
+		if (!synaptics_validate_byte(psmouse->packet, i, SYN_NEWABS_STRICT)) {
+			printk(KERN_INFO "synaptics: using relaxed packet validation\n");
+			return SYN_NEWABS_RELAXED;
+		}
+
+	return SYN_NEWABS_STRICT;
+}
+
+static psmouse_ret_t synaptics_process_byte(struct psmouse *psmouse)
+{
+	struct synaptics_data *priv = psmouse->private;
+
+	if (psmouse->pktcnt >= 6) { /* Full packet received */
+		if (unlikely(priv->pkt_type == SYN_NEWABS))
+			priv->pkt_type = synaptics_detect_pkt_type(psmouse);
+
+		if (SYN_CAP_PASS_THROUGH(priv->capabilities) && synaptics_is_pt_packet(psmouse->packet)) {
+			if (psmouse->ps2dev.serio->child)
+				synaptics_pass_pt_packet(psmouse->ps2dev.serio->child, psmouse->packet);
+		} else
+			synaptics_process_packet(psmouse);
+
+		return PSMOUSE_FULL_PACKET;
+	}
+
+	return synaptics_validate_byte(psmouse->packet, psmouse->pktcnt - 1, priv->pkt_type) ?
+		PSMOUSE_GOOD_DATA : PSMOUSE_BAD_DATA;
+}
+
+/*****************************************************************************
+ *	Driver initialization/cleanup functions
+ ****************************************************************************/
+static void set_input_params(struct input_dev *dev, struct synaptics_data *priv)
+{
+	int i;
+
+	set_bit(EV_ABS, dev->evbit);
+	input_set_abs_params(dev, ABS_X, XMIN_NOMINAL, XMAX_NOMINAL, 0, 0);
+	input_set_abs_params(dev, ABS_Y, YMIN_NOMINAL, YMAX_NOMINAL, 0, 0);
+	input_set_abs_params(dev, ABS_PRESSURE, 0, 255, 0, 0);
+	set_bit(ABS_TOOL_WIDTH, dev->absbit);
+
+	set_bit(EV_KEY, dev->evbit);
+	set_bit(BTN_TOUCH, dev->keybit);
+	set_bit(BTN_TOOL_FINGER, dev->keybit);
+	set_bit(BTN_LEFT, dev->keybit);
+	set_bit(BTN_RIGHT, dev->keybit);
+
+	if (SYN_CAP_MULTIFINGER(priv->capabilities)) {
+		set_bit(BTN_TOOL_DOUBLETAP, dev->keybit);
+		set_bit(BTN_TOOL_TRIPLETAP, dev->keybit);
+	}
+
+	if (SYN_CAP_MIDDLE_BUTTON(priv->capabilities))
+		set_bit(BTN_MIDDLE, dev->keybit);
+
+	if (SYN_CAP_FOUR_BUTTON(priv->capabilities) ||
+	    SYN_CAP_MIDDLE_BUTTON(priv->capabilities)) {
+		set_bit(BTN_FORWARD, dev->keybit);
+		set_bit(BTN_BACK, dev->keybit);
+	}
+
+	for (i = 0; i < SYN_CAP_MULTI_BUTTON_NO(priv->ext_cap); i++)
+		set_bit(BTN_0 + i, dev->keybit);
+
+	clear_bit(EV_REL, dev->evbit);
+	clear_bit(REL_X, dev->relbit);
+	clear_bit(REL_Y, dev->relbit);
+
+	dev->absres[ABS_X] = priv->x_res;
+	dev->absres[ABS_Y] = priv->y_res;
+}
+
+static void synaptics_disconnect(struct psmouse *psmouse)
+{
+	synaptics_reset(psmouse);
+	kfree(psmouse->private);
+	psmouse->private = NULL;
+}
+
+static int synaptics_reconnect(struct psmouse *psmouse)
+{
+	struct synaptics_data *priv = psmouse->private;
+	struct synaptics_data old_priv = *priv;
+
+	psmouse_reset(psmouse);
+
+	if (synaptics_detect(psmouse, 0))
+		return -1;
+
+	if (synaptics_query_hardware(psmouse)) {
+		printk(KERN_ERR "Unable to query Synaptics hardware.\n");
+		return -1;
+	}
+
+	if (old_priv.identity != priv->identity ||
+	    old_priv.model_id != priv->model_id ||
+	    old_priv.capabilities != priv->capabilities ||
+	    old_priv.ext_cap != priv->ext_cap)
+		return -1;
+
+	if (synaptics_set_absolute_mode(psmouse)) {
+		printk(KERN_ERR "Unable to initialize Synaptics hardware.\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+#if defined(__i386__)
+#include <linux/dmi.h>
+static const struct dmi_system_id toshiba_dmi_table[] = {
+	{
+		.ident = "Toshiba Satellite",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "TOSHIBA"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "Satellite"),
+		},
+	},
+	{
+		.ident = "Toshiba Dynabook",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "TOSHIBA"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "dynabook"),
+		},
+	},
+	{
+		.ident = "Toshiba Portege M300",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "TOSHIBA"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "PORTEGE M300"),
+		},
+	},
+	{ }
+};
+#endif
+
+int synaptics_init(struct psmouse *psmouse)
+{
+	struct synaptics_data *priv;
+
+	psmouse->private = priv = kzalloc(sizeof(struct synaptics_data), GFP_KERNEL);
+	if (!priv)
+		return -1;
+
+	psmouse_reset(psmouse);
+
+	if (synaptics_query_hardware(psmouse)) {
+		printk(KERN_ERR "Unable to query Synaptics hardware.\n");
+		goto init_fail;
+	}
+
+	if (synaptics_set_absolute_mode(psmouse)) {
+		printk(KERN_ERR "Unable to initialize Synaptics hardware.\n");
+		goto init_fail;
+	}
+
+	priv->pkt_type = SYN_MODEL_NEWABS(priv->model_id) ? SYN_NEWABS : SYN_OLDABS;
+
+	printk(KERN_INFO "Synaptics Touchpad, model: %ld, fw: %ld.%ld, id: %#lx, caps: %#lx/%#lx\n",
+		SYN_ID_MODEL(priv->identity),
+		SYN_ID_MAJOR(priv->identity), SYN_ID_MINOR(priv->identity),
+		priv->model_id, priv->capabilities, priv->ext_cap);
+
+	set_input_params(psmouse->dev, priv);
+
+	/*
+	 * Encode touchpad model so that it can be used to set
+	 * input device->id.version and be visible to userspace.
+	 * Because version is __u16 we have to drop something.
+	 * Hardware info bits seem to be good candidates as they
+	 * are documented to be for Synaptics corp. internal use.
+	 */
+	psmouse->model = ((priv->model_id & 0x00ff0000) >> 8) |
+			  (priv->model_id & 0x000000ff);
+
+	psmouse->protocol_handler = synaptics_process_byte;
+	psmouse->set_rate = synaptics_set_rate;
+	psmouse->disconnect = synaptics_disconnect;
+	psmouse->reconnect = synaptics_reconnect;
+	psmouse->cleanup = synaptics_reset;
+	psmouse->pktsize = 6;
+	/* Synaptics can usually stay in sync without extra help */
+	psmouse->resync_time = 0;
+
+	if (SYN_CAP_PASS_THROUGH(priv->capabilities))
+		synaptics_pt_create(psmouse);
+
+#if defined(__i386__)
+	/*
+	 * Toshiba's KBC seems to have trouble handling data from
+	 * Synaptics as full rate, switch to lower rate which is roughly
+	 * thye same as rate of standard PS/2 mouse.
+	 */
+	if (psmouse->rate >= 80 && dmi_check_system(toshiba_dmi_table)) {
+		printk(KERN_INFO "synaptics: Toshiba %s detected, limiting rate to 40pps.\n",
+			dmi_get_system_info(DMI_PRODUCT_NAME));
+		psmouse->rate = 40;
+	}
+#endif
+
+	return 0;
+
+ init_fail:
+	kfree(priv);
+	return -1;
+}
+
+#else /* CONFIG_MOUSE_PS2_SYNAPTICS */
+
+int synaptics_init(struct psmouse *psmouse)
+{
+	return -ENOSYS;
+}
+
+#endif /* CONFIG_MOUSE_PS2_SYNAPTICS */
+
+                                /*
+ * Generic gameport layer
+ *
+ * Copyright (c) 1999-2002 Vojtech Pavlik
+ * Copyright (c) 2005 Dmitry Torokhov
+ */
+
+/*
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 as published by
+ * the Free Software Foundation.
+ */
+
+#include <linux/stddef.h>
+#include <linux/module.h>
+#include <linux/ioport.h>
+#include <linux/init.h>
+#include <linux/gameport.h>
+#include <linux/wait.h>
+#include <linux/slab.h>
+#include <linux/delay.h>
+#include <linux/kthread.h>
+#include <linux/sched.h>	/* HZ */
+#include <linux/mutex.h>
+#include <linux/freezer.h>
+
+/*#include <asm/io.h>*/
+
+MODULE_AUTHOR("Vojtech Pavlik <vojtech@ucw.cz>");
+MODULE_DESCRIPTION("Generic gameport layer");
+MODULE_LICENSE("GPL");
+
+/*
+ * gameport_mutex protects entire gameport subsystem and is taken
+ * every time gameport port or driver registrered or unregistered.
+ */
+static DEFINE_MUTEX(gameport_mutex);
+
+static LIST_HEAD(gameport_list);
+
+static struct bus_type gameport_bus;
+
+static void gameport_add_port(struct gameport *gameport);
+static void gameport_attach_driver(struct gameport_driver *drv);
+static void gameport_reconnect_port(struct gameport *gameport);
+static void gameport_disconnect_port(struct gameport *gameport);
+
+#if defined(__i386__)
+
+#include <asm/i8253.h>
+
+#define DELTA(x,y)      ((y)-(x)+((y)<(x)?1193182/HZ:0))
+#define GET_TIME(x)     do { x = get_time_pit(); } while (0)
+
+static unsigned int get_time_pit(void)
+{
+	unsigned long flags;
+	unsigned int count;
+
+	spin_lock_irqsave(&i8253_lock, flags);
+	outb_p(0x00, 0x43);
+	count = inb_p(0x40);
+	count |= inb_p(0x40) << 8;
+	spin_unlock_irqrestore(&i8253_lock, flags);
+
+	return count;
+}
+
+#endif
+
+
+
+/*
+ * gameport_measure_speed() measures the gameport i/o speed.
+ */
+
+static int gameport_measure_speed(struct gameport *gameport)
+{
+#if defined(__i386__)
+
+	unsigned int i, t, t1, t2, t3, tx;
+	unsigned long flags;
+
+	if (gameport_open(gameport, NULL, GAMEPORT_MODE_RAW))
+		return 0;
+
+	tx = 1 << 30;
+
+	for(i = 0; i < 50; i++) {
+		local_irq_save(flags);
+		GET_TIME(t1);
+		for (t = 0; t < 50; t++) gameport_read(gameport);
+		GET_TIME(t2);
+		GET_TIME(t3);
+		local_irq_restore(flags);
+		udelay(i * 10);
+		if ((t = DELTA(t2,t1) - DELTA(t3,t2)) < tx) tx = t;
+	}
+
+	gameport_close(gameport);
+	return 59659 / (tx < 1 ? 1 : tx);
+
+#elif defined (__x86_64__)
+
+	unsigned int i, t;
+	unsigned long tx, t1, t2, flags;
+
+	if (gameport_open(gameport, NULL, GAMEPORT_MODE_RAW))
+		return 0;
+
+	tx = 1 << 30;
+
+	for(i = 0; i < 50; i++) {
+		local_irq_save(flags);
+		rdtscl(t1);
+		for (t = 0; t < 50; t++) gameport_read(gameport);
+		rdtscl(t2);
+		local_irq_restore(flags);
+		udelay(i * 10);
+		if (t2 - t1 < tx) tx = t2 - t1;
+	}
+
+	gameport_close(gameport);
+	return (cpu_data(raw_smp_processor_id()).loops_per_jiffy *
+		(unsigned long)HZ / (1000 / 50)) / (tx < 1 ? 1 : tx);
+
+#else
+
+	unsigned int j, t = 0;
+
+	if (gameport_open(gameport, NULL, GAMEPORT_MODE_RAW))
+		return 0;
+
+	j = jiffies; while (j == jiffies);
+	j = jiffies; while (j == jiffies) { t++; gameport_read(gameport); }
+
+	gameport_close(gameport);
+	return t * HZ / 1000;
+
+#endif
+}
+
+void gameport_start_polling(struct gameport *gameport)
+{
+	spin_lock(&gameport->timer_lock);
+
+	if (!gameport->poll_cnt++) {
+		BUG_ON(!gameport->poll_handler);
+		BUG_ON(!gameport->poll_interval);
+		mod_timer(&gameport->poll_timer, jiffies + msecs_to_jiffies(gameport->poll_interval));
+	}
+
+	spin_unlock(&gameport->timer_lock);
+}
+EXPORT_SYMBOL(gameport_start_polling);
+
+void gameport_stop_polling(struct gameport *gameport)
+{
+	spin_lock(&gameport->timer_lock);
+
+	if (!--gameport->poll_cnt)
+		del_timer(&gameport->poll_timer);
+
+	spin_unlock(&gameport->timer_lock);
+}
+EXPORT_SYMBOL(gameport_stop_polling);
+
+static void gameport_run_poll_handler(unsigned long d)
+{
+	struct gameport *gameport = (struct gameport *)d;
+
+	gameport->poll_handler(gameport);
+	if (gameport->poll_cnt)
+		mod_timer(&gameport->poll_timer, jiffies + msecs_to_jiffies(gameport->poll_interval));
+}
+
+/*
+ * Basic gameport -> driver core mappings
+ */
+
+static int gameport_bind_driver(struct gameport *gameport, struct gameport_driver *drv)
+{
+	int error;
+
+	gameport->dev.driver = &drv->driver;
+	if (drv->connect(gameport, drv)) {
+		gameport->dev.driver = NULL;
+		return -ENODEV;
+	}
+
+	error = device_bind_driver(&gameport->dev);
+	if (error) {
+		printk(KERN_WARNING
+			"gameport: device_bind_driver() failed "
+			"for %s (%s) and %s, error: %d\n",
+			gameport->phys, gameport->name,
+			drv->description, error);
+		drv->disconnect(gameport);
+		gameport->dev.driver = NULL;
+		return error;
+	}
+
+	return 0;
+}
+
+static void gameport_find_driver(struct gameport *gameport)
+{
+	int error;
+
+	error = device_attach(&gameport->dev);
+	if (error < 0)
+		printk(KERN_WARNING
+			"gameport: device_attach() failed for %s (%s), error: %d\n",
+			gameport->phys, gameport->name, error);
+}
+
+
+/*
+ * Gameport event processing.
+ */
+
+enum gameport_event_type {
+	GAMEPORT_REGISTER_PORT,
+	GAMEPORT_ATTACH_DRIVER,
+};
+
+struct gameport_event {
+	enum gameport_event_type type;
+	void *object;
+	struct module *owner;
+	struct list_head node;
+};
+
+static DEFINE_SPINLOCK(gameport_event_lock);	/* protects gameport_event_list */
+static LIST_HEAD(gameport_event_list);
+static DECLARE_WAIT_QUEUE_HEAD(gameport_wait);
+static struct task_struct *gameport_task;
+
+static int gameport_queue_event(void *object, struct module *owner,
+				enum gameport_event_type event_type)
+{
+	unsigned long flags;
+	struct gameport_event *event;
+	int retval = 0;
+
+	spin_lock_irqsave(&gameport_event_lock, flags);
+
+	/*
+	 * Scan event list for the other events for the same gameport port,
+	 * starting with the most recent one. If event is the same we
+	 * do not need add new one. If event is of different type we
+	 * need to add this event and should not look further because
+	 * we need to preseve sequence of distinct events.
+	 */
+	list_for_each_entry_reverse(event, &gameport_event_list, node) {
+		if (event->object == object) {
+			if (event->type == event_type)
+				goto out;
+			break;
+		}
+	}
+
+	event = kmalloc(sizeof(struct gameport_event), GFP_ATOMIC);
+	if (!event) {
+		printk(KERN_ERR
+			"gameport: Not enough memory to queue event %d\n",
+			event_type);
+		retval = -ENOMEM;
+		goto out;
+	}
+
+	if (!try_module_get(owner)) {
+		printk(KERN_WARNING
+			"gameport: Can't get module reference, dropping event %d\n",
+			event_type);
+		kfree(event);
+		retval = -EINVAL;
+		goto out;
+	}
+
+	event->type = event_type;
+	event->object = object;
+	event->owner = owner;
+
+	list_add_tail(&event->node, &gameport_event_list);
+	wake_up(&gameport_wait);
+
+out:
+	spin_unlock_irqrestore(&gameport_event_lock, flags);
+	return retval;
+}
+
+static void gameport_free_event(struct gameport_event *event)
+{
+	module_put(event->owner);
+	kfree(event);
+}
+
+static void gameport_remove_duplicate_events(struct gameport_event *event)
+{
+	struct list_head *node, *next;
+	struct gameport_event *e;
+	unsigned long flags;
+
+	spin_lock_irqsave(&gameport_event_lock, flags);
+
+	list_for_each_safe(node, next, &gameport_event_list) {
+		e = list_entry(node, struct gameport_event, node);
+		if (event->object == e->object) {
+			/*
+			 * If this event is of different type we should not
+			 * look further - we only suppress duplicate events
+			 * that were sent back-to-back.
+			 */
+			if (event->type != e->type)
+				break;
+
+			list_del_init(node);
+			gameport_free_event(e);
+		}
+	}
+
+	spin_unlock_irqrestore(&gameport_event_lock, flags);
+}
+
+static struct gameport_event *gameport_get_event(void)
+{
+	struct gameport_event *event;
+	struct list_head *node;
+	unsigned long flags;
+
+	spin_lock_irqsave(&gameport_event_lock, flags);
+
+	if (list_empty(&gameport_event_list)) {
+		spin_unlock_irqrestore(&gameport_event_lock, flags);
+		return NULL;
+	}
+
+	node = gameport_event_list.next;
+	event = list_entry(node, struct gameport_event, node);
+	list_del_init(node);
+
+	spin_unlock_irqrestore(&gameport_event_lock, flags);
+
+	return event;
+}
+
+static void gameport_handle_event(void)
+{
+	struct gameport_event *event;
+
+	mutex_lock(&gameport_mutex);
+
+	/*
+	 * Note that we handle only one event here to give swsusp
+	 * a chance to freeze kgameportd thread. Gameport events
+	 * should be pretty rare so we are not concerned about
+	 * taking performance hit.
+	 */
+	if ((event = gameport_get_event())) {
+
+		switch (event->type) {
+			case GAMEPORT_REGISTER_PORT:
+				gameport_add_port(event->object);
+				break;
+
+			case GAMEPORT_ATTACH_DRIVER:
+				gameport_attach_driver(event->object);
+				break;
+
+			default:
+				break;
+		}
+
+		gameport_remove_duplicate_events(event);
+		gameport_free_event(event);
+	}
+
+	mutex_unlock(&gameport_mutex);
+}
+
+/*
+ * Remove all events that have been submitted for a given object,
+ * be it a gameport port or a driver.
+ */
+static void gameport_remove_pending_events(void *object)
+{
+	struct list_head *node, *next;
+	struct gameport_event *event;
+	unsigned long flags;
+
+	spin_lock_irqsave(&gameport_event_lock, flags);
+
+	list_for_each_safe(node, next, &gameport_event_list) {
+		event = list_entry(node, struct gameport_event, node);
+		if (event->object == object) {
+			list_del_init(node);
+			gameport_free_event(event);
+		}
+	}
+
+	spin_unlock_irqrestore(&gameport_event_lock, flags);
+}
+
+/*
+ * Destroy child gameport port (if any) that has not been fully registered yet.
+ *
+ * Note that we rely on the fact that port can have only one child and therefore
+ * only one child registration request can be pending. Additionally, children
+ * are registered by driver's connect() handler so there can't be a grandchild
+ * pending registration together with a child.
+ */
+static struct gameport *gameport_get_pending_child(struct gameport *parent)
+{
+	struct gameport_event *event;
+	struct gameport *gameport, *child = NULL;
+	unsigned long flags;
+
+	spin_lock_irqsave(&gameport_event_lock, flags);
+
+	list_for_each_entry(event, &gameport_event_list, node) {
+		if (event->type == GAMEPORT_REGISTER_PORT) {
+			gameport = event->object;
+			if (gameport->parent == parent) {
+				child = gameport;
+				break;
+			}
+		}
+	}
+
+	spin_unlock_irqrestore(&gameport_event_lock, flags);
+	return child;
+}
+
+static int gameport_thread(void *nothing)
+{
+	set_freezable();
+	do {
+		gameport_handle_event();
+		wait_event_freezable(gameport_wait,
+			kthread_should_stop() || !list_empty(&gameport_event_list));
+	} while (!kthread_should_stop());
+
+	printk(KERN_DEBUG "gameport: kgameportd exiting\n");
+	return 0;
+}
+
+
+/*
+ * Gameport port operations
+ */
+
+static ssize_t gameport_show_description(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct gameport *gameport = to_gameport_port(dev);
+	return sprintf(buf, "%s\n", gameport->name);
+}
+
+static ssize_t gameport_rebind_driver(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct gameport *gameport = to_gameport_port(dev);
+	struct device_driver *drv;
+	int error;
+
+	error = mutex_lock_interruptible(&gameport_mutex);
+	if (error)
+		return error;
+
+	if (!strncmp(buf, "none", count)) {
+		gameport_disconnect_port(gameport);
+	} else if (!strncmp(buf, "reconnect", count)) {
+		gameport_reconnect_port(gameport);
+	} else if (!strncmp(buf, "rescan", count)) {
+		gameport_disconnect_port(gameport);
+		gameport_find_driver(gameport);
+	} else if ((d

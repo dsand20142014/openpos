@@ -1,0 +1,4 @@
+#!/bin/sh
+cd
+umount /mnt/usb
+rmdir /mnt/usb

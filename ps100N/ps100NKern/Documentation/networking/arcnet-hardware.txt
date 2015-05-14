@@ -1,0 +1,2067 @@
+	}
+
+	size = snprintf(dummy, 0, "ipmi%d", ifnum);
+	intf->my_dev_name = kmalloc(size+1, GFP_KERNEL);
+	if (!intf->my_dev_name) {
+		kfree(intf->sysfs_name);
+		intf->sysfs_name = NULL;
+		rv = -ENOMEM;
+		printk(KERN_ERR
+		       "ipmi_msghandler: allocate link from BMC: %d\n",
+		       rv);
+		goto out_err;
+	}
+	snprintf(intf->my_dev_name, size+1, "ipmi%d", ifnum);
+
+	rv = sysfs_create_link(&bmc->dev->dev.kobj, &intf->si_dev->kobj,
+			       intf->my_dev_name);
+	if (rv) {
+		kfree(intf->sysfs_name);
+		intf->sysfs_name = NULL;
+		kfree(intf->my_dev_name);
+		intf->my_dev_name = NULL;
+		printk(KERN_ERR
+		       "ipmi_msghandler:"
+		       " Unable to create symlink to bmc: %d\n",
+		       rv);
+		goto out_err;
+	}
+
+	return 0;
+
+out_err:
+	ipmi_bmc_unregister(intf);
+	return rv;
+}
+
+static int
+send_guid_cmd(ipmi_smi_t intf, int chan)
+{
+	struct kernel_ipmi_msg            msg;
+	struct ipmi_system_interface_addr si;
+
+	si.addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+	si.channel = IPMI_BMC_CHANNEL;
+	si.lun = 0;
+
+	msg.netfn = IPMI_NETFN_APP_REQUEST;
+	msg.cmd = IPMI_GET_DEVICE_GUID_CMD;
+	msg.data = NULL;
+	msg.data_len = 0;
+	return i_ipmi_request(NULL,
+			      intf,
+			      (struct ipmi_addr *) &si,
+			      0,
+			      &msg,
+			      intf,
+			      NULL,
+			      NULL,
+			      0,
+			      intf->channels[0].address,
+			      intf->channels[0].lun,
+			      -1, 0);
+}
+
+static void
+guid_handler(ipmi_smi_t intf, struct ipmi_recv_msg *msg)
+{
+	if ((msg->addr.addr_type != IPMI_SYSTEM_INTERFACE_ADDR_TYPE)
+	    || (msg->msg.netfn != IPMI_NETFN_APP_RESPONSE)
+	    || (msg->msg.cmd != IPMI_GET_DEVICE_GUID_CMD))
+		/* Not for me */
+		return;
+
+	if (msg->msg.data[0] != 0) {
+		/* Error from getting the GUID, the BMC doesn't have one. */
+		intf->bmc->guid_set = 0;
+		goto out;
+	}
+
+	if (msg->msg.data_len < 17) {
+		intf->bmc->guid_set = 0;
+		printk(KERN_WARNING PFX
+		       "guid_handler: The GUID response from the BMC was too"
+		       " short, it was %d but should have been 17.  Assuming"
+		       " GUID is not available.\n",
+		       msg->msg.data_len);
+		goto out;
+	}
+
+	memcpy(intf->bmc->guid, msg->msg.data, 16);
+	intf->bmc->guid_set = 1;
+ out:
+	wake_up(&intf->waitq);
+}
+
+static void
+get_guid(ipmi_smi_t intf)
+{
+	int rv;
+
+	intf->bmc->guid_set = 0x2;
+	intf->null_user_handler = guid_handler;
+	rv = send_guid_cmd(intf, 0);
+	if (rv)
+		/* Send failed, no GUID available. */
+		intf->bmc->guid_set = 0;
+	wait_event(intf->waitq, intf->bmc->guid_set != 2);
+	intf->null_user_handler = NULL;
+}
+
+static int
+send_channel_info_cmd(ipmi_smi_t intf, int chan)
+{
+	struct kernel_ipmi_msg            msg;
+	unsigned char                     data[1];
+	struct ipmi_system_interface_addr si;
+
+	si.addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+	si.channel = IPMI_BMC_CHANNEL;
+	si.lun = 0;
+
+	msg.netfn = IPMI_NETFN_APP_REQUEST;
+	msg.cmd = IPMI_GET_CHANNEL_INFO_CMD;
+	msg.data = data;
+	msg.data_len = 1;
+	data[0] = chan;
+	return i_ipmi_request(NULL,
+			      intf,
+			      (struct ipmi_addr *) &si,
+			      0,
+			      &msg,
+			      intf,
+			      NULL,
+			      NULL,
+			      0,
+			      intf->channels[0].address,
+			      intf->channels[0].lun,
+			      -1, 0);
+}
+
+static void
+channel_handler(ipmi_smi_t intf, struct ipmi_recv_msg *msg)
+{
+	int rv = 0;
+	int chan;
+
+	if ((msg->addr.addr_type == IPMI_SYSTEM_INTERFACE_ADDR_TYPE)
+	    && (msg->msg.netfn == IPMI_NETFN_APP_RESPONSE)
+	    && (msg->msg.cmd == IPMI_GET_CHANNEL_INFO_CMD)) {
+		/* It's the one we want */
+		if (msg->msg.data[0] != 0) {
+			/* Got an error from the channel, just go on. */
+
+			if (msg->msg.data[0] == IPMI_INVALID_COMMAND_ERR) {
+				/*
+				 * If the MC does not support this
+				 * command, that is legal.  We just
+				 * assume it has one IPMB at channel
+				 * zero.
+				 */
+				intf->channels[0].medium
+					= IPMI_CHANNEL_MEDIUM_IPMB;
+				intf->channels[0].protocol
+					= IPMI_CHANNEL_PROTOCOL_IPMB;
+				rv = -ENOSYS;
+
+				intf->curr_channel = IPMI_MAX_CHANNELS;
+				wake_up(&intf->waitq);
+				goto out;
+			}
+			goto next_channel;
+		}
+		if (msg->msg.data_len < 4) {
+			/* Message not big enough, just go on. */
+			goto next_channel;
+		}
+		chan = intf->curr_channel;
+		intf->channels[chan].medium = msg->msg.data[2] & 0x7f;
+		intf->channels[chan].protocol = msg->msg.data[3] & 0x1f;
+
+ next_channel:
+		intf->curr_channel++;
+		if (intf->curr_channel >= IPMI_MAX_CHANNELS)
+			wake_up(&intf->waitq);
+		else
+			rv = send_channel_info_cmd(intf, intf->curr_channel);
+
+		if (rv) {
+			/* Got an error somehow, just give up. */
+			intf->curr_channel = IPMI_MAX_CHANNELS;
+			wake_up(&intf->waitq);
+
+			printk(KERN_WARNING PFX
+			       "Error sending channel information: %d\n",
+			       rv);
+		}
+	}
+ out:
+	return;
+}
+
+void ipmi_poll_interface(ipmi_user_t user)
+{
+	ipmi_smi_t intf = user->intf;
+
+	if (intf->handlers->poll)
+		intf->handlers->poll(intf->send_info);
+}
+EXPORT_SYMBOL(ipmi_poll_interface);
+
+int ipmi_register_smi(struct ipmi_smi_handlers *handlers,
+		      void		       *send_info,
+		      struct ipmi_device_id    *device_id,
+		      struct device            *si_dev,
+		      const char               *sysfs_name,
+		      unsigned char            slave_addr)
+{
+	int              i, j;
+	int              rv;
+	ipmi_smi_t       intf;
+	ipmi_smi_t       tintf;
+	struct list_head *link;
+
+	/*
+	 * Make sure the driver is actually initialized, this handles
+	 * problems with initialization order.
+	 */
+	if (!initialized) {
+		rv = ipmi_init_msghandler();
+		if (rv)
+			return rv;
+		/*
+		 * The init code doesn't return an error if it was turned
+		 * off, but it won't initialize.  Check that.
+		 */
+		if (!initialized)
+			return -ENODEV;
+	}
+
+	intf = kzalloc(sizeof(*intf), GFP_KERNEL);
+	if (!intf)
+		return -ENOMEM;
+
+	intf->ipmi_version_major = ipmi_version_major(device_id);
+	intf->ipmi_version_minor = ipmi_version_minor(device_id);
+
+	intf->bmc = kzalloc(sizeof(*intf->bmc), GFP_KERNEL);
+	if (!intf->bmc) {
+		kfree(intf);
+		return -ENOMEM;
+	}
+	intf->intf_num = -1; /* Mark it invalid for now. */
+	kref_init(&intf->refcount);
+	intf->bmc->id = *device_id;
+	intf->si_dev = si_dev;
+	for (j = 0; j < IPMI_MAX_CHANNELS; j++) {
+		intf->channels[j].address = IPMI_BMC_SLAVE_ADDR;
+		intf->channels[j].lun = 2;
+	}
+	if (slave_addr != 0)
+		intf->channels[0].address = slave_addr;
+	INIT_LIST_HEAD(&intf->users);
+	intf->handlers = handlers;
+	intf->send_info = send_info;
+	spin_lock_init(&intf->seq_lock);
+	for (j = 0; j < IPMI_IPMB_NUM_SEQ; j++) {
+		intf->seq_table[j].inuse = 0;
+		intf->seq_table[j].seqid = 0;
+	}
+	intf->curr_seq = 0;
+#ifdef CONFIG_PROC_FS
+	mutex_init(&intf->proc_entry_lock);
+#endif
+	spin_lock_init(&intf->waiting_msgs_lock);
+	INIT_LIST_HEAD(&intf->waiting_msgs);
+	spin_lock_init(&intf->events_lock);
+	INIT_LIST_HEAD(&intf->waiting_events);
+	intf->waiting_events_count = 0;
+	mutex_init(&intf->cmd_rcvrs_mutex);
+	spin_lock_init(&intf->maintenance_mode_lock);
+	INIT_LIST_HEAD(&intf->cmd_rcvrs);
+	init_waitqueue_head(&intf->waitq);
+	for (i = 0; i < IPMI_NUM_STATS; i++)
+		atomic_set(&intf->stats[i], 0);
+
+	intf->proc_dir = NULL;
+
+	mutex_lock(&smi_watchers_mutex);
+	mutex_lock(&ipmi_interfaces_mutex);
+	/* Look for a hole in the numbers. */
+	i = 0;
+	link = &ipmi_interfaces;
+	list_for_each_entry_rcu(tintf, &ipmi_interfaces, link) {
+		if (tintf->intf_num != i) {
+			link = &tintf->link;
+			break;
+		}
+		i++;
+	}
+	/* Add the new interface in numeric order. */
+	if (i == 0)
+		list_add_rcu(&intf->link, &ipmi_interfaces);
+	else
+		list_add_tail_rcu(&intf->link, link);
+
+	rv = handlers->start_processing(send_info, intf);
+	if (rv)
+		goto out;
+
+	get_guid(intf);
+
+	if ((intf->ipmi_version_major > 1)
+			|| ((intf->ipmi_version_major == 1)
+			    && (intf->ipmi_version_minor >= 5))) {
+		/*
+		 * Start scanning the channels to see what is
+		 * available.
+		 */
+		intf->null_user_handler = channel_handler;
+		intf->curr_channel = 0;
+		rv = send_channel_info_cmd(intf, 0);
+		if (rv)
+			goto out;
+
+		/* Wait for the channel info to be read. */
+		wait_event(intf->waitq,
+			   intf->curr_channel >= IPMI_MAX_CHANNELS);
+		intf->null_user_handler = NULL;
+	} else {
+		/* Assume a single IPMB channel at zero. */
+		intf->channels[0].medium = IPMI_CHANNEL_MEDIUM_IPMB;
+		intf->channels[0].protocol = IPMI_CHANNEL_PROTOCOL_IPMB;
+		intf->curr_channel = IPMI_MAX_CHANNELS;
+	}
+
+	if (rv == 0)
+		rv = add_proc_entries(intf, i);
+
+	rv = ipmi_bmc_register(intf, i, sysfs_name);
+
+ out:
+	if (rv) {
+		if (intf->proc_dir)
+			remove_proc_entries(intf);
+		intf->handlers = NULL;
+		list_del_rcu(&intf->link);
+		mutex_unlock(&ipmi_interfaces_mutex);
+		mutex_unlock(&smi_watchers_mutex);
+		synchronize_rcu();
+		kref_put(&intf->refcount, intf_free);
+	} else {
+		/*
+		 * Keep memory order straight for RCU readers.  Make
+		 * sure everything else is committed to memory before
+		 * setting intf_num to mark the interface valid.
+		 */
+		smp_wmb();
+		intf->intf_num = i;
+		mutex_unlock(&ipmi_interfaces_mutex);
+		/* After this point the interface is legal to use. */
+		call_smi_watchers(i, intf->si_dev);
+		mutex_unlock(&smi_watchers_mutex);
+	}
+
+	return rv;
+}
+EXPORT_SYMBOL(ipmi_register_smi);
+
+static void cleanup_smi_msgs(ipmi_smi_t intf)
+{
+	int              i;
+	struct seq_table *ent;
+
+	/* No need for locks, the interface is down. */
+	for (i = 0; i < IPMI_IPMB_NUM_SEQ; i++) {
+		ent = &(intf->seq_table[i]);
+		if (!ent->inuse)
+			continue;
+		deliver_err_response(ent->recv_msg, IPMI_ERR_UNSPECIFIED);
+	}
+}
+
+int ipmi_unregister_smi(ipmi_smi_t intf)
+{
+	struct ipmi_smi_watcher *w;
+	int    intf_num = intf->intf_num;
+
+	ipmi_bmc_unregister(intf);
+
+	mutex_lock(&smi_watchers_mutex);
+	mutex_lock(&ipmi_interfaces_mutex);
+	intf->intf_num = -1;
+	intf->handlers = NULL;
+	list_del_rcu(&intf->link);
+	mutex_unlock(&ipmi_interfaces_mutex);
+	synchronize_rcu();
+
+	cleanup_smi_msgs(intf);
+
+	remove_proc_entries(intf);
+
+	/*
+	 * Call all the watcher interfaces to tell them that
+	 * an interface is gone.
+	 */
+	list_for_each_entry(w, &smi_watchers, link)
+		w->smi_gone(intf_num);
+	mutex_unlock(&smi_watchers_mutex);
+
+	kref_put(&intf->refcount, intf_free);
+	return 0;
+}
+EXPORT_SYMBOL(ipmi_unregister_smi);
+
+static int handle_ipmb_get_msg_rsp(ipmi_smi_t          intf,
+				   struct ipmi_smi_msg *msg)
+{
+	struct ipmi_ipmb_addr ipmb_addr;
+	struct ipmi_recv_msg  *recv_msg;
+
+	/*
+	 * This is 11, not 10, because the response must contain a
+	 * completion code.
+	 */
+	if (msg->rsp_size < 11) {
+		/* Message not big enough, just ignore it. */
+		ipmi_inc_stat(intf, invalid_ipmb_responses);
+		return 0;
+	}
+
+	if (msg->rsp[2] != 0) {
+		/* An error getting the response, just ignore it. */
+		return 0;
+	}
+
+	ipmb_addr.addr_type = IPMI_IPMB_ADDR_TYPE;
+	ipmb_addr.slave_addr = msg->rsp[6];
+	ipmb_addr.channel = msg->rsp[3] & 0x0f;
+	ipmb_addr.lun = msg->rsp[7] & 3;
+
+	/*
+	 * It's a response from a remote entity.  Look up the sequence
+	 * number and handle the response.
+	 */
+	if (intf_find_seq(intf,
+			  msg->rsp[7] >> 2,
+			  msg->rsp[3] & 0x0f,
+			  msg->rsp[8],
+			  (msg->rsp[4] >> 2) & (~1),
+			  (struct ipmi_addr *) &(ipmb_addr),
+			  &recv_msg)) {
+		/*
+		 * We were unable to find the sequence number,
+		 * so just nuke the message.
+		 */
+		ipmi_inc_stat(intf, unhandled_ipmb_responses);
+		return 0;
+	}
+
+	memcpy(recv_msg->msg_data,
+	       &(msg->rsp[9]),
+	       msg->rsp_size - 9);
+	/*
+	 * The other fields matched, so no need to set them, except
+	 * for netfn, which needs to be the response that was
+	 * returned, not the request value.
+	 */
+	recv_msg->msg.netfn = msg->rsp[4] >> 2;
+	recv_msg->msg.data = recv_msg->msg_data;
+	recv_msg->msg.data_len = msg->rsp_size - 10;
+	recv_msg->recv_type = IPMI_RESPONSE_RECV_TYPE;
+	ipmi_inc_stat(intf, handled_ipmb_responses);
+	deliver_response(recv_msg);
+
+	return 0;
+}
+
+static int handle_ipmb_get_msg_cmd(ipmi_smi_t          intf,
+				   struct ipmi_smi_msg *msg)
+{
+	struct cmd_rcvr          *rcvr;
+	int                      rv = 0;
+	unsigned char            netfn;
+	unsigned char            cmd;
+	unsigned char            chan;
+	ipmi_user_t              user = NULL;
+	struct ipmi_ipmb_addr    *ipmb_addr;
+	struct ipmi_recv_msg     *recv_msg;
+	struct ipmi_smi_handlers *handlers;
+
+	if (msg->rsp_size < 10) {
+		/* Message not big enough, just ignore it. */
+		ipmi_inc_stat(intf, invalid_commands);
+		return 0;
+	}
+
+	if (msg->rsp[2] != 0) {
+		/* An error getting the response, just ignore it. */
+		return 0;
+	}
+
+	netfn = msg->rsp[4] >> 2;
+	cmd = msg->rsp[8];
+	Q2 is the same as IRQ9, as far as Linux is concerned.  You can
+    "cat /proc/interrupts" for a somewhat complete list of which ones are in
+    use at any given time.  Here is a list of common usages from Vojtech
+    Pavlik <vojtech@suse.cz>:
+    	("Not on bus" means there is no way for a card to generate this
+	interrupt)
+	IRQ  0 - Timer 0 (Not on bus)
+	IRQ  1 - Keyboard (Not on bus)
+	IRQ  2 - IRQ Controller 2 (Not on bus, nor does interrupt the CPU)
+	IRQ  3 - COM2
+	IRQ  4 - COM1
+	IRQ  5 - FREE (LPT2 if you have it; sometimes COM3; maybe PLIP)
+	IRQ  6 - Floppy disk controller
+	IRQ  7 - FREE (LPT1 if you don't use the polling driver; PLIP) 
+	IRQ  8 - Realtime Clock Interrupt (Not on bus)
+	IRQ  9 - FREE (VGA vertical sync interrupt if enabled)
+	IRQ 10 - FREE
+	IRQ 11 - FREE
+	IRQ 12 - FREE
+	IRQ 13 - Numeric Coprocessor (Not on bus)
+	IRQ 14 - Fixed Disk Controller
+	IRQ 15 - FREE (Fixed Disk Controller 2 if you have it) 
+	
+	Note: IRQ 9 is used on some video cards for the "vertical retrace"
+	interrupt.  This interrupt would have been handy for things like
+	video games, as it occurs exactly once per screen refresh, but
+	unfortunately IBM cancelled this feature starting with the original
+	VGA and thus many VGA/SVGA cards do not support it.  For this
+	reason, no modern software uses this interrupt and it can almost
+	always be safely disabled, if your video card supports it at all.
+	
+	If your card for some reason CANNOT disable this IRQ (usually there
+	is a jumper), one solution would be to clip the printed circuit
+	contact on the board: it's the fourth contact from the left on the
+	back side.  I take no responsibility if you try this.
+
+	- Avery's favourite: IRQ2 (actually IRQ9).  Watch that VGA, though.
+
+  - the memory address:  Unlike most cards, ARCnets use "shared memory" for
+    copying buffers around.  Make SURE it doesn't conflict with any other
+    used memory in your system!
+	A0000		- VGA graphics memory (ok if you don't have VGA)
+        B0000		- Monochrome text mode
+        C0000		\  One of these is your VGA BIOS - usually C0000.
+        E0000		/
+        F0000		- System BIOS
+
+    Anything less than 0xA0000 is, well, a BAD idea since it isn't above
+    640k.
+	- Avery's favourite: 0xD0000
+
+  - the station address:  Every ARCnet card has its own "unique" network
+    address from 0 to 255.  Unlike Ethernet, you can set this address
+    yourself with a jumper or switch (or on some cards, with special
+    software).  Since it's only 8 bits, you can only have 254 ARCnet cards
+    on a network.  DON'T use 0 or 255, since these are reserved (although
+    neat stuff will probably happen if you DO use them).  By the way, if you
+    haven't already guessed, don't set this the same as any other ARCnet on
+    your network!
+	- Avery's favourite:  3 and 4.  Not that it matters.
+
+  - There may be ETS1 and ETS2 settings.  These may or may not make a
+    difference on your card (many manuals call them "reserved"), but are
+    used to change the delays used when powering up a computer on the
+    network.  This is only necessary when wiring VERY long range ARCnet
+    networks, on the order of 4km or so; in any case, the only real
+    requirement here is that all cards on the network with ETS1 and ETS2
+    jumpers have them in the same position.  Chris Hindy <chrish@io.org>
+    sent in a chart with actual values for this:
+	ET1	ET2	Response Time	Reconfiguration Time
+	---	---	-------------	--------------------
+	open	open	74.7us		840us
+	open	closed	283.4us		1680us
+	closed	open	561.8us		1680us
+	closed	closed	1118.6us	1680us
+    
+    Make sure you set ETS1 and ETS2 to the SAME VALUE for all cards on your
+    network.
+    
+Also, on many cards (not mine, though) there are red and green LED's. 
+Vojtech Pavlik <vojtech@suse.cz> tells me this is what they mean:
+	GREEN           RED             Status
+	-----		---		------
+	OFF             OFF             Power off
+	OFF             Short flashes   Cabling problems (broken cable or not
+					  terminated)
+	OFF (short)     ON              Card init
+	ON              ON              Normal state - everything Oize - 12;
+	recv_msg->recv_type = IPMI_RESPONSE_RECV_TYPE;
+	ipmi_inc_stat(intf, handled_lan_responses);
+	deliver_response(recv_msg);
+
+	return 0;
+}
+
+static int handle_lan_get_msg_cmd(ipmi_smi_t          intf,
+				  struct ipmi_smi_msg *msg)
+{
+	struct cmd_rcvr          *rcvr;
+	int                      rv = 0;
+	unsigned char            netfn;
+	unsigned char            cmd;
+	unsigned char            chan;
+	ipmi_user_t              user = NULL;
+	struct ipmi_lan_addr     *lan_addr;
+	struct ipmi_recv_msg     *recv_msg;
+
+	if (msg->rsp_size < 12) {
+		/* Message not big enough, just ignore it. */
+		ipmi_inc_stat(intf, invalid_commands);
+		return 0;
+	}
+
+	if (msg->rsp[2] != 0) {
+		/* An error getting the response, just ignore it. */
+		return 0;
+	}
+
+	netfn = msg->rsp[6] >> 2;
+	cmd = msg->rsp[10];
+	chan = msg->rsp[3] & 0xf;
+
+	rcu_read_lock();
+	rcvr = find_cmd_rcvr(intf, netfn, cmd, chan);
+	if (rcvr) {
+		user = rcvr->user;
+		kref_get(&user->refcount);
+	} else
+		user = NULL;
+	rcu_read_unlock();
+
+	if (user == NULL) {
+		/* We didn't find a user, just give up. */
+		ipmi_inc_stat(intf, unhandled_commands);
+
+		/*
+		 * Don't do anything with these messages, just allow
+		 * them to be freed.
+		 */
+		rv = 0;
+	} else {
+		/* Deliver the message to the user. */
+		ipmi_inc_stat(intf, handled_commands);
+
+		recv_msg = ipmi_alloc_recv_msg();
+		if (!recv_msg) {
+			/*
+			 * We couldn't allocate memory for the
+			 * message, so requeue it for handling later.
+			 */
+			rv = 1;
+			kref_put(&user->refcount, free_user);
+		} else {
+			/* Extract the source address from the data. */
+			lan_addr = (struct ipmi_lan_addr *) &recv_msg->addr;
+			lan_addr->addr_type = IPMI_LAN_ADDR_TYPE;
+			lan_addr->session_handle = msg->rsp[4];
+			lan_addr->remote_SWID = msg->rsp[8];
+			lan_addr->local_SWID = msg->rsp[5];
+			lan_addr->lun = msg->rsp[9] & 3;
+			lan_addr->channel = msg->rsp[3] & 0xf;
+			lan_addr->privilege = msg->rsp[3] >> 4;
+
+			/*
+			 * Extract the rest of the message information
+			 * from the IPMB header.
+			 */
+			recv_msg->user = user;
+			recv_msg->recv_type = IPMI_CMD_RECV_TYPE;
+			recv_msg->msgid = msg->rsp[9] >> 2;
+			recv_msg->msg.netfn = msg->rsp[6] >> 2;
+			recv_msg->msg.cmd = msg->rsp[10];
+			recv_msg->msg.data = recv_msg->msg_data;
+
+			/*
+			 * We chop off 12, not 11 bytes because the checksum
+			 * at the end also needs to be removed.
+			 */
+			recv_msg->msg.data_len = msg->rsp_size - 12;
+			memcpy(recv_msg->msg_data,
+			       &(msg->rsp[11]),
+			       msg->rsp_size - 12);
+			deliver_response(recv_msg);
+		}
+	}
+
+	return rv;
+}
+
+/*
+ * This routine will handle "Get Message" command responses with
+ * channels that use an OEM Medium. The message format belongs to
+ * the OEM.  See IPMI 2.0 specification, Chapter 6 and
+ * Chapter 22, sections 22.6 and 22.24 for more details.
+ */
+static int handle_oem_get_msg_cmd(ipmi_smi_t          intf,
+				  struct ipmi_smi_msg *msg)
+{
+	struct cmd_rcvr       *rcvr;
+	int                   rv = 0;
+	unsigned char         netfn;
+	unsigned char         cmd;
+	unsigned char         chan;
+	ipmi_user_t           user = NULL;
+	struct ipmi_system_interface_addr *smi_addr;
+	struct ipmi_recv_msg  *recv_msg;
+
+	/*
+	 * We expect the OEM SW to perform error checking
+	 * so we just do some basic sanity checks
+	 */
+	if (msg->rsp_size < 4) {
+		/* Message not big enough, just ignore it. */
+		ipmi_inc_stat(intf, invalid_commands);
+		return 0;
+	}
+
+	if (msg->rsp[2] != 0) {
+		/* An error getting the response, just ignore it. */
+		return 0;
+	}
+
+	/*
+	 * This is an OEM Message so the OEM needs to know how
+	 * handle the message. We do no interpretation.
+	 */
+	netfn = msg->rsp[0] >> 2;
+	cmd = msg->rsp[1];
+	chan = msg->rsp[3] & 0xf;
+
+	rcu_read_lock();
+	rcvr = find_cmd_rcvr(intf, netfn, cmd, chan);
+	if (rcvr) {
+		user = rcvr->user;
+		kref_get(&user->refcount);
+	} else
+		user = NULL;
+	rcu_read_unlock();
+
+	if (user == NULL) {
+		/* We didn't find a user, just give up. */
+		ipmi_inc_stat(intf, unhandled_commands);
+
+		/*
+		 * Don't do anything with these messages, just allow
+		 * them to be freed.
+		 */
+
+		rv = 0;
+	} else {
+		/* Deliver the message to the user. */
+		ipmi_inc_stat(intf, handled_commands);
+
+		recv_msg = ipmi_alloc_recv_msg();
+		if (!recv_msg) {
+			/*
+			 * We couldn't allocate memory for the
+			 * message, so requeue it for handling
+			 * later.
+			 */
+			rv = 1;
+			kref_put(&user->refcount, free_user);
+		} else {
+			/*
+			 * OEM Messages are expected to be delivered via
+			 * the system interface to SMS software.  We might
+			 * need to visit this again depending on OEM
+			 * requirements
+			 */
+			smi_addr = ((struct ipmi_system_interface_addr *)
+				    &(recv_msg->addr));
+			smi_addr->addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+			smi_addr->channel = IPMI_BMC_CHANNEL;
+			smi_addr->lun = msg->rsp[0] & 3;
+
+			recv_msg->user = user;
+			recv_msg->user_msg_data = NULL;
+			recv_msg->recv_type = IPMI_OEM_RECV_TYPE;
+			recv_msg->msg.netfn = msg->rsp[0] >> 2;
+			recv_msg->msg.cmd = msg->rsp[1];
+			recv_msg->msg.data = recv_msg->msg_data;
+
+			/*
+			 * The message starts at byte 4 which follows the
+			 * the Channel Byte in the "GET MESSAGE" command
+			 */
+			recv_msg->msg.data_len = msg->rsp_size - 4;
+			memcpy(recv_msg->msg_data,
+			       &(msg->rsp[4]),
+			       msg->rsp_size - 4);
+			deliver_response(recv_msg);
+		}
+	}
+
+	return rv;
+}
+
+static void copy_event_into_recv_msg(struct ipmi_recv_msg *recv_msg,
+				     struct ipmi_smi_msg  *msg)
+{
+	struct ipmi_system_interface_addr *smi_addr;
+
+	recv_msg->msgid = 0;
+	smi_addr = (struct ipmi_system_interface_addr *) &(recv_msg->addr);
+	smi_addr->addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+	smi_addr->channel = IPMI_BMC_CHANNEL;
+	smi_addr->lun = msg->rsp[0] & 3;
+	recv_msg->recv_type = IPMI_ASYNC_EVENT_RECV_TYPE;
+	recv_msg->msg.netfn = msg->rsp[0] >> 2;
+	recv_msg->msg.cmd = msg->rsp[1];
+	memcpy(recv_msg->msg_data, &(msg->rsp[3]), msg->rsp_size - 3);
+	recv_msg->msg.data = recv_msg->msg_data;
+	recv_msg->msg.data_len = msg->rsp_size - 3;
+}
+
+static int handle_read_event_rsp(ipmi_smi_t          intf,
+				 struct ipmi_smi_msg *msg)
+{
+	struct ipmi_recv_msg *recv_msg, *recv_msg2;
+	struct list_head     msgs;
+	ipmi_user_t          user;
+	int                  rv = 0;
+	int                  deliver_count = 0;
+	unsigned long        flags;
+
+	if (msg->rsp_size < 19) {
+		/* Message is too small to be an IPMB event. */
+		ipmi_inc_stat(intf, invalid_events);
+		return 0;
+	}
+
+	if (msg->rsp[2] != 0) {
+		/* An error getting the event, just ignore it. */
+		return 0;
+	}
+
+	INIT_LIST_HEAD(&msgs);
+
+	spin_lock_irqsave(&intf->events_lock, flags);
+
+	ipmi_inc_stat(intf, events);
+
+	/*
+	 * Allocate and fill in one message for every user that is
+	 * getting events.
+	 */
+	rcu_read_lock();
+	list_for_each_entry_rcu(user, &intf->users, link) {
+		if (!user->gets_events)
+			continue;
+
+		recv_msg = ipmi_alloc_recv_msg();
+		if (!recv_msg) {
+			rcu_read_unlock();
+			list_for_each_entry_safe(recv_msg, recv_msg2, &msgs,
+						 link) {
+				list_del(&recv_msg->link);
+				ipmi_free_recv_msg(recv_msg);
+			}
+			/*
+			 * We couldn't allocate memory for the
+			 * message, so requeue it for handling
+			 * later.
+			 */
+			rv = 1;
+			goto out;
+		}
+
+		deliver_count++;
+
+		copy_event_into_recv_msg(recv_msg, msg);
+		recv_msg->user = user;
+		kref_get(&user->refcount);
+		list_add_tail(&(recv_msg->link), &msgs);
+	}
+	rcu_read_unlock();
+
+	if (deliver_count) {
+		/* Now deliver all the messages. */
+		list_for_each_entry_safe(recv_msg, recv_msg2, &msgs, link) {
+			list_del(&recv_msg->link);
+			deliver_response(recv_msg);
+		}
+	} else if (intf->waiting_events_count < MAX_EVENTS_IN_QUEUE) {
+		/*
+		 * No one to receive the message, put it in queue if there's
+		 * not already too many things in the queue.
+		 */
+		recv_msg = ipmi_alloc_recv_msg();
+		if (!recv_msg) {
+			/*
+			 * We couldn't allocate memory for the
+			 * message, so requeue it for handling
+			 * later.
+			 */
+			rv = 1;
+			goto out;
+		}
+
+		copy_event_into_recv_msg(recv_msg, msg);
+		list_add_tail(&(recv_msg->link), &(intf->waiting_events));
+		intf->waiting_events_count++;
+	} else if (!intf->event_msg_printed) {
+		/*
+		 * There's too many things in the queue, discard this
+		 * message.
+		 */
+		printk(KERN_WARNING PFX "Event queue full, discarding"
+		       " incoming events\n");
+		intf->event_msg_printed = 1;
+	}
+
+ out:
+	spin_unlock_irqrestore(&(intf->events_lock), flags);
+
+	return rv;
+}
+
+static int handle_bmc_rsp(ipmi_smi_t          intf,
+			  struct ipmi_smi_msg *msg)
+{
+	struct ipmi_recv_msg *recv_msg;
+	struct ipmi_user     *user;
+
+	recv_msg = (struct ipmi_recv_msg *) msg->user_data;
+	if (recv_msg == NULL) {
+		printk(KERN_WARNING
+		       "IPMI message received with no owner. This\n"
+		       "could be because of a malformed message, or\n"
+		       "because of a hardware error.  Contact your\n"
+		       "hardware vender for assistance\n");
+		return 0;
+	}
+
+	user = recv_msg->user;
+	/* Make sure the user still exists. */
+	if (user && !user->valid) {
+		/* The user for the message went away, so give up. */
+		ipmi_inc_stat(intf, unhandled_local_responses);
+		ipmi_free_recv_msg(recv_msg);
+	} else {
+		struct ipmi_system_interface_addr *smi_addr;
+
+		ipmi_inc_stat(intf, handled_local_responses);
+		recv_msg->recv_type = IPMI_RESPONSE_RECV_TYPE;
+		recv_msg->msgid = msg->msgid;
+		smi_addr = ((struct ipmi_system_interface_addr *)
+			    &(recv_msg->addr));
+		smi_addr->addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+		smi_addr->channel = IPMI_BMC_CHANNEL;
+		smi_addr->lun = msg->rsp[0] & 3;
+		recv_msg->msg.netfn = msg->rsp[0] >> 2;
+		recv_msg->msg.cmd = msg->rsp[1];
+		memcpy(recv_msg->msg_data,
+		       &(msg->rsp[2]),
+		       msg->rsp_size - 2);
+		recv_msg->msg.data = recv_msg->msg_data;
+		recv_msg->msg.data_len = msg->rsp_size - 2;
+		deliver_response(recv_msg);
+	}
+
+	return 0;
+}
+
+/*
+ * Handle a new message.  Return 1 if the message should be requeued,
+ * 0 if the message should be freed, or -1 if the message should not
+ * be freed or requeued.
+ */
+static int handle_new_recv_msg(ipmi_smi_t          intf,
+			       struct ipmi_smi_msg *msg)
+{
+	int requeue;
+	int chan;
+
+#ifdef DEBUG_MSGING
+	int m;
+	printk("Recv:");
+	for (m = 0; m < msg->rsp_size; m++)
+		printk(" %2.2x", msg->rsp[m]);
+	printk("\n");
+#endif
+	if (msg->rsp_size < 2) {
+		/* Message is too small to be correct. */
+		printk(KERN_WARNING PFX "BMC returned to small a message"
+		       " for netfn %x cmd %x, got %d bytes\n",
+		       (msg->data[0] >> 2) | 1, msg->data[1], msg->rsp_size);
+
+		/* Generate an error response for the message. */
+		msg->rsp[0] = msg->data[0] | (1 << 2);
+		msg->rsp[1] = msg->data[1];
+		msg->rsp[2] = IPMI_ERR_UNSPECIFIED;
+		msg->rsp_size = 3;
+	} else if (((msg->rsp[0] >> 2) != ((msg->data[0] >> 2) | 1))
+		   || (msg->rsp[1] != msg->data[1])) {
+		/*
+		 * The NetFN and Command in the response is not even
+		 * marginally correct.
+		 */
+		printk(KERN_WARNING PFX "BMC returned incorrect response,"
+		       " expected netfn %x cmd %x, got netfn %x cmd %x\n",
+		       (msg->data[0] >> 2) | 1, msg->data[1],
+		       msg->rsp[0] >> 2, msg->rsp[1]);
+
+		/* Generate an error response for the message. */
+		msg->rsp[0] = msg->data[0] | (1 << 2);
+		msg->rsp[1] = msg->data[1];
+		msg->rsp[2] = IPMI_ERR_UNSPECIFIED;
+		msg->rsp_size = 3;
+	}
+
+	if ((msg->rsp[0] == ((IPMI_NETFN_APP_REQUEST|1) << 2))
+	    && (msg->rsp[1] == IPMI_SEND_MSG_CMD)
+	    && (msg->user_data != NULL)) {
+		/*
+		 * It's a response to a response we sent.  For this we
+		 * deliver a send message response to the user.
+		 */
+		struct ipmi_recv_msg     *recv_msg = msg->user_data;
+
+		requeue = 0;
+		if (msg->rsp_size < 2)
+			/* Message is too small to be correct. */
+			goto out;
+
+		chan = msg->data[2] & 0x0f;
+		if (chan >= IPMI_MAX_CHANNELS)
+			/* Invalid channel number */
+			goto out;
+
+		if (!recv_msg)
+			goto out;
+
+		/* Make sure the user still exists. */
+		if (!recv_msg->user || !recv_msg->user->valid)
+			goto out;
+
+		recv_msg->recv_type = IPMI_RESPONSE_RESPONSE_TYPE;
+		recv_msg->msg.data = recv_msg->msg_data;
+		recv_msg->msg.data_len = 1;
+		recv_msg->msg_data[0] = msg->rsp[2];
+		deliver_response(recv_msg);
+	} else if ((msg->rsp[0] == ((IPMI_NETFN_APP_REQUEST|1) << 2))
+		   && (msg->rsp[1] == IPMI_GET_MSG_CMD)) {
+		/* It's from the receive queue. */
+		chan = msg->rsp[3] & 0xf;
+		if (chan >= IPMI_MAX_CHANNELS) {
+			/* Invalid channel number */
+			requeue = 0;
+			goto out;
+		}
+
+		/*
+		 * We need to make sure the channels have been initialized.
+		 * The channel_handler routine will set the "curr_channel"
+		 * equal to or greater than IPMI_MAX_CHANNELS when all the
+		 * channels for this interface have been initialized.
+		 */
+		if (intf->curr_channel < IPMI_MAX_CHANNELS) {
+			requeue = 0; /* Throw the message away */
+			goto out;
+		}
+
+		switch (intf->channels[chan].medium) {
+		case IPMI_CHANNEL_MEDIUM_IPMB:
+			if (msg->rsp[4] & 0x04) {
+				/*
+				 * It's a response, so find the
+				 * requesting message and send it up.
+				 */
+				requeue = handle_ipmb_get_msg_rsp(intf, msg);
+			} else {
+				/*
+				 * It's a command to the SMS from some other
+				 * entity.  Handle that.
+				 */
+				requeue = handle_ipmb_get_msg_cmd(intf, msg);
+			}
+			break;
+
+		case IPMI_CHANNEL_MEDIUM_8023LAN:
+		case IPMI_CHANNEL_MEDIUM_ASYNC:
+			if (msg->rsp[6] & 0x04) {
+				/*
+				 * It's a response, so find the
+				 * requesting message and send it up.
+				 */
+				requeue = handle_lan_get_msg_rsp(intf, msg);
+			} else {
+				/*
+				 * It's a command to the SMS from some other
+				 * entity.  Handle that.
+				 */
+				requeue = handle_lan_get_msg_cmd(intf, msg);
+			}
+			break;
+
+		default:
+			/* Check for OEM Channels.  Clients had better
+			   register for these commands. */
+			if ((intf->channels[chan].medium
+			     >= IPMI_CHANNEL_MEDIUM_OEM_MIN)
+			    && (intf->channels[chan].medium
+				<= IPMI_CHANNEL_MEDIUM_OEM_MAX)) {
+				requeue = handle_oem_get_msg_cmd(intf, msg);
+			} else {
+				/*
+				 * We don't handle the channel type, so just
+				 * free the message.
+				 */
+				requeue = 0;
+			}
+		}
+
+	} else if ((msg->rsp[0] == ((IPMI_NETFN_APP_REQUEST|1) << 2))
+		   && (msg->rsp[1] == IPMI_READ_EVENT_MSG_BUFFER_CMD)) {
+		/* It's an asyncronous event. */
+		requeue = handle_read_event_rsp(intf, msg);
+	} else {
+		/* It's a response from the local BMC. */
+		requeue = handle_bmc_rsp(intf, msg);
+	}
+
+ out:
+	return requeue;
+}
+
+/* Handle a new message from the lower layer. */
+void ipmi_smi_msg_received(ipmi_smi_t          intf,
+			   struct ipmi_smi_msg *msg)
+{
+	unsigned long flags = 0; /* keep us warning-free. */
+	int           rv;
+	int           run_to_completion;
+
+
+	if ((msg->data_size >= 2)
+	    && (msg->data[0] == (IPMI_NETFN_APP_REQUEST << 2))
+	    && (msg->data[1] == IPMI_SEND_MSG_CMD)
+	    && (msg->user_data == NULL)) {
+		/*
+		 * This is the local response to a command send, start
+		 * the timer for these.  The user_data will not be
+		 * NULL if this is a response send, and we will let
+		 * response sends just go through.
+		 */
+
+		/*
+		 * Check for errors, if we get certain errors (ones
+		 * that mean basically we can try again later), we
+		 * ignore them and start the timer.  Otherwise we
+		 * report the error immediately.
+		 */
+		if ((msg->rsp_size >= 3) && (msg->rsp[2] != 0)
+		    && (msg->rsp[2] != IPMI_NODE_BUSY_ERR)
+		    && (msg->rsp[2] != IPMI_LOST_ARBITRATION_ERR)
+		    && (msg->rsp[2] != IPMI_BUS_ERR)
+		    && (msg->rsp[2] != IPMI_NAK_ON_WRITE_ERR)) {
+			int chan = msg->rsp[3] & 0xf;
+
+			/* Got an error sending the message, handle it. */
+			if (chan >= IPMI_MAX_CHANNELS)
+				; /* This shouldn't happen */
+			else if ((intf->channels[chan].medium
+				  == IPMI_CHANNEL_MEDIUM_8023LAN)
+				 || (intf->channels[chan].medium
+				     == IPMI_CHANNEL_MEDIUM_ASYNC))
+				ipmi_inc_stat(intf, sent_lan_command_errs);
+			else
+				ipmi_inc_stat(intf, sent_ipmb_command_errs);
+			intf_err_seq(intf, msg->msgid, msg->rsp[2]);
+		} else
+			/* The message was sent, start the timer. */
+			intf_start_seq_timer(intf, msg->msgid);
+
+		ipmi_free_smi_msg(msg);
+		goto out;
+	}
+
+	/*
+	 * To preserve message order, if the list is not empty, we
+	 * tack this message onto the end of the list.
+	 */
+	run_to_completion = intf->run_to_completion;
+	if (!run_to_completion)
+		spin_lock_irqsave(&intf->waiting_msgs_lock, flags);
+	if (!list_empty(&intf->waiting_msgs)) {
+		list_add_tail(&msg->link, &intf->waiting_msgs);
+		if (!run_to_completion)
+			spin_unlock_irqrestore(&intf->waiting_msgs_lock, flags);
+		goto out;
+	}
+	if (!run_to_completion)
+		spin_unlock_irqrestore(&intf->waiting_msgs_lock, flags);
+
+	rv = handle_new_recv_msg(intf, msg);
+	if (rv > 0) {
+		/*
+		 * Could not handle the message now, just add it to a
+		 * list to handle later.
+		 */
+		run_to_completion = intf->run_to_completion;
+		if (!run_to_completion)
+			spin_lock_irqsave(&intf->waiting_msgs_lock, flags);
+		list_add_tail(&msg->link, &intf->waiting_msgs);
+		if (!run_to_completion)
+			spin_unlock_irqrestore(&intf->waiting_msgs_lock, flags);
+	} else if (rv == 0) {
+		ipmi_free_smi_msg(msg);
+	}
+
+ out:
+	return;
+}
+EXPORT_SYMBOL(ipmi_smi_msg_received);
+
+void ipmi_smi_watchdog_pretimeout(ipmi_smi_t intf)
+{
+	ipmi_user_t user;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(user, &intf->users, link) {
+		if (!user->handler->ipmi_watchdog_pretimeout)
+			continue;
+
+		user->handler->ipmi_watchdog_pretimeout(user->handler_data);
+	}
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(ipmi_smi_watchdog_pretimeout);
+
+static struct ipmi_smi_msg *
+smi_from_recv_msg(ipmi_smi_t intf, struct ipmi_recv_msg *recv_msg,
+		  unsigned char seq, long seqid)
+{
+	struct ipmi_smi_msg *smi_msg = ipmi_alloc_smi_msg();
+	if (!smi_msg)
+		/*
+		 * If we can't allocate the message, then just return, we
+		 * get 4 retries, so this should be ok.
+		 */
+		return NULL;
+
+	memcpy(smi_msg->data, recv_msg->msg.data, recv_msg->msg.data_len);
+	smi_msg->data_size = recv_msg->msg.data_len;
+	smi_msg->msgid = STORE_SEQ_IN_MSGID(seq, seqid);
+
+#ifdef DEBUG_MSGING
+	{
+		int m;
+		printk("Resend: ");
+		for (m = 0; m < smi_msg->data_size; m++)
+			printk(" %2.2x", smi_msg->data[m]);
+		printk("\n");
+	}
+#endif
+	return smi_msg;
+}
+
+static void check_msg_timeout(ipmi_smi_t intf, struct seq_table *ent,
+			      struct list_head *timeouts, long timeout_period,
+			      int slot, unsigned long *flags)
+{
+	struct ipmi_recv_msg     *msg;
+	struct ipmi_smi_handlers *handlers;
+
+	if (intf->intf_num == -1)
+		return;
+
+	if (!ent->inuse)
+		return;
+
+	ent->timeout -= timeout_period;
+	if (ent->timeout > 0)
+		return;
+
+	if (ent->retries_left == 0) {
+		/* The message has used all its retries. */
+		ent->inuse = 0;
+		msg = ent->recv_msg;
+		list_add_tail(&msg->link, timeouts);
+		if (ent->broadcast)
+			ipmi_inc_stat(intf, timed_out_ipmb_broadcasts);
+		else if (is_lan_addr(&ent->recv_msg->addr))
+			ipmi_inc_stat(intf, timed_out_lan_commands);
+		else
+			ipmi_inc_stat(intf, timed_out_ipmb_commands);
+	} else {
+		struct ipmi_smi_msg *smi_msg;
+		/* More retries, send again. */
+
+		/*
+		 * Start with the max timer, set to normal timer after
+		 * the message is sent.
+		 */
+		ent->timeout = MAX_MSG_TIMEOUT;
+		ent->retries_left--;
+		smi_msg = smi_from_recv_msg(intf, ent->recv_msg, slot,
+					    ent->seqid);
+		if (!smi_msg) {
+			if (is_lan_addr(&ent->recv_msg->addr))
+				ipmi_inc_stat(intf,
+					      dropped_rexmit_lan_commands);
+			else
+				ipmi_inc_stat(intf,
+					      dropped_rexmit_ipmb_commands);
+			return;
+		}
+
+		spin_unlock_irqrestore(&intf->seq_lock, *flags);
+
+		/*
+		 * Send the new message.  We send with a zero
+		 * priority.  It timed out, I doubt time is that
+		 * critical now, and high priority messages are really
+		 * only for messages to the local MC, which don't get
+		 * resent.
+		 */
+		handlers = intf->handlers;
+		if (handlers) {
+			if (is_lan_addr(&ent->recv_msg->addr))
+				ipmi_inc_stat(intf,
+					      retransmitted_lan_commands);
+			else
+				ipmi_inc_stat(intf,
+					      retransmitted_ipmb_commands);
+
+			intf->handlers->sender(intf->send_info,
+					       smi_msg, 0);
+		} else
+			ipmi_free_smi_msg(smi_msg);
+
+		spin_lock_irqsave(&intf->seq_lock, *flags);
+	}
+}
+
+static void ipmi_timeout_handler(long timeout_period)
+{
+	ipmi_smi_t           intf;
+	struct list_head     timeouts;
+	struct ipmi_recv_msg *msg, *msg2;
+	struct ipmi_smi_msg  *smi_msg, *smi_msg2;
+	unsigned long        flags;
+	int                  i;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(intf, &ipmi_interfaces, link) {
+		/* See if any waiting messages need to be processed. */
+		spin_lock_irqsave(&intf->waiting_msgs_lock, flags);
+		list_for_each_entry_safe(smi_msg, smi_msg2,
+					 &intf->waiting_msgs, link) {
+			if (!handle_new_recv_msg(intf, smi_msg)) {
+				list_del(&smi_msg->link);
+				ipmi_free_smi_msg(smi_msg);
+			} else {
+				/*
+				 * To preserve message order, quit if we
+				 * can't handle a message.
+				 */
+				break;
+			}
+		}
+		spin_unlock_irqrestore(&intf->waiting_msgs_lock, flags);
+
+		/*
+		 * Go through the seq table and find any messages that
+		 * have timed out, putting them in the timeouts
+		 * list.
+		 */
+		INIT_LIST_HEAD(&timeouts);
+		spin_lock_irqsave(&intf->seq_lock, flags);
+		for (i = 0; i < IPMI_IPMB_NUM_SEQ; i++)
+			check_msg_timeout(intf, &(intf->seq_table[i]),
+					  &timeouts, timeout_period, i,
+					  &flags);
+		spin_unlock_irqrestore(&intf->seq_lock, flags);
+
+		list_for_each_entry_safe(msg, msg2, &timeouts, link)
+			deliver_err_response(msg, IPMI_TIMEOUT_COMPLETION_CODE);
+
+		/*
+		 * Maintenance mode handling.  Check the timeout
+		 * optimistically before we claim the lock.  It may
+		 * mean a timeout gets missed occasionally, but that
+		 * only means the timeout gets extended by one period
+		 * in that case.  No big deal, and it avoids the lock
+		 * most of the time.
+		 */
+		if (intf->auto_maintenance_timeout > 0) {
+			spin_lock_irqsave(&intf->maintenance_mode_lock, flags);
+			if (intf->auto_maintenance_timeout > 0) {
+				intf->auto_maintenance_timeout
+					-= timeout_period;
+				if (!intf->maintenance_mode
+				    && (intf->auto_maintenance_timeout <= 0)) {
+					intf->maintenance_mode_enable = 0;
+					maintenance_mode_update(intf);
+				}
+			}
+			spin_unlock_irqrestore(&intf->maintenance_mode_lock,
+					       flags);
+		}
+	}
+	rcu_read_unlock();
+}
+
+static void ipmi_request_event(void)
+{
+	ipmi_smi_t               intf;
+	struct ipmi_smi_handlers *handlers;
+
+	rcu_read_lock();
+	/*
+	 * Called from the timer, no need to check if handlers is
+	 * valid.
+	 */
+	list_for_each_entry_rcu(intf, &ipmi_interfaces, link) {
+		/* No event requests when in maintenance mode. */
+		if (intf->maintenance_mode_enable)
+			continue;
+
+		handlers = intf->handlers;
+		if (handlers)
+			handlers->request_events(intf->send_info);
+	}
+	rcu_read_unlock();
+}
+
+static struct timer_list ipmi_timer;
+
+/* Call every ~100 ms. */
+#define IPMI_TIMEOUT_TIME	100
+
+/* How many jiffies does it take to get to the timeout time. */
+#define IPMI_TIMEOUT_JIFFIES	((IPMI_TIMEOUT_TIME * HZ) / 1000)
+
+/*
+ * Request events from the queue every second (this is the number of
+ * IPMI_TIMEOUT_TIMES between event requests).  Hopefully, in the
+ * future, IPMI will add a way to know immediately if an event is in
+ * the queue and this silliness can go away.
+ */
+#define IPMI_REQUEST_EV_TIME	(1000 / (IPMI_TIMEOUT_TIME))
+
+static atomic_t stop_operation;
+static unsigned int ticks_to_req_ev = IPMI_REQUEST_EV_TIME;
+
+static void ipmi_timeout(unsigned long data)
+{
+	if (atomic_read(&stop_operation))
+		return;
+
+	ticks_to_req_ev--;
+	if (ticks_to_req_ev == 0) {
+		ipmi_request_event();
+		ticks_to_req_ev = IPMI_REQUEST_EV_TIME;
+	}
+
+	ipmi_timeout_handler(IPMI_TIMEOUT_TIME);
+
+	mod_timer(&ipmi_timer, jiffies + IPMI_TIMEOUT_JIFFIES);
+}
+
+
+static atomic_t smi_msg_inuse_count = ATOMIC_INIT(0);
+static atomic_t recv_msg_inuse_count = ATOMIC_INIT(0);
+
+/* FIXME - convert these to slabs. */
+static void free_smi_msg(struct ipmi_smi_msg *msg)
+{
+	atomic_dec(&smi_msg_inuse_count);
+	kfree(msg);
+}
+
+struct ipmi_smi_msg *ipmi_alloc_smi_msg(void)
+{
+	struct ipmi_smi_msg *rv;
+	rv = kmalloc(sizeof(struct ipmi_smi_msg), GFP_ATOMIC);
+	if (rv) {
+		rv->done = free_smi_msg;
+		rv->user_data = NULL;
+		atomic_inc(&smi_msg_inuse_count);
+	}
+	return rv;
+}
+EXPORT_SYMBOL(ipmi_alloc_smi_msg);
+
+static void free_recv_msg(struct ipmi_recv_msg *msg)
+{
+	atomic_dec(&recv_msg_inuse_count);
+	kfree(msg);
+}
+
+static struct ipmi_recv_msg *ipmi_alloc_recv_msg(void)
+{
+	struct ipmi_recv_msg *rv;
+
+	rv = kmalloc(sizeof(struct ipmi_recv_msg), GFP_ATOMIC);
+	if (rv) {
+		rv->user = NULL;
+		rv->done = free_recv_msg;
+		atomic_inc(&recv_msg_inuse_count);
+	}
+	return rv;
+}
+
+void ipmi_free_recv_msg(struct ipmi_recv_msg *msg)
+{
+	if (msg->user)
+		kref_put(&msg->user->refcount, free_user);
+	msg->done(msg);
+}
+EXPORT_SYMBOL(ipmi_free_recv_msg);
+
+#ifdef CONFIG_IPMI_PANIC_EVENT
+
+static void dummy_smi_done_handler(struct ipmi_smi_msg *msg)
+{
+}
+
+static void dummy_recv_done_handler(struct ipmi_recv_msg *msg)
+{
+}
+
+#ifdef CONFIG_IPMI_PANIC_STRING
+static void event_receiver_fetcher(ipmi_smi_t intf, struct ipmi_recv_msg *msg)
+{
+	if ((msg->addr.addr_type == IPMI_SYSTEM_INTERFACE_ADDR_TYPE)
+	    && (msg->msg.netfn == IPMI_NETFN_SENSOR_EVENT_RESPONSE)
+	    && (msg->msg.cmd == IPMI_GET_EVENT_RECEIVER_CMD)
+	    && (msg->msg.data[0] == IPMI_CC_NO_ERROR)) {
+		/* A get event receiver command, save it. */
+		intf->event_receiver = msg->msg.data[1];
+		intf->event_receiver_lun = msg->msg.data[2] & 0x3;
+	}
+}
+
+static void device_id_fetcher(ipmi_smi_t intf, struct ipmi_recv_msg *msg)
+{
+	if ((msg->addr.addr_type == IPMI_SYSTEM_INTERFACE_ADDR_TYPE)
+	    && (msg->msg.netfn == IPMI_NETFN_APP_RESPONSE)
+	    && (msg->msg.cmd == IPMI_GET_DEVICE_ID_CMD)
+	    && (msg->msg.data[0] == IPMI_CC_NO_ERROR)) {
+		/*
+		 * A get device id command, save if we are an event
+		 * receiver or generator.
+		 */
+		intf->local_sel_device = (msg->msg.data[6] >> 2) & 1;
+		intf->local_event_generator = (msg->msg.data[6] >> 5) & 1;
+	}
+}
+#endif
+
+static void send_panic_events(char *str)
+{
+	struct kernel_ipmi_msg            msg;
+	ipmi_smi_t                        intf;
+	unsigned char                     data[16];
+	struct ipmi_system_interface_addr *si;
+	struct ipmi_addr                  addr;
+	struct ipmi_smi_msg               smi_msg;
+	struct ipmi_recv_msg              recv_msg;
+
+	si = (struct ipmi_system_interface_addr *) &addr;
+	si->addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+	si->channel = IPMI_BMC_CHANNEL;
+	si->lun = 0;
+
+	/* Fill in an event telling that we have failed. */
+	msg.netfn = 0x04; /* Sensor or Event. */
+	msg.cmd = 2; /* Platform event command. */
+	msg.data = data;
+	msg.data_len = 8;
+	data[0] = 0x41; /* Kernel generator ID, IPMI table 5-4 */
+	data[1] = 0x03; /* This is for IPMI 1.0. */
+	data[2] = 0x20; /* OS Critical Stop, IPMI table 36-3 */
+	data[4] = 0x6f; /* Sensor specific, IPMI table 36-1 */
+	data[5] = 0xa1; /* Runtime stop OEM bytes 2 & 3. */
+
+	/*
+	 * Put a few breadcrumbs in.  Hopefully later we can add more things
+	 * to make the panic events more useful.
+	 */
+	if (str) {
+		data[3] = str[0];
+		data[6] = str[1];
+		data[7] = str[2];
+	}
+
+	smi_msg.done = dummy_smi_done_handler;
+	recv_msg.done = dummy_recv_done_handler;
+
+	/* For every registered interface, send the event. */
+	list_for_each_entry_rcu(intf, &ipmi_interfaces, link) {
+		if (!intf->handlers)
+			/* Interface is not ready. */
+			continue;
+
+		intf->run_to_completion = 1;
+		/* Send the event announcing the panic. */
+		intf->handlers->set_run_to_completion(intf->send_info, 1);
+		i_ipmi_request(NULL,
+			       intf,
+			       &addr,
+			       0,
+			       &msg,
+			       intf,
+			       &smi_msg,
+			       &recv_msg,
+			       0,
+			       intf->channels[0].address,
+			       intf->channels[0].lun,
+			       0, 1); /* Don't retry, and don't wait. */
+	}
+
+#ifdef CONFIG_IPMI_PANIC_STRING
+	/*
+	 * On every interface, dump a bunch of OEM event holding the
+	 * string.
+	 */
+	if (!str)
+		return;
+
+	/* For every registered interface, send the event. */
+	list_for_each_entry_rcu(intf, &ipmi_interfaces, link) {
+		char                  *p = str;
+		struct ipmi_ipmb_addr *ipmb;
+		int                   j;
+
+		if (intf->intf_num == -1)
+			/* Interface was not ready yet. */
+			continue;
+
+		/*
+		 * intf_num is used as an marker to tell if the
+		 * interface is valid.  Thus we need a read barrier to
+		 * make sure data fetched before checking intf_num
+		 * won't be used.
+		 */
+		smp_rmb();
+
+		/*
+		 * First job here is to figure out where to send the
+		 * OEM events.  There's no way in IPMI to send OEM
+		 * events using an event send command, so we have to
+		 * find the SEL to put them in and stick them in
+		 * there.
+		 */
+
+		/* Get capabilities from the get device id. */
+		intf->local_sel_device = 0;
+		intf->local_event_generator = 0;
+		intf->event_receiver = 0;
+
+		/* Request the device info from the local MC. */
+		msg.netfn = IPMI_NETFN_APP_REQUEST;
+		msg.cmd = IPMI_GET_DEVICE_ID_CMD;
+		msg.data = NULL;
+		msg.data_len = 0;
+		intf->null_user_handler = device_id_fetcher;
+		i_ipmi_request(NULL,
+			       intf,
+			       &addr,
+			       0,
+			       &msg,
+			       intf,
+			       &smi_msg,
+			       &recv_msg,
+			       0,
+			       intf->channels[0].address,
+			       intf->channels[0].lun,
+			       0, 1); /* Don't retry, and don't wait. */
+
+		if (intf->local_event_generator) {
+			/* Request the event receiver from the local MC. */
+			msg.netfn = IPMI_NETFN_SENSOR_EVENT_REQUEST;
+			msg.cmd = IPMI_GET_EVENT_RECEIVER_CMD;
+			msg.data = NULL;
+			msg.data_len = 0;
+			intf->null_user_handler = event_receiver_fetcher;
+			i_ipmi_request(NULL,
+				       intf,
+				       &addr,
+				       0,
+				       &msg,
+				       intf,
+				       &smi_msg,
+				       &recv_msg,
+				       0,
+				       intf->channels[0].address,
+				       intf->channels[0].lun,
+				       0, 1); /* no retry, and no wait. */
+		}
+		intf->null_user_handler = NULL;
+
+		/*
+		 * Validate the event receiver.  The low bit must not
+		 * be 1 (it must be a valid IPMB address), it cannot
+		 * be zero, and it must not be my address.
+		 */
+		if (((intf->event_receiver & 1) == 0)
+		    && (intf->event_receiver != 0)
+		    && (intf->event_receiver != intf->channels[0].address)) {
+			/*
+			 * The event receiver is valid, send an IPMB
+			 * message.
+			 */
+			ipmb = (struct ipmi_ipmb_addr *) &addr;
+			ipmb->addr_type = IPMI_IPMB_ADDR_TYPE;
+			ipmb->channel = 0; /* FIXME - is this right? */
+			ipmb->lun = intf->event_receiver_lun;
+			ipmb->slave_addr = intf->event_receiver;
+		} else if (intf->local_sel_device) {
+			/*
+			 * The event receiver was not valid (or was
+			 * me), but I am an SEL device, just dump it
+			 * in my SEL.
+			 */
+			si = (struct ipmi_system_interface_addr *) &addr;
+			si->addr_type = IPMI_SYSTEM_INTERFACE_ADDR_TYPE;
+			si->channel = IPMI_BMC_CHANNEL;
+			si->lun = 0;
+		} else
+			continue; /* No where to send the event. */
+
+		msg.netfn = IPMI_NETFN_STORAGE_REQUEST; /* Storage. */
+		msg.cmd = IPMI_ADD_SEL_ENTRY_CMD;
+		msg.data = data;
+		msg.data_len = 16;
+
+		j = 0;
+		while (*p) {
+			int size = strlen(p);
+
+			if (size > 11)
+				size = 11;
+			data[0] = 0;
+			data[1] = 0;
+			data[2] = 0xf0; /* OEM event without timestamp. */
+			data[3] = intf->channels[0].address;
+			data[4] = j++; /* sequence # */
+			/*
+			 * Always give 11 bytes, so strncpy will fill
+			 * it with zeroes for me.
+			 */
+			strncpy(data+5, p, 11);
+			p += size;
+
+			i_ipmi_request(NULL,
+				       intf,
+				       &addr,
+				       0,
+				       &msg,
+				       intf,
+				       &smi_msg,
+				       &recv_msg,
+				       0,
+				       intf->channels[0].address,
+				       intf->channels[0].lun,
+				       0, 1); /* no retry, and no wait. */
+		}
+	}
+#endif /* CONFIG_IPMI_PANIC_STRING */
+}
+#endif /* CONFIG_IPMI_PANIC_EVENT */
+
+static int has_panicked;
+
+static int panic_event(struct notifier_block *this,
+		       unsigned long         event,
+		       void                  *ptr)
+{
+	ipmi_smi_t intf;
+
+	if (has_panicked)
+		return NOTIFY_DONE;
+	has_panicked = 1;
+
+	/* For every registered interface, set it to run to completion. */
+	list_for_each_entry_rcu(intf, &ipmi_interfaces, link) {
+		if (!intf->handlers)
+			/* Interface is not ready. */
+			continue;
+
+		intf->run_to_completion = 1;
+		intf->handlers->set_run_to_completion(intf->send_info, 1);
+	}
+
+#ifdef CONFIG_IPMI_PANIC_EVENT
+	send_panic_events(ptr);
+#endif
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block panic_block = {
+	.notifier_call	= panic_event,
+	.next		= NULL,
+	.priority	= 200	/* priority: INT_MAX >= x >= 0 */
+};
+
+static int ipmi_init_msghandler(void)
+{
+	int rv;
+
+	if (initialized)
+		return 0;
+
+	rv = driver_register(&ipmidriver.driver);
+	if (rv) {
+		printk(KERN_ERR PFX "Could not register IPMI driver\n");
+		return rv;
+	}
+
+	printk(KERN_INFO "ipmi message handler version "
+	       IPMI_DRIVER_VERSION "\n");
+
+#ifdef CONFIG_PROC_FS
+	proc_ipmi_root = proc_mkdir("ipmi", NULL);
+	if (!proc_ipmi_root) {
+	    printk(KERN_ERR PFX "Unable to create IPMI proc dir");
+	    return -ENOMEM;
+	}
+
+#endif /* CONFIG_PROC_FS */
+
+	setup_t |         JP 1 1 1   |    |
+   |   ______________   |                   |            0 1 2   |____|
+   |  |  PROM        |  |___________________|           |o|o|o|  _____|
+   |  >  SOCKET      |  JP 6 5 4 3 2                    |o|o|o| | J1  |
+   |  |______________|    |o|o|o|o|o|                   |o|o|o| |_____|
+   |_____                 |o|o|o|o|o|                   ______________|
+         |                                             |
+         |_____________________________________________|
+
+Legend:
+
+90C65       ARCNET Probe
+S1  1-5:    Base Memory Address Select
+    6-8:    Base I/O Address Select
+S2  1-8:    Node ID Select (ID0-ID7)
+JP1     ROM Enable Select
+JP2     IRQ2
+JP3     IRQ3
+JP4     IRQ4
+JP5     IRQ5
+JP6     IRQ7
+JP7/JP8     ET1, ET2 Timeout Parameters
+JP10/JP11   Coax / Twisted Pair Select  (CN120ST/SBT only)
+JP12        Terminator Select       (CN120AB/ST/SBT only)
+J1      BNC RG62/U Connector        (all except CN120TP)
+J2      Two 6-position Telephone Jack   (CN120TP/ST/SBT only)
+
+Setting one of the switches to Off means "1", On means "0".
+
+
+Setting the Node ID
+-------------------
+
+The eight switches in SW2 are used to set the node ID. Each node attached
+to the network must have an unique node ID which must be different from 0.
+Switch 1 (ID0) serves as the least significant bit (LSB).
+
+The node ID is the sum of the values of all switches set to "1"  
+These values are:
+
+   Switch | Label | Value
+   -------|-------|-------
+     1    | ID0   |   1
+     2    | ID1   |   2
+     3    | ID2   |   4
+     4    | ID3   |   8
+     5    | ID4   |  16
+     6    | ID5   |  32
+     7    | ID6   |  64
+     8    | ID7   | 128
+
+Some Examples:
+
+    Switch         | Hex     | Decimal 
+   8 7 6 5 4 3 2 1 | Node ID | Node ID
+   ----------------|---------|---------
+   0 0 0 0 0 0 0 0 |    not allowed
+   0 0 0 0 0 0 0 1 |    1    |    1 
+   0 0 0 0 0 0 1 0 |    2    |    2
+   0 0 0 0 0 0 1 1 |    3    |    3
+       . . .       |         |
+   0 1 0 1 0 1 0 1 |   55    |   85
+       . . .       |         |
+   1 0 1 0 1 0 1 0 |   AA    |  170
+       . . .       |         |  
+   1 1 1 1 1 1 0 1 |   FD    |  253
+   1 1 1 1 1 1 1 0 |   FE    |  254
+   1 1 1 1 1 1 1 1 |   FF    |  255
+
+
+Setting the I/O Base Address
+----------------------------
+
+The last three switches in switch block SW1 are used to select one
+of eight possible I/O Base addresses using the following table
+
+
+   Switch      | Hex I/O
+    6   7   8  | Address
+   ------------|--------
+   ON  ON  ON  |  260
+   OFF ON  ON  |  290
+   ON  OFF ON  |  2E0  (Manufacturer's default)
+   OFF OFF ON  |  2F0
+   ON  ON  OFF |  300
+   OFF ON  OFF |  350
+   ON  OFF OFF |  380
+   OFF OFF OFF |  3E0
+
+
+Setting the Base Memory (RAM) buffer Address
+--------------------------------------------
+
+The memory buffer (RAM) requires 2K. The base of this buffer can be 
+located in any of eight positions. The address of the Boot Prom is
+memory base + 8K or memory base + 0x2000.
+Switches 1-5 of switch block SW1 select the Memory Base address.
+
+   Switch              | Hex RAM | Hex ROM
+    1   2   3   4   5  | Address | Address *)
+   --------------------|---------|-----------
+   ON  ON  ON  ON  ON  |  C0000  |  C2000
+   ON  ON  OFF ON  ON  |  C4000  |  C6000
+   ON  ON  ON  OFF ON  |  CC000  |  CE000
+   ON  ON  OFF OFF ON  |  D0000  |  D2000  (Manufacturer's default)
+   ON  ON  ON  ON  OFF |  D4000  |  D6000
+   ON  ON  OFF ON  OFF |  D8000  |  DA000
+   ON  ON  ON  OFF OFF |  DC000  |  DE000
+   ON  ON  OFF OFF OFF |  E0000  |  E2000
+  
+*) To enable the Boot ROM install the jumper JP1
+
+Note: Since the switches 1 and 2 are always set to ON it may be possible
+      that they can be used to add an offset of 2K, 4K or 6K to the base
+      address, but this feature is not documented in the manual and I
+      haven't tested it yet.
+
+
+Setting the Interrupt Line
+--------------------------
+
+To select a hardware interrupt level install one (only one!) of the jumpers
+JP2, JP3, JP4, JP5, JP6. JP2 is the default.
+
+   Jumper | IRQ     
+   -------|-----
+     2    |  2
+     3    |  3
+     4    |  4
+     5    |  5
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |  CD000  |  CE000
+   0 1 0  1 1 |  CD800  |  CE000
+              |         |
+   0 1 1  0 0 |  D0000  |  D2000  (Manufacturer's default)
+   0 1 1  0 1 |  D0800  |  D2000
+   0 1 1  1 0 |  D1000  |  D2000
+   0 1 1  1 1 |  D1800  |  D2000
+              |         |
+   1 0 0  0 0 |  D4000  |  D6000
+   1 0 0  0 1 |  D4800  |  D6000
+   1 0 0  1 0 |  D5000  |  D6000
+   1 0 0  1 1 |  D5800  |  D6000
+              |         |
+   1 0 1  0 0 |  D8000  |  DA000
+   1 0 1  0 1 |  D8800  |  DA000
+   1 0 1  1 0 |  D9000  |  DA000
+   1 0 1  1 1 |  D9800  |  DA000
+              |         |
+   1 1 0  0 0 |  DC000  |  DE000
+   1 1 0  0 1 |  DC800  |  DE000
+   1 1 0  1 0 |  DD000  |  DE000
+   1 1 0  1 1 |  DD800  |  DE000
+              |         |
+   1 1 1  0 0 |  E0000  |  E2000
+   1 1 1  0 1 |  E0800  |  E2000
+   1 1 1  1 0 |  E1000  |  E2000
+   1 1 1  1 1 |  E1800  |  E2000
+  
+
+Setting Interrupt Request Lines (IRQ)
+-------------------------------------
+
+??????????????????????????????????????
+
+
+Setting the Timeouts
+--------------------
+
+??????????????????????????????????????
+
+
+*****************************************************************************
+
+** No Name **
+8-bit cards ("Made in Taiwan R.O.C.")
+-----------
+  - from Vojtech Pavlik <vojtech@suse.cz>
+
+I have named this ARCnet card "NONAME", since I got only the card with
+no manual at all and the only text identifying the manufacturer is 
+"MADE IN TAIWAN R.O.C" printed on the card.
+
+          ____________________________________________________________
+         |                 1 2 3 4 5 6 7 8                            |
+         | |o|o| JP1       o|o|o|o|o|o|o|o| ON                        |
+         |  +              o|o|o|o|o|o|o|o|                        ___|
+         |  _____________  o|o|o|o|o|o|o|o| OFF         _____     |   | ID7
+         | |             | SW1                         |     |    |   | ID6
+         | > RAM (2k)    |        ____________________ |  H  |    | S | ID5
+         | |_____________|       |                    ||  y  |    | W | ID4
+         |                       |                    ||  b  |    | 2 | ID3
+         |                       |                    ||  r  |    |   | ID2
+         |                       |                    ||  i  |    |   | ID1
+         |                       |       90C65        ||  d  |    |___| ID0
+         |      SW3              |                    ||     |        |      
+         | |o|o|o|o|o|o|o|o| ON  |                    ||  I  |        |
+         | |o|o|o|o|o|o|o|o|     |                    ||  C  |        |
+         | |o|o|o|o|o|o|o|o| OFF |____________________||     |   _____|
+         |  1 2 3 4 5 6 7 8                            |     |  |     |___
+         |  ______________                             |     |  | BNC |___|
+         | |              |                            |_____|  |_____|
+         | > EPROM SOCKET |                                           |
+         | |______________|                                           |
+         |                                              ______________|
+         |                                             |
+         |_____________________________________________|
+
+Legend:
+
+90C65       ARCNET Chip 
+SW1 1-5:    Base Memory Address Select
+    6-8:    Base I/O Address Select
+SW2 1-8:    Node ID Select (ID0-ID7)
+SW3 1-5:    IRQ Select   
+    6-7:    Extra Timeout
+    8  :    ROM Enable   
+JP1         Led connector
+BNC         Coax connector
+
+Although the jumpers SW1 and SW3 are marked SW, not JP, they are jumpers, not 
+switches.
+
+Setting the jumpers to ON means connecting the upper two pins, off the bottom 
+two - or - in case of IRQ setting, connecting none of them at all.
+
+Setting the Node ID
+-------------------
+
+The eight switches in SW2 are used to set the node ID. Each node attached
+to the network must have an unique node ID which must not be 0.
+Switch 1 (ID0) serves as the least significant bit (LSB).
+
+Setting one of the switches to Off means "1", On means "0".
+
+The node ID is the sum of the values of all switches set to "1"  
+These values are:
+
+   Switch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            

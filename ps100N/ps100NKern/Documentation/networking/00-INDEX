@@ -1,0 +1,111 @@
+#
+# Video configuration
+#
+
+menu "Graphics support"
+	depends on HAS_IOMEM
+
+source "drivers/char/agp/Kconfig"
+
+source "drivers/gpu/drm/Kconfig"
+
+config VGASTATE
+       tristate
+       default n
+
+config VIDEO_OUTPUT_CONTROL
+	tristate "Lowlevel video output switch controls"
+	help
+	  This framework adds support for low-level control of the video 
+	  output switch.
+
+menuconfig FB
+	tristate "Support for frame buffer devices"
+	---help---
+	  The frame buffer device provides an abstraction for the graphics
+	  hardware. It represents the frame buffer of some video hardware and
+	  allows application software to access the graphics hardware through
+	  a well-defined interface, so the software doesn't need to know
+	  anything about the low-level (hardware register) stuff.
+
+	  Frame buffer devices work identically across the different
+	  architectures supported by Linux and make the implementation of
+	  application programs easier and more portable; at this point, an X
+	  server exists which uses the frame buffer device exclusively.
+	  On several non-X86 architectures, the frame buffer device is the
+	  only way to use the graphics hardware.
+
+	  The device is accessed through special device nodes, usually located
+	  in the /dev directory, i.e. /dev/fb*.
+
+	  You need an utility program called fbset to make full use of frame
+	  buffer devices. Please read <file:Documentation/fb/framebuffer.txt>
+	  and the Framebuffer-HOWTO at
+	  <http://www.munted.org.uk/programming/Framebuffer-HOWTO-1.2.html> for more
+	  information.
+
+	  Say Y here and to the driver for your graphics board below if you
+	  are compiling a kernel for a non-x86 architecture.
+
+	  If you are compiling for the x86 architecture, you can say Y if you
+	  want to play with it, but it is not essential. Please note that
+	  running graphical applications that directly touch the hardware
+	  (e.g. an accelerated X server) and that are not frame buffer
+	  device-aware may cause unexpected results. If unsure, say N.
+
+config FIRMWARE_EDID
+       bool "Enable firmware EDID"
+       depends on FB
+       default n
+       ---help---
+         This enables access to the EDID transferred from the firmware.
+	 On the i386, this is from the Video BIOS. Enable this if DDC/I2C
+	 transfers do not work for your driver and if you are using
+	 nvidiafb, i810fb or savagefb.
+
+	 In general, choosing Y for this option is safe.  If you
+	 experience extremely long delays while booting before you get
+	 something on your display, try setting this to N.  Matrox cards in
+	 combination with certain motherboards and monitors are known to
+	 suffer from this problem.
+
+config FB_DDC
+       tristate
+       depends on FB
+       select I2C_ALGOBIT
+       select I2C
+       default n
+
+config FB_BOOT_VESA_SUPPORT
+	bool
+	depends on FB
+	default n
+	---help---
+	  If true, at least one selected framebuffer driver can take advantage
+	  of VESA video modes set at an early boot stage via the vga= parameter.
+
+config FB_CFB_FILLRECT
+	tristate
+	depends on FB
+	default n
+	---help---
+	  Include the cfb_fillrect function for generic software rectangle
+	  filling. This is used by drivers that don't provide their own
+	  (accelerated) version.
+
+config FB_CFB_COPYAREA
+	tristate
+	depends on FB
+	default n
+	---help---
+	  Include the cfb_copyarea function for generic software area copying.
+	  This is used by drivers that don't provide their own (accelerated)
+	  version.
+
+config FB_CFB_IMAGEBLIT
+	tristate
+	depends on FB
+	default n
+	---help---
+	  Include the cfb_imageblit function for generic software image
+	  blitting. This is used by drivers that don't provi

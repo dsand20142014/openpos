@@ -1,0 +1,206 @@
+itdata = {
+	.pixclock	= 67797,	.bpp		= 16,
+	.xres		= 640,		.yres		= 512,
+
+	.hsync_len	= 64,		.vsync_len	= 6,
+	.left_margin	= 125,		.upper_margin	= 70,
+	.right_margin	= 115,		.lower_margin	= 36,
+
+	.lccr0		= LCCR0_Color | LCCR0_Sngl | LCCR0_Act,
+	.lccr3		= LCCR3_OutEnH | LCCR3_PixRsEdg | LCCR3_ACBsDiv(512),
+};
+#endif
+#endif
+
+#ifdef CONFIG_SA1100_H3600
+static struct sa1100fb_mach_info h3600_info __initdata = {
+	.pixclock	= 174757, 	.bpp		= 16,
+	.xres		= 320,		.yres		= 240,
+
+	.hsync_len	= 3,		.vsync_len	= 3,
+	.left_margin	= 12,		.upper_margin	= 10,
+	.right_margin	= 17,		.lower_margin	= 1,
+
+	.cmap_static	= 1,
+
+	.lccr0		= LCCR0_Color | LCCR0_Sngl | LCCR0_Act,
+	.lccr3		= LCCR3_OutEnH | LCCR3_PixRsEdg | LCCR3_ACBsDiv(2),
+};
+
+static struct sa1100fb_rgb h3600_rgb_16 = {
+	.red	= { .offset = 12, .length = 4, },
+	.green	= { .offset = 7,  .length = 4, },
+	.blue	= { .offset = 1,  .length = 4, },
+	.transp	= { .offset = 0,  .length = 0, },
+};
+#endif
+
+#ifdef CONFIG_SA1100_H3100
+static struct sa1100fb_mach_info h3100_info __initdata = {
+	.pixclock	= 406977, 	.bpp		= 4,
+	.xres		= 320,		.yres		= 240,
+
+	.hsync_len	= 26,		.vsync_len	= 41,
+	.left_margin	= 4,		.upper_margin	= 0,
+	.right_margin	= 4,		.lower_margin	= 0,
+
+	.sync		= FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+	.cmap_greyscale	= 1,
+	.cmap_inverse	= 1,
+
+	.lccr0		= LCCR0_Mono | LCCR0_4PixMono | LCCR0_Sngl | LCCR0_Pas,
+	.lccr3		= LCCR3_OutEnH | LCCR3_PixRsEdg | LCCR3_ACBsDiv(2),
+};
+#endif
+
+#ifdef CONFIG_SA1100_COLLIE
+static struct sa1100fb_mach_info collie_info __initdata = {
+	.pixclock	= 171521,	.bpp		= 16,
+	.xres		= 320,		.yres		= 240,
+
+	.hsync_len	= 5,		.vsync_len	= 1,
+	.left_margin	= 11,		.upper_margin	= 2,
+	.right_margin	= 30,		.lower_margin	= 0,
+
+	.sync		= FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+
+	.lccr0		= LCCR0_Color | LCCR0_Sngl | LCCR0_Act,
+	.lccr3		= LCCR3_OutEnH | LCCR3_PixRsEdg | LCCR3_ACBsDiv(2),
+};
+#endif
+
+#ifdef LART_GREY_LCD
+static struct sa1100fb_mach_info lart_grey_info __initdata = {
+	.pixclock	= 150000,	.bpp		= 4,
+	.xres		= 320,		.yres		= 240,
+
+	.hsync_len	= 1,		.vsync_len	= 1,
+	.left_margin	= 4,		.upper_margin	= 0,
+	.right_margin	= 2,		.lower_margin	= 0,
+
+	.cmap_greyscale	= 1,
+	.sync		= FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+
+	.lccr0		= LCCR0_Mono | LCCR0_Sngl | LCCR0_Pas | LCCR0_4PixMono,
+	.lccr3		= LCCR3_OutEnH | LCCR3_PixRsEdg | LCCR3_ACBsDiv(512),
+};
+#endif
+#ifdef LART_COLOR_LCD
+static struct sa1100fb_mach_info lart_color_info __initdata = {
+	.pixclock	= 150000,	.bpp		= 16,
+	.xres		= 320,		.yres		= 240,
+
+	.hsync_len	= 2,		.vsync_len	= 3,
+	.left_margin	= 69,		.upper_margin	= 14,
+	.right_margin	= 8,		.lower_margin	= 4,
+
+	.lccr0		= LCCR0_Color | LCCR0_Sngl | LCCR0_Act,
+	.lccr3		= LCCR3_OutEnH | LCCR3_PixFlEdg | LCCR3_ACBsDiv(512),
+};
+#endif
+#ifdef LART_VIDEO_OUT
+static struct sa1100fb_mach_info lart_video_info __initdata = {
+	.pixclock	= 39721,	.bpp		= 16,
+	.xres		= 640,		.yres		= 480,
+
+	.hsync_len	= 95,		.vsync_len	= 2,
+	.left_margin	= 40,		.upper_margin	= 32,
+	.right_margin	= 24,		.lower_margin	= 11,
+
+	.sync		= FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+
+	.lccr0		= LCCR0_Color | LCCR0_Sngl | LCCR0_Act,
+	.lccr3		= LCCR3_OutEnL | LCCR3_PixFlEdg | LCCR3_ACBsDiv(512),
+};
+#endif
+
+#ifdef LART_KIT01_LCD
+static struct sa1100fb_mach_info lart_kit01_info __initdata = {
+	.pixclock	= 63291,	.bpp		= 16,
+	.xres		= 640,		.yres		= 480,
+
+	.hsync_len	= 64,		.vsync_len	= 3,
+	.left_margin	= 122,		.upper_margin	= 45,
+	.right_margin	= 10,		.lower_margin	= 10,
+
+	.lccr0		= LCCR0_Color | LCCR0_Sngl | LCCR0_Act,
+	.lccr3		= LCCR3_OutEnH | LCCR3_PixFlEdg
+};
+#endif
+
+#ifdef CONFIG_SA1100_SHANNON
+static struct sa1100fb_mach_info shannon_info __initdata = {
+	.pixclock	= 152500,	.bpp		= 8,
+	.xres		= 640,		.yres		= 480,
+
+	.hsync_len	= 4,		.vsync_len	= 3,
+	.left_margin	= 2,		.upper_margin	= 0,
+	.right_margin	= 1,		.lower_margin	= 0,
+
+	.sync		= FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,
+
+	.lccr0		= LCCR0_Color | LCCR0_Dual | LCCR0_Pas,
+	.lccr3		= LCCR3_ACBsDiv(512),
+};
+#endif
+
+
+
+static struct sa1100fb_mach_info * __init
+sa1100fb_get_machine_info(struct sa1100fb_info *fbi)
+{
+	struct sa1100fb_mach_info *inf = NULL;
+
+	/*
+	 *            R        G       B       T
+	 * default  {11,5}, { 5,6}, { 0,5}, { 0,0}
+	 * h3600    {12,4}, { 7,4}, { 1,4}, { 0,0}
+	 * freebird { 8,4}, { 4,4}, { 0,4}, {12,4}
+	 */
+#ifdef CONFIG_SA1100_ASSABET
+	if (machine_is_assabet()) {
+#ifndef ASSABET_PAL_VIDEO
+		inf = &lq039q2ds54_info;
+#else
+		inf = &pal_info;
+#endif
+	}
+#endif
+#ifdef CONFIG_SA1100_H3100
+	if (machine_is_h3100()) {
+		inf = &h3100_info;
+	}
+#endif
+#ifdef CONFIG_SA1100_H3600
+	if (machine_is_h3600()) {
+		inf = &h3600_info;
+		fbi->rgb[RGB_16] = &h3600_rgb_16;
+	}
+#endif
+#ifdef CONFIG_SA1100_COLLIE
+	if (machine_is_collie()) {
+		inf = &collie_info;
+	}
+#endif
+#ifdef CONFIG_SA1100_LART
+	if (machine_is_lart()) {
+#ifdef LART_GREY_LCD
+		inf = &lart_grey_info;
+#endif
+#ifdef LART_COLOR_LCD
+		inf = &lart_color_info;
+#endif
+#ifdef LART_VIDEO_OUT
+		inf = &lart_video_info;
+#endif
+#ifdef LART_KIT01_LCD
+		inf = &lart_kit01_info;
+#endif
+	}
+#endif
+#ifdef CONFIG_SA1100_SHANNON
+	if (machine_is_shannon()) {
+		inf = &shannon_info;
+	}
+#endif
+	

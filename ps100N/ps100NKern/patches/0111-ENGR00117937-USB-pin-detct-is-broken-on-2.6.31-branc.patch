@@ -1,0 +1,92 @@
+ DSA to an 
+ *  invalid value when the CCB is completed and before 
+ *  restarting the SCRIPTS.
+ *
+ *  Another issue is that we need some section of our 
+ *  recovery procedures to be somehow uninterruptible but 
+ *  the SCRIPTS processor does not provides such a 
+ *  feature. For this reason, we handle recovery preferently 
+ *  from the C code and check against some SCRIPTS critical 
+ *  sections from the C code.
+ *
+ *  Hopefully, the interrupt handling of the driver is now 
+ *  able to resist to weird BUS error conditions, but donnot 
+ *  ask me for any guarantee that it will never fail. :-)
+ *  Use at your own decision and risk.
+ */
+
+irqreturn_t sym_interrupt(struct Scsi_Host *shost)
+{
+	struct sym_data *sym_data = shost_priv(shost);
+	struct sym_hcb *np = sym_data->ncb;
+	struct pci_dev *pdev = sym_data->pdev;
+	u_char	istat, istatc;
+	u_char	dstat;
+	u_short	sist;
+
+	/*
+	 *  interrupt on the fly ?
+	 *  (SCRIPTS may still be running)
+	 *
+	 *  A `dummy read' is needed to ensure that the 
+	 *  clear of the INTF flag reaches the device 
+	 *  and that posted writes are flushed to memory
+	 *  before the scanning of the DONE queue.
+	 *  Note that SCRIPTS also (dummy) read to memory 
+	 *  prior to deliver the INTF interrupt condition.
+	 */
+	istat = INB(np, nc_istat);
+	if (istat & INTF) {
+		OUTB(np, nc_istat, (istat & SIGP) | INTF | np->istat_sem);
+		istat |= INB(np, nc_istat);		/* DUMMY READ */
+		if (DEBUG_FLAGS & DEBUG_TINY) printf ("F ");
+		sym_wakeup_done(np);
+	}
+
+	if (!(istat & (SIP|DIP)))
+		return (istat & INTF) ? IRQ_HANDLED : IRQ_NONE;
+
+#if 0	/* We should never get this one */
+	if (istat & CABRT)
+		OUTB(np, nc_istat, CABRT);
+#endif
+
+	/*
+	 *  PAR and MA interrupts may occur at the same time,
+	 *  and we need to know of both in order to handle 
+	 *  this situation properly. We try to unstack SCSI 
+	 *  interrupts for that reason. BTW, I dislike a LOT 
+	 *  such a loop inside the interrupt routine.
+	 *  Even if DMA interrupt stacking is very unlikely to 
+	 *  happen, we also try unstacking these ones, since 
+	 *  this has no performance impact.
+	 */
+	sist	= 0;
+	dstat	= 0;
+	istatc	= istat;
+	do {
+		if (istatc & SIP)
+			sist  |= INW(np, nc_sist);
+		if (istatc & DIP)
+			dstat |= INB(np, nc_dstat);
+		istatc = INB(np, nc_istat);
+		istat |= istatc;
+
+		/* Prevent deadlock waiting on a condition that may
+		 * never clear. */
+		if (unlikely(sist == 0xffff && dstat == 0xff)) {
+			if (pci_channel_offline(pdev))
+				return IRQ_NONE;
+		}
+	} while (istatc & (SIP|DIP));
+
+	if (DEBUG_FLAGS & DEBUG_TINY)
+		printf ("<%d|%x:%x|%x:%x>",
+			(int)INB(np, nc_scr0),
+			dstat,sist,
+			(unsigned)INL(np, nc_dsp),
+			(unsigned)INL(np, nc_dbc));
+	/*
+	 *  On paper, a memory read barrier may be needed here to 
+	 *  prevent out of order LOADs by the CPU from having 
+	 *  prefetched stale data 

@@ -1,0 +1,293 @@
+From 2c918ebc998d9927d351c6cfa3ba3362f03365cd Mon Sep 17 00:00:00 2001
+From: Raj Rajasekaran <b10872@freescale.com>
+Date: Thu, 24 Sep 2009 14:24:25 -0500
+Subject: [PATCH] ENGR00116798:MX51: Add support to handle potential hang on SCC HW failute.
+
+-Added kernel error message to handle hang due to SCC HW failure.
+-Eliminated unwanted sleeps.
+-Kernel error message to handle the case when SCC key fuses are not blown.
+
+Signed-off-by: Raj Rajasekaran <b10872@freescale.com>
+---
+ arch/arm/mach-mx51/devices.c    |  167 ++++++++++++++++++++++++++++++---------
+ include/linux/mxc_scc2_driver.h |    2 +
+ 2 files changed, 132 insertions(+), 37 deletions(-)
+
+diff --git a/arch/arm/mach-mx51/devices.c b/arch/arm/mach-mx51/devices.c
+index 9006401..5689fa7 100644
+--- a/arch/arm/mach-mx51/devices.c
++++ b/arch/arm/mach-mx51/devices.c
+@@ -386,12 +386,13 @@ static struct platform_device mxc_scc_device = {
+ 	.name = "mxc_scc",
+ 	.id = 0,
+ };
+-
+ static void mxc_init_scc(void)
+ {
+ 	platform_device_register(&mxc_scc_device);
+ }
+ #else
++#define SCM_RD_DELAY	1000000 /* in nanoseconds */
++#define SEC_TO_NANOSEC  1000000000 /*Second to nanoseconds */
+ static inline void mxc_init_scc(void)
+ {
+ 	uint32_t reg_value;
+@@ -404,6 +405,11 @@ static inline void mxc_init_scc(void)
+ 	void *scm_ram_base;
+ 	void *scc_base;
+ 	uint8_t iram_partitions = 16;
++	struct timespec stime;
++	struct timespec curtime;
++	long scm_rd_timeout = 0;
++	long cur_ns = 0;
++	long start_ns = 0;
+ 
+ 	if (cpu_is_mx51_rev(CHIP_REV_2_0) < 0)
+ 		iram_partitions = 12;
+@@ -419,59 +425,146 @@ static inline void mxc_init_scc(void)
+ 		return;
+ 	}
+ 
+-	for (partition_no = 0; partition_no < iram_partitions; partition_no++) {
+-		/*De-allocate a Partition*/
+-		reg_value = ((partition_no << SCM_ZCMD_PART_SHIFT) &
+-			     SCM_ZCMD_PART_MASK) | ((0x03 <<
+-						     SCM_ZCMD_CCMD_SHIFT)
+-						    & SCM_ZCMD_CCMD_MASK);
+-		__raw_writel(reg_value, scc_base + SCM_ZCMD_REG);
+-		msleep(1);
+-		while ((__raw_readl(scc_base + SCM_STATUS_REG) &
+-			SCM_STATUS_SRS_READY) != SCM_STATUS_SRS_READY) ;
++	/* Wait for any running SCC operations to finish or fail */
++	getnstimeofday(&stime);
++	do {
++		reg_value = __raw_readl(scc_base + SCM_STATUS_REG);
++		getnstimeofday(&curtime);
++		if (curtime.tv_nsec > stime.tv_nsec)
++			scm_rd_timeout = curtime.tv_nsec - stime.tv_nsec;
++		else{
++			/*Converted second to nanosecond and add to
++			nsec when current nanosec is less than
++			start time nanosec.*/
++			cur_ns = (curtime.tv_sec * SEC_TO_NANOSEC) +
++			curtime.tv_nsec;
++			start_ns = (stime.tv_sec * SEC_TO_NANOSEC) +
++				stime.tv_nsec;
++			scm_rd_timeout = cur_ns - start_ns;
++		}
++	} while (((reg_value & SCM_STATUS_SRS_MASK) != SCM_STATUS_SRS_READY)
++	&& ((reg_value & SCM_STATUS_SRS_MASK) != SCM_STATUS_SRS_FAIL));
+ 
+-		/*In Supervisor mode claims a partition for it's own use
+-		    by writing zero to SMID register.*/
+-		__raw_writel(0, scc_base + (SCM_SMID0_REG + 8 * partition_no));
++	/* Check for failures */
++	if ((reg_value & SCM_STATUS_SRS_MASK) != SCM_STATUS_SRS_READY) {
++		/* Special message for bad secret key fuses */
++		if (reg_value & SCM_STATUS_KST_BAD_KEY)
++			printk(KERN_ERR "INVALID SCC KEY FUSE PATTERN\n");
++		else
++		    printk(KERN_ERR "SECURE RAM FAILURE\n");
+ 
+-		reg_mask |= (3 << (2 * (partition_no)));
++		iounmap(scm_ram_base);
++		iounmap(scc_base);
++		return;
+ 	}
+ 
+-	msleep(1);
+-	reg_value = __raw_readl(scc_base + SCM_PART_OWNERS_REG);
++	scm_rd_timeout = 0;
++	/* Release final two partitions for SCC2 driver */
++	scc_partno = iram_partitions - (SCC_IRAM_SIZE / SZ_8K);
++	for (partition_no = scc_partno; partition_no < iram_partitions;
++	     partition_no++) {
++		reg_value = (((partition_no << SCM_ZCMD_PART_SHIFT) &
++			SCM_ZCMD_PART_MASK) | ((0x03 << SCM_ZCMD_CCMD_SHIFT) &
++			SCM_ZCMD_CCMD_MASK));
++		__raw_writel(reg_value, scc_base + SCM_ZCMD_REG);
++		udelay(1);
++		/* Wait for zeroization to complete */
++		getnstimeofday(&stime);
++	    do {
++			reg_value = __raw_readl(scc_base + SCM_STATUS_REG);
++		    getnstimeofday(&curtime);
++			if (curtime.tv_nsec > stime.tv_nsec)
++				scm_rd_timeout = curtime.tv_nsec -
+ce_remove_file(&bmc->dev->dev,
+			   &bmc->version_attr);
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->add_dev_support_attr);
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->manufacturer_id_attr);
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->product_id_attr);
+
+	if (bmc->id.aux_firmware_revision_set)
+		device_remove_file(&bmc->dev->dev,
+				   &bmc->aux_firmware_rev_attr);
+	if (bmc->guid_set)
+		device_remove_file(&bmc->dev->dev,
+				   &bmc->guid_attr);
+}
+
+static void
+cleanup_bmc_device(struct kref *ref)
+{
+	struct bmc_device *bmc;
+
+	bmc = container_of(ref, struct bmc_device, refcount);
+
+	remove_files(bmc);
+	platform_device_unregister(bmc->dev);
+	kfree(bmc);
+}
+
+static void ipmi_bmc_unregister(ipmi_smi_t intf)
+{
+	struct bmc_device *bmc = intf->bmc;
+
+	if (intf->sysfs_name) {
+		sysfs_remove_link(&intf->si_dev->kobj, intf->sysfs_name);
+		kfree(intf->sysfs_name);
+		intf->sysfs_name = NULL;
+	}
+	if (intf->my_dev_name) {
+		sysfs_remove_link(&bmc->dev->dev.kobj, intf->my_dev_name);
+		kfree(intf->my_dev_name);
+		intf->my_dev_name = NULL;
+	}
+
+	mutex_lock(&ipmidriver_mutex);
+	kref_put(&bmc->refcount, cleanup_bmc_device);
+	intf->bmc = NULL;
+	mutex_unlock(&ipmidriver_mutex);
+}
+
+static int create_files(struct bmc_device *bmc)
+{
+	int err;
+
+	bmc->device_id_attr.attr.name = "device_id";
+	bmc->device_id_attr.attr.mode = S_IRUGO;
+	bmc->device_id_attr.show = device_id_show;
+
+	bmc->provides_dev_sdrs_attr.attr.name = "provides_device_sdrs";
+	bmc->provides_dev_sdrs_attr.attr.mode = S_IRUGO;
+	bmc->provides_dev_sdrs_attr.show = provides_dev_sdrs_show;
+
+	bmc->revision_attr.attr.name = "revision";
+	bmc->revision_attr.attr.mode = S_IRUGO;
+	bmc->revision_attr.show = revision_show;
+
+	bmc->firmware_rev_attr.attr.name = "firmware_revision";
+	bmc->firmware_rev_attr.attr.mode = S_IRUGO;
+	bmc->firmware_rev_attr.show = firmware_rev_show;
+
+	bmc->version_attr.attr.name = "ipmi_version";
+	bmc->version_attr.attr.mode = S_IRUGO;
+	bmc->version_attr.show = ipmi_version_show;
+
+	bmc->add_dev_support_attr.attr.name = "additional_device_support";
+	bmc->add_dev_support_attr.attr.mode = S_IRUGO;
+	bmc->add_dev_support_attr.show = add_dev_support_show;
+
+	bmc->manufacturer_id_attr.attr.name = "manufacturer_id";
+	bmc->manufacturer_id_attr.attr.mode = S_IRUGO;
+	bmc->manufacturer_id_attr.show = manufacturer_id_show;
+
+	bmc->product_id_attr.attr.name = "product_id";
+	bmc->product_id_attr.attr.mode = S_IRUGO;
+	bmc->product_id_attr.show = product_id_show;
+
+	bmc->guid_attr.attr.name = "guid";
+	bmc->guid_attr.attr.mode = S_IRUGO;
+	bmc->guid_attr.show = guid_show;
+
+	bmc->aux_firmware_rev_attr.attr.name = "aux_firmware_revision";
+	bmc->aux_firmware_rev_attr.attr.mode = S_IRUGO;
+	bmc->aux_firmware_rev_attr.show = aux_firmware_rev_show;
+
+	err = device_create_file(&bmc->dev->dev,
+			   &bmc->device_id_attr);
+	if (err)
+		goto out;
+	err = device_create_file(&bmc->dev->dev,
+			   &bmc->provides_dev_sdrs_attr);
+	if (err)
+		goto out_devid;
+	err = device_create_file(&bmc->dev->dev,
+			   &bmc->revision_attr);
+	if (err)
+		goto out_sdrs;
+	err = device_create_file(&bmc->dev->dev,
+			   &bmc->firmware_rev_attr);
+	if (err)
+		goto out_rev;
+	err = device_create_file(&bmc->dev->dev,
+			   &bmc->version_attr);
+	if (err)
+		goto out_firm;
+	err = device_create_file(&bmc->dev->dev,
+			   &bmc->add_dev_support_attr);
+	if (err)
+		goto out_version;
+	err = device_create_file(&bmc->dev->dev,
+			   &bmc->manufacturer_id_attr);
+	if (err)
+		goto out_add_dev;
+	err = device_create_file(&bmc->dev->dev,
+			   &bmc->product_id_attr);
+	if (err)
+		goto out_manu;
+	if (bmc->id.aux_firmware_revision_set) {
+		err = device_create_file(&bmc->dev->dev,
+				   &bmc->aux_firmware_rev_attr);
+		if (err)
+			goto out_prod_id;
+	}
+	if (bmc->guid_set) {
+		err = device_create_file(&bmc->dev->dev,
+				   &bmc->guid_attr);
+		if (err)
+			goto out_aux_firm;
+	}
+
+	return 0;
+
+out_aux_firm:
+	if (bmc->id.aux_firmware_revision_set)
+		device_remove_file(&bmc->dev->dev,
+				   &bmc->aux_firmware_rev_attr);
+out_prod_id:
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->product_id_attr);
+out_manu:
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->manufacturer_id_attr);
+out_add_dev:
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->add_dev_support_attr);
+out_version:
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->version_attr);
+out_firm:
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->firmware_rev_attr);
+out_rev:
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->revision_attr);
+out_sdrs:
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->provides_dev_sdrs_attr);
+out_devid:
+	device_remove_file(&bmc->dev->dev,
+			   &bmc->device_id_attr);
+out:
+	return err;
+}
+
+static int ipmi_bmc_register(ipmi_smi_t intf, int ifnum,
+			     const char *sysfs_name)
+{
+	int    

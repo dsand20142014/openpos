@@ -1,0 +1,88 @@
+diff --git a/arch/arm/mach-mx25/mx25_3stack_gpio.c b/arch/arm/mach-mx25/mx25_3stack_gpio.c
+old mode 100644
+new mode 100755
+index 5f7dd4f..6348726
+--- a/arch/arm/mach-mx25/mx25_3stack_gpio.c
++++ b/arch/arm/mach-mx25/mx25_3stack_gpio.c
+@@ -1066,11 +1066,16 @@ void gpio_usbh2_inactive(void)
+  *  USBPHY1_{VBUS,DP,DM,UID,RREF} pins are not muxed.
+  *  We just need to grab the USBOTG_PWR and USBOTG_OC pins.
+  */
++static int gpio_usbotg_init = 0;
+ int gpio_usbotg_utmi_active(void)
+ {
+-	if (mxc_request_iomux(MX25_PIN_GPIO_A, MUX_CONFIG_ALT2)  || /* PWR */
+-	    mxc_request_iomux(MX25_PIN_GPIO_B, MUX_CONFIG_ALT2)) {  /* OC */
+-		return -EINVAL;
++	if (gpio_usbotg_init == 0) {
++		printk("%s\n", __func__);
++		if (mxc_request_iomux(MX25_PIN_GPIO_A, MUX_CONFIG_ALT2)  || /* PWR */
++			mxc_request_iomux(MX25_PIN_GPIO_B, MUX_CONFIG_ALT2)) {  /* OC */
++			return -EINVAL;
++		}
++		gpio_usbotg_init = 1;
+ 	}
+ 	return 0;
+ }
+@@ -1078,11 +1083,15 @@ EXPORT_SYMBOL(gpio_usbotg_utmi_active);
+ 
+ void gpio_usbotg_utmi_inactive(void)
+ {
+-	gpio_request(IOMUX_TO_GPIO(MX25_PIN_GPIO_A), NULL);
+-	gpio_request(IOMUX_TO_GPIO(MX25_PIN_GPIO_B), NULL);
++	if (gpio_usbotg_init == 1) {
++		gpio_request(IOMUX_TO_GPIO(MX25_PIN_GPIO_A), NULL);
++		gpio_request(IOMUX_TO_GPIO(MX25_PIN_GPIO_B), NULL);
++
++		mxc_free_iomux(MX25_PIN_GPIO_A, MUX_CONFIG_GPIO);
++		mxc_free_iomux(MX25_PIN_GPIO_B, MUX_CONFIG_GPIO);
+ 
+-	mxc_free_iomux(MX25_PIN_GPIO_A, MUX_CONFIG_GPIO);
+-	mxc_free_iomux(MX25_PIN_GPIO_B, MUX_CONFIG_GPIO);
++		gpio_usbotg_init = 0;
++	}
+ }
+ EXPORT_SYMBOL(gpio_usbotg_utmi_inactive);
+ 
+diff --git a/arch/arm/plat-mxc/usb_common.c b/arch/arm/plat-mxc/usb_common.c
+old mode 100644
+new mode 100755
+index 18ea2a6..9ca7b5a
+--- a/arch/arm/plat-mxc/usb_common.c
++++ b/arch/arm/plat-mxc/usb_common.c
+@@ -776,11 +776,11 @@ int usbotg_init(struct platform_device *pdev)
+ 	if (!otg_used) {
+ 		if (fsl_check_usbclk() != 0)
+ 			return -EINVAL;
+-
++#ifndef CONFIG_USB_OTG
+ 		pr_debug("%s: grab pins\n", __func__);
+ 		if (pdata->gpio_usb_active())
+ 			return -EINVAL;
+-
++#endif
+ 		if (clk_enable(usb_clk)) {
+ 			printk(KERN_ERR "clk_enable(usb_clk) failed\n");
+ 			return -EINVAL;
+diff --git a/drivers/usb/otg/fsl_otg.c b/drivers/usb/otg/fsl_otg.c
+old mode 100644
+new mode 100755
+index c4849f8..da7a992
+--- a/drivers/usb/otg/fsl_otg.c
++++ b/drivers/usb/otg/fsl_otg.c
+@@ -621,6 +621,7 @@ static int fsl_otg_set_power(struct otg_transceiver *otg_p, unsigned mA)
+  * roles, the pin-detect interrupts are delayed, and handled
+  * by this routine.
+  */
++extern int gpio_usbotg_utmi_active(void);
+ static void fsl_otg_event(struct work_struct *work)
+ {
+ 	struct fsl_otg *og = container_of(work, struct fsl_otg, otg_event.work);
+@@ -631,6 +632,7 @@ static void fsl_otg_event(struct work_struct *work)
+ 		otg_drv_vbus(fsm, 0);
+ 		fsl_otg_start_gadget(fsm, 1);
+ 	}
++	gpio_usbotg_utmi_active();
+ }
+ 
+ /* B-device start SRP */

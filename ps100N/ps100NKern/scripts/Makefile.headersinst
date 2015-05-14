@@ -1,0 +1,145 @@
+----*/,{
+	/*
+	 *  DISCONNECTing  ...
+	 *
+	 *  disable the "unexpected disconnect" feature,
+	 *  and remove the ACK signal.
+	 */
+	SCR_REG_REG (scntl2, SCR_AND, 0x7f),
+		0,
+	SCR_CLR (SCR_ACK|SCR_ATN),
+		0,
+	/*
+	 *  Wait for the disconnect.
+	 */
+	SCR_WAIT_DISC,
+		0,
+	/*
+	 *  Status is: DISCONNECTED.
+	 */
+	SCR_LOAD_REG (HS_REG, HS_DISCONNECT),
+		0,
+	/*
+	 *  Save host status.
+	 */
+	SCR_STORE_REL (scr0, 4),
+		offsetof (struct sym_ccb, phys.head.status),
+	SCR_JUMP,
+		PADDR_A (start),
+}/*-------------------------< IDLE >-----------------------------*/,{
+	/*
+	 *  Nothing to do?
+	 *  Switch the LED off and wait for reselect.
+	 *  Will be patched with a NO_OP if LED
+	 *  not needed or not desired.
+	 */
+	SCR_REG_REG (gpreg, SCR_OR, 0x01),
+		0,
+#ifdef SYM_CONF_IARB_SUPPORT
+	SCR_JUMPR,
+		8,
+#endif
+}/*-------------------------< UNGETJOB >-------------------------*/,{
+#ifdef SYM_CONF_IARB_SUPPORT
+	/*
+	 *  Set IMMEDIATE ARBITRATION, for the next time.
+	 *  This will give us better chance to win arbitration 
+	 *  for the job we just wanted to do.
+	 */
+	SCR_REG_REG (scntl1, SCR_OR, IARB),
+		0,
+#endif
+	/*
+	 *  We are not able to restart the SCRIPTS if we are 
+	 *  interrupted and these instruction haven't been 
+	 *  all executed. BTW, this is very unlikely to 
+	 *  happen, but we check that from the C code.
+	 */
+	SCR_LOAD_REG (dsa, 0xff),
+		0,
+	SCR_STORE_ABS (scratcha, 4),
+		PADDR_B (startpos),
+}/*-------------------------< RESELECT >-------------------------*/,{
+#ifdef SYM_CONF_TARGET_ROLE_SUPPORT
+	/*
+	 *  Make sure we are in initiator mode.
+	 */
+	SCR_CLR (SCR_TRG),
+		0,
+#endif
+	/*
+	 *  Sleep waiting for a reselection.
+	 */
+	SCR_WAIT_RESEL,
+		PADDR_A(start),
+}/*-------------------------< RESELECTED >-----------------------*/,{
+	/*
+	 *  Switch the LED on.
+	 *  Will be patched with a NO_OP if LED
+	 *  not needed or not desired.
+	 */
+	SCR_REG_REG (gpreg, SCR_AND, 0xfe),
+		0,
+	/*
+	 *  load the target id into the sdid
+	 */
+	SCR_REG_SFBR (ssid, SCR_AND, 0x8F),
+		0,
+	SCR_TO_REG (sdid),
+		0,
+	/*
+	 *  Load the target control block address
+	 */
+	SCR_LOAD_ABS (dsa, 4),
+		PADDR_B (targtbl),
+	SCR_SFBR_REG (dsa, SCR_SHL, 0),
+		0,
+	SCR_REG_REG (dsa, SCR_SHL, 0),
+		0,
+	SCR_REG_REG (dsa, SCR_AND, 0x3c),
+		0,
+	SCR_LOAD_REL (dsa, 4),
+		0,
+	/*
+	 *  We expect MESSAGE IN phase.
+	 *  If not, get help from the C code.
+	 */
+	SCR_INT ^ IFFALSE (WHEN (SCR_MSG_IN)),
+		SIR_RESEL_NO_MSG_IN,
+	/*
+	 *  Load the legacy synchronous transfer registers.
+	 */
+	SCR_LOAD_REL (scntl3, 1),
+		offsetof(struct sym_tcb, head.wval),
+	SCR_LOAD_REL (sxfer, 1),
+		offsetof(struct sym_tcb, head.sval),
+}/*-------------------------< RESEL_SCNTL4 >---------------------*/,{
+	/*
+	 *  The C1010 uses a new synchronous timing scheme.
+	 *  Will be patched with a NO_OP if not a C1010.
+	 */
+	SCR_LOAD_REL (scntl4, 1),
+		offsetof(struct sym_tcb, head.uval),
+	/*
+	 *  Get the IDENTIFY message.
+	 */
+	SCR_MOVE_ABS (1) ^ SCR_MSG_IN,
+		HADDR_1 (msgin),
+	/*
+	 *  If IDENTIFY LUN #0, use a faster path 
+	 *  to find the LCB structure.
+	 */
+	SCR_JUMP ^ IFTRUE (MASK (0x80, 0xbf)),
+		PADDR_A (resel_lun0),
+	/*
+	 *  If message isn't an IDENTIFY, 
+	 *  tell the C code about.
+	 */
+	SCR_INT ^ IFFALSE (MASK (0x80, 0x80)),
+		SIR_RESEL_NO_IDENTIFY,
+	/*
+	 *  It is an IDENTIFY message,
+	 *  Load the LUN control block address.
+	 */
+	SCR_LOAD_REL (dsa, 4),
+		offsetof(struct sym_tc

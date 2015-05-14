@@ -1,0 +1,1799 @@
+r)
+		return -EINVAL;
+
+	if (meye.grab_buffer[0].state != MEYE_BUF_UNUSED)
+		return -EBUSY;
+
+	mutex_lock(&meye.lock);
+	meye.grab_buffer[0].state = MEYE_BUF_USING;
+	mchip_take_picture();
+
+	mchip_get_picture(meye.grab_fbuffer,
+			mchip_hsize() * mchip_vsize() * 2);
+
+	meye.grab_buffer[0].state = MEYE_BUF_DONE;
+	mutex_unlock(&meye.lock);
+
+	return 0;
+}
+
+static int meyeioc_stilljcapt(int *len)
+{
+	if (!meye.grab_fbuffer)
+		return -EINVAL;
+
+	if (meye.grab_buffer[0].state != MEYE_BUF_UNUSED)
+		return -EBUSY;
+
+	mutex_lock(&meye.lock);
+	meye.grab_buffer[0].state = MEYE_BUF_USING;
+	*len = -1;
+
+	while (*len == -1) {
+		mchip_take_picture();
+		*len = mchip_compress_frame(meye.grab_fbuffer, gbufsize);
+	}
+
+	meye.grab_buffer[0].state = MEYE_BUF_DONE;
+	mutex_unlock(&meye.lock);
+	return 0;
+}
+
+static int vidioc_querycap(struct file *file, void *fh,
+				struct v4l2_capability *cap)
+{
+	strcpy(cap->driver, "meye");
+	strcpy(cap->card, "meye");
+	sprintf(cap->bus_info, "PCI:%s", pci_name(meye.mchip_dev));
+
+	cap->version = (MEYE_DRIVER_MAJORVERSION << 8) +
+		       MEYE_DRIVER_MINORVERSION;
+
+	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE |
+			    V4L2_CAP_STREAMING;
+
+	return 0;
+}
+
+static int vidioc_enum_input(struct file *file, void *fh, struct v4l2_input *i)
+{
+	if (i->index != 0)
+		return -EINVAL;
+
+	strcpy(i->name, "Camera");
+	i->type = V4L2_INPUT_TYPE_CAMERA;
+
+	return 0;
+}
+
+static int vidioc_g_input(struct file *file, void *fh, unsigned int *i)
+{
+	*i = 0;
+	return 0;
+}
+
+static int vidioc_s_input(struct file *file, void *fh, unsigned int i)
+{
+	if (i != 0)
+		return -EINVAL;
+
+	return 0;
+}
+
+static int vidioc_queryctrl(struct file *file, void *fh,
+				struct v4l2_queryctrl *c)
+{
+	switch (c->id) {
+
+	case V4L2_CID_BRIGHTNESS:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "Brightness");
+		c->minimum = 0;
+		c->maximum = 63;
+		c->step = 1;
+		c->default_value = 32;
+		c->flags = 0;
+		break;
+	case V4L2_CID_HUE:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "Hue");
+		c->minimum = 0;
+		c->maximum = 63;
+		c->step = 1;
+		c->default_value = 32;
+		c->flags = 0;
+		break;
+	case V4L2_CID_CONTRAST:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "Contrast");
+		c->minimum = 0;
+		c->maximum = 63;
+		c->step = 1;
+		c->default_value = 32;
+		c->flags = 0;
+		break;
+	case V4L2_CID_SATURATION:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "Saturation");
+		c->minimum = 0;
+		c->maximum = 63;
+		c->step = 1;
+		c->default_value = 32;
+		c->flags = 0;
+		break;
+	case V4L2_CID_AGC:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "Agc");
+		c->minimum = 0;
+		c->maximum = 63;
+		c->step = 1;
+		c->default_value = 48;
+		c->flags = 0;
+		break;
+	case V4L2_CID_MEYE_SHARPNESS:
+	case V4L2_CID_SHARPNESS:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "Sharpness");
+		c->minimum = 0;
+		c->maximum = 63;
+		c->step = 1;
+		c->default_value = 32;
+
+		/* Continue to report legacy private SHARPNESS ctrl but
+		 * say it is disabled in preference to ctrl in the spec
+		 */
+		c->flags = (c->id == V4L2_CID_SHARPNESS) ? 0 :
+						V4L2_CTRL_FLAG_DISABLED;
+		break;
+	case V4L2_CID_PICTURE:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "Picture");
+		c->minimum = 0;
+		c->maximum = 63;
+		c->step = 1;
+		c->default_value = 0;
+		c->flags = 0;
+		break;
+	case V4L2_CID_JPEGQUAL:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "JPEG quality");
+		c->minimum = 0;
+		c->maximum = 10;
+		c->step = 1;
+		c->default_value = 8;
+		c->flags = 0;
+		break;
+	case V4L2_CID_FRAMERATE:
+		c->type = V4L2_CTRL_TYPE_INTEGER;
+		strcpy(c->name, "Framerate");
+		c->minimum = 0;
+		c->maximum = 31;
+		c->step = 1;
+		c->default_value = 0;
+		c->flags = 0;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int vidioc_s_ctrl(struct file *file, void *fh, struct v4l2_control *c)
+{
+	mutex_lock(&meye.lock);
+	switch (c->id) {
+	case V4L2_CID_BRIGHTNESS:
+		sony_pic_camera_command(
+			SONY_PIC_COMMAND_SETCAMERABRIGHTNESS, c->value);
+		meye.picture.brightness = c->value << 10;
+		break;
+	case V4L2_CID_HUE:
+		sony_pic_camera_command(
+			SONY_PIC_COMMAND_SETCAMERAHUE, c->value);
+		meye.picture.hue = c->value << 10;
+		break;
+	case V4L2_CID_CONTRAST:
+		sony_pic_camera_command(
+			SONY_PIC_COMMAND_SETCAMERACONTRAST, c->value);
+		meye.picture.contrast = c->value << 10;
+		break;
+	case V4L2_CID_SATURATION:
+		sony_pic_camera_command(
+			SONY_PIC_COMMAND_SETCAMERACOLOR, c->value);
+		meye.picture.colour = c->value << 10;
+		break;
+	case V4L2_CID_AGC:
+		sony_pic_camera_command(
+			SONY_PIC_COMMAND_SETCAMERAAGC, c->value);
+		meye.params.agc = c->value;
+		break;
+	case V4L2_CID_SHARPNESS:
+	case V4L2_CID_MEYE_SHARPNESS:
+		sony_pic_camera_command(
+			SONY_PIC_COMMAND_SETCAMERASHARPNESS, c->value);
+		meye.params.sharpness = c->value;
+		break;
+	case V4L2_CID_PICTURE:
+		sony_pic_camera_command(
+			SONY_PIC_COMMAND_SETCAMERAPICTURE, c->value);
+		meye.params.picture = c->value;
+		break;
+	case V4L2_CID_JPEGQUAL:
+		meye.params.quality = c->value;
+		break;
+	case V4L2_CID_FRAMERATE:
+		meye.params.framerate = c->value;
+		break;
+	default:
+		mutex_unlock(&meye.lock);
+		return -EINVAL;
+	}
+	mutex_unlock(&meye.lock);
+
+	return 0;
+}
+
+static int vidioc_g_ctrl(struct file *file, void *fh, struct v4l2_control *c)
+{
+	mutex_lock(&meye.lock);
+	switch (c->id) {
+	case V4L2_CID_BRIGHTNESS:
+		c->value = meye.picture.brightness >> 10;
+		break;
+	case V4L2_CID_HUE:
+		c->value = meye.picture.hue >> 10;
+		break;
+	case V4L2_CID_CONTRAST:
+		c->value = meye.picture.contrast >> 10;
+		break;
+	case V4L2_CID_SATURATION:
+		c->value = meye.picture.colour >> 10;
+		break;
+	case V4L2_CID_AGC:
+		c->value = meye.params.agc;
+		break;
+	case V4L2_CID_SHARPNESS:
+	case V4L2_CID_MEYE_SHARPNESS:
+		c->value = meye.params.sharpness;
+		break;
+	case V4L2_CID_PICTURE:
+		c->value = meye.params.picture;
+		break;
+	case V4L2_CID_JPEGQUAL:
+		c->value = meye.params.quality;
+		break;
+	case V4L2_CID_FRAMERATE:
+		c->value = meye.params.framerate;
+		break;
+	default:
+		mutex_unlock(&meye.lock);
+		return -EINVAL;
+	}
+	mutex_unlock(&meye.lock);
+
+	return 0;
+}
+
+static int vidioc_enum_fmt_vid_cap(struct file *file, void *fh,
+				struct v4l2_fmtdesc *f)
+{
+	if (f->index > 1)
+		return -EINVAL;
+
+	if (f->index == 0) {
+		/* standard YUV 422 capture */
+		f->flags = 0;
+		strcpy(f->description, "YUV422");
+		f->pixelformat = V4L2_PIX_FMT_YUYV;
+	} else {
+		/* compressed MJPEG capture */
+		f->flags = V4L2_FMT_FLAG_COMPRESSED;
+		strcpy(f->description, "MJPEG");
+		f->pixelformat = V4L2_PIX_FMT_MJPEG;
+	}
+
+	return 0;
+}
+
+static int vidioc_try_fmt_vid_cap(struct file *file, void *fh,
+				struct v4l2_format *f)
+{
+	if (f->fmt.pix.pixelformat != V4L2_PIX_FMT_YUYV &&
+	    f->fmt.pix.pixelformat != V4L2_PIX_FMT_MJPEG)
+		return -EINVAL;
+
+	if (f->fmt.pix.field != V4L2_FIELD_ANY &&
+	    f->fmt.pix.field != V4L2_FIELD_NONE)
+		return -EINVAL;
+
+	f->fmt.pix.field = V4L2_FIELD_NONE;
+
+	if (f->fmt.pix.width <= 320) {
+		f->fmt.pix.width = 320;
+		f->fmt.pix.height = 240;
+	} else {
+		f->fmt.pix.width = 640;
+		f->fmt.pix.height = 480;
+	}
+
+	f->fmt.pix.bytesperline = f->fmt.pix.width * 2;
+	f->fmt.pix.sizeimage = f->fmt.pix.height *
+			       f->fmt.pix.bytesperline;
+	f->fmt.pix.colorspace = 0;
+	f->fmt.pix.priv = 0;
+
+	return 0;
+}
+
+static int vidioc_g_fmt_vid_cap(struct file *file, void *fh,
+				    struct v4l2_format *f)
+{
+	switch (meye.mchip_mode) {
+	case MCHIP_HIC_MODE_CONT_OUT:
+	default:
+		f->fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV;
+		break;
+	case MCHIP_HIC_MODE_CONT_COMP:
+		f->fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
+		break;
+	}
+
+	f->fmt.pix.field = V4L2_FIELD_NONE;
+	f->fmt.pix.width = mchip_hsize();
+	f->fmt.pix.height = mchip_vsize();
+	f->fmt.pix.bytesperline = f->fmt.pix.width * 2;
+	f->fmt.pix.sizeimage = f->fmt.pix.height *
+			       f->fmt.pix.bytesperline;
+
+	return 0;
+}
+
+static int vidioc_s_fmt_vid_cap(struct file *file, void *fh,
+				    struct v4l2_format *f)
+{
+	if (f->fmt.pix.pixelformat != V4L2_PIX_FMT_YUYV &&
+	    f->fmt.pix.pixelformat != V4L2_PIX_FMT_MJPEG)
+		return -EINVAL;
+
+	if (f->fmt.pix.field != V4L2_FIELD_ANY &&
+	    f->fmt.pix.field != V4L2_FIELD_NONE)
+		return -EINVAL;
+
+	f->fmt.pix.field = V4L2_FIELD_NONE;
+	mutex_lock(&meye.lock);
+
+	if (f->fmt.pix.width <= 320) {
+		f->fmt.pix.width = 320;
+		f->fmt.pix.height = 240;
+		meye.params.subsample = 1;
+	} else {
+		f->fmt.pix.width = 640;
+		f->fmt.pix.height = 480;
+		meye.params.subsample = 0;
+	}
+
+	switch (f->fmt.pix.pixelformat) {
+	case V4L2_PIX_FMT_YUYV:
+		meye.mchip_mode = MCHIP_HIC_MODE_CONT_OUT;
+		break;
+	case V4L2_PIX_FMT_MJPEG:
+		meye.mchip_mode = MCHIP_HIC_MODE_CONT_COMP;
+		break;
+	}
+
+	mutex_unlock(&meye.lock);
+	f->fmt.pix.bytesperline = f->fmt.pix.width * 2;
+	f->fmt.pix.sizeimage = f->fmt.pix.height *
+			       f->fmt.pix.bytesperline;
+	f->fmt.pix.colorspace = 0;
+	f->fmt.pix.priv = 0;
+
+	return 0;
+}
+
+static int vidioc_reqbufs(struct file *file, void *fh,
+				struct v4l2_requestbuffers *req)
+{
+	int i;
+
+	if (req->memory != V4L2_MEMORY_MMAP)
+		return -EINVAL;
+
+	if (meye.grab_fbuffer && req->count == gbuffers) {
+		/* already allocated, no modifications */
+		return 0;
+	}
+
+	mutex_lock(&meye.lock);
+	if (meye.grab_fbuffer) {
+		for (i = 0; i < gbuffers; i++)
+			if (meye.vma_use_count[i]) {
+				mutex_unlock(&meye.lock);
+				return -EINVAL;
+			}
+		rvfree(meye.grab_fbuffer, gbuffers * gbufsize);
+		meye.grab_fbuffer = NULL;
+	}
+
+	gbuffers = max(2, min((int)req->count, MEYE_MAX_BUFNBRS));
+	req->count = gbuffers;
+	meye.grab_fbuffer = rvmalloc(gbuffers * gbufsize);
+
+	if (!meye.grab_fbuffer) {
+		printk(KERN_ERR "meye: v4l framebuffer allocation"
+				" failed\n");
+		mutex_unlock(&meye.lock);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < gbuffers; i++)
+		meye.vma_use_count[i] = 0;
+
+	mutex_unlock(&meye.lock);
+
+	return 0;
+}
+
+static int vidioc_querybuf(struct file *file, void *fh, struct v4l2_buffer *buf)
+{
+	unsigned int index = buf->index;
+
+	if (index >= gbuffers)
+		return -EINVAL;
+
+	buf->bytesused = meye.grab_buffer[index].size;
+	buf->flags = V4L2_BUF_FLAG_MAPPED;
+
+	if (meye.grab_buffer[index].state == MEYE_BUF_USING)
+		buf->flags |= V4L2_BUF_FLAG_QUEUED;
+
+	if (meye.grab_buffer[index].state == MEYE_BUF_DONE)
+		buf->flags |= V4L2_BUF_FLAG_DONE;
+
+	buf->field = V4L2_FIELD_NONE;
+	buf->timestamp = meye.grab_buffer[index].timestamp;
+	buf->sequence = meye.grab_buffer[index].sequence;
+	buf->memory = V4L2_MEMORY_MMAP;
+	buf->m.offset = index * gbufsize;
+	buf->length = gbufsize;
+
+	return 0;
+}
+
+static int vidioc_qbuf(struct file *file, void *fh, struct v4l2_buffer *buf)
+{
+	if (buf->memory != V4L2_MEMORY_MMAP)
+		return -EINVAL;
+
+	if (buf->index >= gbuffers)
+		return -EINVAL;
+
+	if (meye.grab_buffer[buf->index].state != MEYE_BUF_UNUSED)
+		return -EINVAL;
+
+	mutex_lock(&meye.lock);
+	buf->flags |= V4L2_BUF_FLAG_QUEUED;
+	buf->flags &= ~V4L2_BUF_FLAG_DONE;
+	meye.grab_buffer[buf->index].state = MEYE_BUF_USING;
+	kfifo_put(meye.grabq, (unsigned char *)&buf->index, sizeof(int));
+	mutex_unlock(&meye.lock);
+
+	return 0;
+}
+
+static int vidioc_dqbuf(struct file *file, void *fh, struct v4l2_buffer *buf)
+{
+	int reqnr;
+
+	if (buf->memory != V4L2_MEMORY_MMAP)
+		return -EINVAL;
+
+	mutex_lock(&meye.lock);
+
+	if (kfifo_len(meye.doneq) == 0 && file->f_flags & O_NONBLOCK) {
+		mutex_unlock(&meye.lock);
+		return -EAGAIN;
+	}
+
+	if (wait_event_interruptible(meye.proc_list,
+				     kfifo_len(meye.doneq) != 0) < 0) {
+		mutex_unlock(&meye.lock);
+		return -EINTR;
+	}
+
+	if (!kfifo_get(meye.doneq, (unsigned char *)&reqnr,
+		       sizeof(int))) {
+		mutex_unlock(&meye.lock);
+		return -EBUSY;
+	}
+
+	if (meye.grab_buffer[reqnr].state != MEYE_BUF_DONE) {
+		mutex_unlock(&meye.lock);
+		return -EINVAL;
+	}
+
+	buf->index = reqnr;
+	buf->bytesused = meye.grab_buffer[reqnr].size;
+	buf->flags = V4L2_BUF_FLAG_MAPPED;
+	buf->field = V4L2_FIELD_NONE;
+	buf->timestamp = meye.grab_buffer[reqnr].timestamp;
+	buf->sequence = meye.grab_buffer[reqnr].sequence;
+	buf->memory = V4L2_MEMORY_MMAP;
+	buf->m.offset = reqnr * gbufsize;
+	buf->length = gbufsize;
+	meye.grab_buffer[reqnr].state = MEYE_BUF_UNUSED;
+	mutex_unlock(&meye.lock);
+
+	return 0;
+}
+
+static int vidioc_streamon(struct file *file, void *fh, enum v4l2_buf_type i)
+{
+	mutex_lock(&meye.lock);
+
+	switch (meye.mchip_mode) {
+	case MCHIP_HIC_MODE_CONT_OUT:
+		mchip_continuous_start();
+		break;
+	case MCHIP_HIC_MODE_CONT_COMP:
+		mchip_cont_compression_start();
+		break;
+	default:
+		mutex_unlock(&meye.lock);
+		return -EINVAL;
+	}
+
+	mutex_unlock(&meye.lock);
+
+	return 0;
+}
+
+static int vidioc_streamoff(struct file *file, void *fh, enum v4l2_buf_type i)
+{
+	mutex_lock(&meye.lock);
+	mchip_hic_stop();
+	kfifo_reset(meye.grabq);
+	kfifo_reset(meye.doneq);
+
+	for (i = 0; i < MEYE_MAX_BUFNBRS; i++)
+		meye.grab_buffer[i].state = MEYE_BUF_UNUSED;
+
+	mutex_unlock(&meye.lock);
+	return 0;
+}
+
+static long vidioc_default(struct file *file, void *fh, int cmd, void *arg)
+{
+	switch (cmd) {
+	case MEYEIOC_G_PARAMS:
+		return meyeioc_g_params((struct meye_params *) arg);
+
+	case MEYEIOC_S_PARAMS:
+		return meyeioc_s_params((struct meye_params *) arg);
+
+	case MEYEIOC_QBUF_CAPT:
+		return meyeioc_qbuf_capt((int *) arg);
+
+	case MEYEIOC_SYNC:
+		return meyeioc_sync(file, fh, (int *) arg);
+
+	case MEYEIOC_STILLCAPT:
+		return meyeioc_stillcapt();
+
+	case MEYEIOC_STILLJCAPT:
+		return meyeioc_stilljcapt((int *) arg);
+
+	default:
+		return -EINVAL;
+	}
+
+}
+
+static unsigned int meye_poll(struct file *file, poll_table *wait)
+{
+	unsigned int res = 0;
+
+	mutex_lock(&meye.lock);
+	poll_wait(file, &meye.proc_list, wait);
+	if (kfifo_len(meye.doneq))
+		res = POLLIN | POLLRDNORM;
+	mutex_unlock(&meye.lock);
+	return res;
+}
+
+static void meye_vm_open(struct vm_area_struct *vma)
+{
+	long idx = (long)vma->vm_private_data;
+	meye.vma_use_count[idx]++;
+}
+
+static void meye_vm_close(struct vm_area_struct *vma)
+{
+	long idx = (long)vma->vm_private_data;
+	meye.vma_use_count[idx]--;
+}
+
+static struct vm_operations_struct meye_vm_ops = {
+	.open		= meye_vm_open,
+	.close		= meye_vm_close,
+};
+
+static int meye_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	unsigned long start = vma->vm_start;
+	unsigned long size = vma->vm_end - vma->vm_start;
+	unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
+	unsigned long page, pos;
+
+	mutex_lock(&meye.lock);
+	if (size > gbuffers * gbufsize) {
+		mutex_unlock(&meye.lock);
+		return -EINVAL;
+	}
+	if (!meye.grab_fbuffer) {
+		int i;
+
+		/* lazy allocation */
+		meye.grab_fbuffer = rvmalloc(gbuffers*gbufsize);
+		if (!meye.grab_fbuffer) {
+			printk(KERN_ERR "meye: v4l framebuffer allocation failed\n");
+			mutex_unlock(&meye.lock);
+			return -ENOMEM;
+		}
+		for (i = 0; i < gbuffers; i++)
+			meye.vma_use_count[i] = 0;
+	}
+	pos = (unsigned long)meye.grab_fbuffer + offset;
+
+	while (size > 0) {
+		page = vmalloc_to_pfn((void *)pos);
+		if (remap_pfn_range(vma, start, page, PAGE_SIZE, PAGE_SHARED)) {
+			mutex_unlock(&meye.lock);
+			return -EAGAIN;
+		}
+		start += PAGE_SIZE;
+		pos += PAGE_SIZE;
+		if (size > PAGE_SIZE)
+			size -= PAGE_SIZE;
+		else
+			size = 0;
+	}
+
+	vma->vm_ops = &meye_vm_ops;
+	vma->vm_flags &= ~VM_IO;	/* not I/O memory */
+	vma->vm_flags |= VM_RESERVED;	/* avoid to swap out this VMA */
+	vma->vm_private_data = (void *) (offset / gbufsize);
+	meye_vm_open(vma);
+
+	mutex_unlock(&meye.lock);
+	return 0;
+}
+
+static const struct v4l2_file_operations meye_fops = {
+	.owner		= THIS_MODULE,
+	.open		= meye_open,
+	.release	= meye_release,
+	.mmap		= meye_mmap,
+	.ioctl		= video_ioctl2,
+	.poll		= meye_poll,
+};
+
+static const struct v4l2_ioctl_ops meye_ioctl_ops = {
+	.vidioc_querycap	= vidioc_querycap,
+	.vidioc_enum_input	= vidioc_enum_input,
+	.vidioc_g_input		= vidioc_g_input,
+	.vidioc_s_input		= vidioc_s_input,
+	.vidioc_queryctrl	= vidioc_queryctrl,
+	.vidioc_s_ctrl		= vidioc_s_ctrl,
+	.vidioc_g_ctrl		= vidioc_g_ctrl,
+	.vidioc_enum_fmt_vid_cap = vidioc_enum_fmt_vid_cap,
+	.vidioc_try_fmt_vid_cap	= vidioc_try_fmt_vid_cap,
+	.vidioc_g_fmt_vid_cap	= vidioc_g_fmt_vid_cap,
+	.vidioc_s_fmt_vid_cap	= vidioc_s_fmt_vid_cap,
+	.vidioc_reqbufs		= vidioc_reqbufs,
+	.vidioc_querybuf	= vidioc_querybuf,
+	.vidioc_qbuf		= vidioc_qbuf,
+	.vidioc_dqbuf		= vidioc_dqbuf,
+	.vidioc_streamon	= vidioc_streamon,
+	.vidioc_streamoff	= vidioc_streamoff,
+	.vidioc_default		= vidioc_default,
+};
+
+static struct video_device meye_template = {
+	.name		= "meye",
+	.fops		= &meye_fops,
+	.ioctl_ops 	= &meye_ioctl_ops,
+	.release	= video_device_release,
+	.minor		= -1,
+};
+
+#ifdef CONFIG_PM
+static int meye_suspend(struct pci_dev *pdev, pm_message_t state)
+{
+	pci_save_state(pdev);
+	meye.pm_mchip_mode = meye.mchip_mode;
+	mchip_hic_stop();
+	mchip_set(MCHIP_MM_INTA, 0x0);
+	return 0;
+}
+
+static int meye_resume(struct pci_dev *pdev)
+{
+	pci_restore_state(pdev);
+	pci_write_config_word(meye.mchip_dev, MCHIP_PCI_SOFTRESET_SET, 1);
+
+	mchip_delay(MCHIP_HIC_CMD, 0);
+	mchip_delay(MCHIP_HIC_STATUS, MCHIP_HIC_STATUS_IDLE);
+	msleep(1);
+	mchip_set(MCHIP_VRJ_SOFT_RESET, 1);
+	msleep(1);
+	mchip_set(MCHIP_MM_PCI_MODE, 5);
+	msleep(1);
+	mchip_set(MCHIP_MM_INTA, MCHIP_MM_INTA_HIC_1_MASK);
+
+	switch (meye.pm_mchip_mode) {
+	case MCHIP_HIC_MODE_CONT_OUT:
+		mchip_continuous_start();
+		break;
+	case MCHIP_HIC_MODE_CONT_COMP:
+		mchip_cont_compression_start();
+		break;
+	}
+	return 0;
+}
+#endif
+
+static int __devinit meye_probe(struct pci_dev *pcidev,
+				const struct pci_device_id *ent)
+{
+	int ret = -EBUSY;
+	unsigned long mchip_adr;
+
+	if (meye.mchip_dev != NULL) {
+		printk(KERN_ERR "meye: only one device allowed!\n");
+		goto outnotdev;
+	}
+
+	ret = -ENOMEM;
+	meye.mchip_dev = pcidev;
+	meye.video_dev = video_device_alloc();
+	if (!meye.video_dev) {
+		printk(KERN_ERR "meye: video_device_alloc() failed!\n");
+		goto outnotdev;
+	}
+
+	meye.grab_temp = vmalloc(MCHIP_NB_PAGES_MJPEG * PAGE_SIZE);
+	if (!meye.grab_temp) {
+		printk(KERN_ERR "meye: grab buffer allocation failed\n");
+		goto outvmalloc;
+	}
+
+	spin_lock_init(&meye.grabq_lock);
+	meye.grabq = kfifo_alloc(sizeof(int) * MEYE_MAX_BUFNBRS, GFP_KERNEL,
+				 &meye.grabq_lock);
+	if (IS_ERR(meye.grabq)) {
+		printk(KERN_ERR "meye: fifo allocation failed\n");
+		goto outkfifoalloc1;
+	}
+	spin_lock_init(&meye.doneq_lock);
+	meye.doneq = kfifo_alloc(sizeof(int) * MEYE_MAX_BUFNBRS, GFP_KERNEL,
+				 &meye.doneq_lock);
+	if (IS_ERR(meye.doneq)) {
+		printk(KERN_ERR "meye: fifo allocation failed\n");
+		goto outkfifoalloc2;
+	}
+
+	memcpy(meye.video_dev, &meye_template, sizeof(meye_template));
+	meye.video_dev->parent = &meye.mchip_dev->dev;
+
+	ret = -EIO;
+	if ((ret = sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERA, 1))) {
+		printk(KERN_ERR "meye: unable to power on the camera\n");
+		printk(KERN_ERR "meye: did you enable the camera in "
+				"sonypi using the module options ?\n");
+		goto outsonypienable;
+	}
+
+	if ((ret = pci_enable_device(meye.mchip_dev))) {
+		printk(KERN_ERR "meye: pci_enable_device failed\n");
+		goto outenabledev;
+	}
+
+	mchip_adr = pci_resource_start(meye.mchip_dev,0);
+	if (!mchip_adr) {
+		printk(KERN_ERR "meye: mchip has no device base address\n");
+		goto outregions;
+	}
+	if (!request_mem_region(pci_resource_start(meye.mchip_dev, 0),
+				pci_resource_len(meye.mchip_dev, 0),
+				"meye")) {
+		printk(KERN_ERR "meye: request_mem_region failed\n");
+		goto outregions;
+	}
+	meye.mchip_mmregs = ioremap(mchip_adr, MCHIP_MM_REGS);
+	if (!meye.mchip_mmregs) {
+		printk(KERN_ERR "meye: ioremap failed\n");
+		goto outremap;
+	}
+
+	meye.mchip_irq = pcidev->irq;
+	if (request_irq(meye.mchip_irq, meye_irq,
+			IRQF_DISABLED | IRQF_SHARED, "meye", meye_irq)) {
+		printk(KERN_ERR "meye: request_irq failed\n");
+		goto outreqirq;
+	}
+
+	pci_write_config_byte(meye.mchip_dev, PCI_CACHE_LINE_SIZE, 8);
+	pci_write_config_byte(meye.mchip_dev, PCI_LATENCY_TIMER, 64);
+
+	pci_set_master(meye.mchip_dev);
+
+	/* Ask the camera to perform a soft reset. */
+	pci_write_config_word(meye.mchip_dev, MCHIP_PCI_SOFTRESET_SET, 1);
+
+	mchip_delay(MCHIP_HIC_CMD, 0);
+	mchip_delay(MCHIP_HIC_STATUS, MCHIP_HIC_STATUS_IDLE);
+
+	msleep(1);
+	mchip_set(MCHIP_VRJ_SOFT_RESET, 1);
+
+	msleep(1);
+	mchip_set(MCHIP_MM_PCI_MODE, 5);
+
+	msleep(1);
+	mchip_set(MCHIP_MM_INTA, MCHIP_MM_INTA_HIC_1_MASK);
+
+	if (video_register_device(meye.video_dev, VFL_TYPE_GRABBER,
+				  video_nr) < 0) {
+		printk(KERN_ERR "meye: video_register_device failed\n");
+		goto outvideoreg;
+	}
+
+	mutex_init(&meye.lock);
+	init_waitqueue_head(&meye.proc_list);
+	meye.picture.depth = 16;
+	meye.picture.palette = VIDEO_PALETTE_YUV422;
+	meye.picture.brightness = 32 << 10;
+	meye.picture.hue = 32 << 10;
+	meye.picture.colour = 32 << 10;
+	meye.picture.contrast = 32 << 10;
+	meye.picture.whiteness = 0;
+	meye.params.subsample = 0;
+	meye.params.quality = 8;
+	meye.params.sharpness = 32;
+	meye.params.agc = 48;
+	meye.params.picture = 0;
+	meye.params.framerate = 0;
+
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERABRIGHTNESS, 32);
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERAHUE, 32);
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERACOLOR, 32);
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERACONTRAST, 32);
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERASHARPNESS, 32);
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERAPICTURE, 0);
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERAAGC, 48);
+
+	printk(KERN_INFO "meye: Motion Eye Camera Driver v%s.\n",
+	       MEYE_DRIVER_VERSION);
+	printk(KERN_INFO "meye: mchip KL5A72002 rev. %d, base %lx, irq %d\n",
+	       meye.mchip_dev->revision, mchip_adr, meye.mchip_irq);
+
+	return 0;
+
+outvideoreg:
+	free_irq(meye.mchip_irq, meye_irq);
+outreqirq:
+	iounmap(meye.mchip_mmregs);
+outremap:
+	release_mem_region(pci_resource_start(meye.mchip_dev, 0),
+			   pci_resource_len(meye.mchip_dev, 0));
+outregions:
+	pci_disable_device(meye.mchip_dev);
+outenabledev:
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERA, 0);
+outsonypienable:
+	kfifo_free(meye.doneq);
+outkfifoalloc2:
+	kfifo_free(meye.grabq);
+outkfifoalloc1:
+	vfree(meye.grab_temp);
+outvmalloc:
+	video_device_release(meye.video_dev);
+outnotdev:
+	return ret;
+}
+
+static void __devexit meye_remove(struct pci_dev *pcidev)
+{
+	video_unregister_device(meye.video_dev);
+
+	mchip_hic_stop();
+
+	mchip_dma_free();
+
+	/* disable interrupts */
+	mchip_set(MCHIP_MM_INTA, 0x0);
+
+	free_irq(meye.mchip_irq, meye_irq);
+
+	iounmap(meye.mchip_mmregs);
+
+	release_mem_region(pci_resource_start(meye.mchip_dev, 0),
+			   pci_resource_len(meye.mchip_dev, 0));
+
+	pci_disable_device(meye.mchip_dev);
+
+	sony_pic_camera_command(SONY_PIC_COMMAND_SETCAMERA, 0);
+
+	kfifo_free(meye.doneq);
+	kfifo_free(meye.grabq);
+
+	vfree(meye.grab_temp);
+
+	if (meye.grab_fbuffer) {
+		rvfree(meye.grab_fbuffer, gbuffers*gbufsize);
+		meye.grab_fbuffer = NULL;
+	}
+
+	printk(KERN_INFO "meye: removed\n");
+}
+
+static struct pci_device_id meye_pci_tbl[] = {
+	{ PCI_VENDOR_ID_KAWASAKI, PCI_DEVICE_ID_MCHIP_KL5A72002,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
+	{ }
+};
+
+MODULE_DEVICE_TABLE(pci, meye_pci_tbl);
+
+static struct pci_driver meye_driver = {
+	.name		= "meye",
+	.id_table	= meye_pci_tbl,
+	.probe		= meye_probe,
+	.remove		= __devexit_p(meye_remove),
+#ifdef CONFIG_PM
+	.suspend	= meye_suspend,
+	.resume		= meye_resume,
+#endif
+};
+
+static int __init meye_init(void)
+{
+	gbuffers = max(2, min((int)gbuffers, MEYE_MAX_BUFNBRS));
+	if (gbufsize < 0 || gbufsize > MEYE_MAX_BUFSIZE)
+		gbufsize = MEYE_MAX_BUFSIZE;
+	gbufsize = PAGE_ALIGN(gbufsize);
+	printk(KERN_INFO "meye: using %d buffers with %dk (%dk total) "
+			 "for capture\n",
+			 gbuffers,
+			 gbufsize / 1024, gbuffers * gbufsize / 1024);
+	return pci_register_driver(&meye_driver);
+}
+
+static void __exit meye_exit(void)
+{
+	pci_unregister_driver(&meye_driver);
+}
+
+module_init(meye_init);
+module_exit(meye_exit);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                /*
+ * SC268xx.c: Serial driver for Philiphs SC2681/SC2692 devices.
+ *
+ * Copyright (C) 2006,2007 Thomas BogendÃ¶rfer (tsbogend@alpha.franken.de)
+ */
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/errno.h>
+#include <linux/tty.h>
+#include <linux/tty_flip.h>
+#include <linux/major.h>
+#include <linux/circ_buf.h>
+#include <linux/serial.h>
+#include <linux/sysrq.h>
+#include <linux/console.h>
+#include <linux/spinlock.h>
+#include <linux/slab.h>
+#include <linux/delay.h>
+#include <linux/init.h>
+#include <linux/platform_device.h>
+#include <linux/irq.h>
+
+#if defined(CONFIG_MAGIC_SYSRQ)
+#define SUPPORT_SYSRQ
+#endif
+
+#include <linux/serial_core.h>
+
+#define SC26XX_MAJOR         204
+#define SC26XX_MINOR_START   205
+#define SC26XX_NR            2
+
+struct uart_sc26xx_port {
+	struct uart_port      port[2];
+	u8     dsr_mask[2];
+	u8     cts_mask[2];
+	u8     dcd_mask[2];
+	u8     ri_mask[2];
+	u8     dtr_mask[2];
+	u8     rts_mask[2];
+	u8     imr;
+};
+
+/* register common to both ports */
+#define RD_ISR      0x14
+#define RD_IPR      0x34
+
+#define WR_ACR      0x10
+#define WR_IMR      0x14
+#define WR_OPCR     0x34
+#define WR_OPR_SET  0x38
+#define WR_OPR_CLR  0x3C
+
+/* access common register */
+#define READ_SC(p, r)        readb((p)->membase + RD_##r)
+#define WRITE_SC(p, r, v)    writeb((v), (p)->membase + WR_##r)
+
+/* register per port */
+#define RD_PORT_MRx 0x00
+#define RD_PORT_SR  0x04
+#define RD_PORT_RHR 0x0c
+
+#define WR_PORT_MRx 0x00
+#define WR_PORT_CSR 0x04
+#define WR_PORT_CR  0x08
+#define WR_PORT_THR 0x0c
+
+/* SR bits */
+#define SR_BREAK    (1 << 7)
+#define SR_FRAME    (1 << 6)
+#define SR_PARITY   (1 << 5)
+#define SR_OVERRUN  (1 << 4)
+#define SR_TXRDY    (1 << 2)
+#define SR_RXRDY    (1 << 0)
+
+#define CR_RES_MR   (1 << 4)
+#define CR_RES_RX   (2 << 4)
+#define CR_RES_TX   (3 << 4)
+#define CR_STRT_BRK (6 << 4)
+#define CR_STOP_BRK (7 << 4)
+#define CR_DIS_TX   (1 << 3)
+#define CR_ENA_TX   (1 << 2)
+#define CR_DIS_RX   (1 << 1)
+#define CR_ENA_RX   (1 << 0)
+
+/* ISR bits */
+#define ISR_RXRDYB  (1 << 5)
+#define ISR_TXRDYB  (1 << 4)
+#define ISR_RXRDYA  (1 << 1)
+#define ISR_TXRDYA  (1 << 0)
+
+/* IMR bits */
+#define IMR_RXRDY   (1 << 1)
+#define IMR_TXRDY   (1 << 0)
+
+/* access port register */
+static inline u8 read_sc_port(struct uart_port *p, u8 reg)
+{
+	return readb(p->membase + p->line * 0x20 + reg);
+}
+
+static inline void write_sc_port(struct uart_port *p, u8 reg, u8 val)
+{
+	writeb(val, p->membase + p->line * 0x20 + reg);
+}
+
+#define READ_SC_PORT(p, r)     read_sc_port(p, RD_PORT_##r)
+#define WRITE_SC_PORT(p, r, v) write_sc_port(p, WR_PORT_##r, v)
+
+static void sc26xx_enable_irq(struct uart_port *port, int mask)
+{
+	struct uart_sc26xx_port *up;
+	int line = port->line;
+
+	port -= line;
+	up = container_of(port, struct uart_sc26xx_port, port[0]);
+
+	up->imr |= mask << (line * 4);
+	WRITE_SC(port, IMR, up->imr);
+}
+
+static void sc26xx_disable_irq(struct uart_port *port, int mask)
+{
+	struct uart_sc26xx_port *up;
+	int line = port->line;
+
+	port -= line;
+	up = container_of(port, struct uart_sc26xx_port, port[0]);
+
+	up->imr &= ~(mask << (line * 4));
+	WRITE_SC(port, IMR, up->imr);
+}
+
+static struct tty_struct *receive_chars(struct uart_port *port)
+{
+	struct tty_struct *tty = NULL;
+	int limit = 10000;
+	unsigned char ch;
+	char flag;
+	u8 status;
+
+	if (port->info != NULL)		/* Unopened serial console */
+		tty = port->info->port.tty;
+
+	while (limit-- > 0) {
+		status = READ_SC_PORT(port, SR);
+		if (!(status & SR_RXRDY))
+			break;
+		ch = READ_SC_PORT(port, RHR);
+
+		flag = TTY_NORMAL;
+		port->icount.rx++;
+
+		if (unlikely(status & (SR_BREAK | SR_FRAME |
+				       SR_PARITY | SR_OVERRUN))) {
+			if (status & SR_BREAK) {
+				status &= ~(SR_PARITY | SR_FRAME);
+				port->icount.brk++;
+				if (uart_handle_break(port))
+					continue;
+			} else if (status & SR_PARITY)
+				port->icount.parity++;
+			else if (status & SR_FRAME)
+				port->icount.frame++;
+			if (status & SR_OVERRUN)
+				port->icount.overrun++;
+
+			status &= port->read_status_mask;
+			if (status & SR_BREAK)
+				flag = TTY_BREAK;
+			else if (status & SR_PARITY)
+				flag = TTY_PARITY;
+			else if (status & SR_FRAME)
+				flag = TTY_FRAME;
+		}
+
+		if (uart_handle_sysrq_char(port, ch))
+			continue;
+
+		if (status & port->ignore_status_mask)
+			continue;
+
+		tty_insert_flip_char(tty, ch, flag);
+	}
+	return tty;
+}
+
+static void transmit_chars(struct uart_port *port)
+{
+	struct circ_buf *xmit;
+
+	if (!port->info)
+		return;
+
+	xmit = &port->info->xmit;
+	if (uart_circ_empty(xmit) || uart_tx_stopped(port)) {
+		sc26xx_disable_irq(port, IMR_TXRDY);
+		return;
+	}
+	while (!uart_circ_empty(xmit)) {
+		if (!(READ_SC_PORT(port, SR) & SR_TXRDY))
+			break;
+
+		WRITE_SC_PORT(port, THR, xmit->buf[xmit->tail]);
+		xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
+		port->icount.tx++;
+	}
+	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+		uart_write_wakeup(port);
+}
+
+static irqreturn_t sc26xx_interrupt(int irq, void *dev_id)
+{
+	struct uart_sc26xx_port *up = dev_id;
+	struct tty_struct *tty;
+	unsigned long flags;
+	u8 isr;
+
+	spin_lock_irqsave(&up->port[0].lock, flags);
+
+	tty = NULL;
+	isr = READ_SC(&up->port[0], ISR);
+	if (isr & ISR_TXRDYA)
+	    transmit_chars(&up->port[0]);
+	if (isr & ISR_RXRDYA)
+	    tty = receive_chars(&up->port[0]);
+
+	spin_unlock(&up->port[0].lock);
+
+	if (tty)
+		tty_flip_buffer_push(tty);
+
+	spin_lock(&up->port[1].lock);
+
+	tty = NULL;
+	if (isr & ISR_TXRDYB)
+	    transmit_chars(&up->port[1]);
+	if (isr & ISR_RXRDYB)
+	    tty = receive_chars(&up->port[1]);
+
+	spin_unlock_irqrestore(&up->port[1].lock, flags);
+
+	if (tty)
+		tty_flip_buffer_push(tty);
+
+	return IRQ_HANDLED;
+}
+
+/* port->lock is not held.  */
+static unsigned int sc26xx_tx_empty(struct uart_port *port)
+{
+	return (READ_SC_PORT(port, SR) & SR_TXRDY) ? TIOCSER_TEMT : 0;
+}
+
+/* port->lock held by caller.  */
+static void sc26xx_set_mctrl(struct uart_port *port, unsigned int mctrl)
+{
+	struct uart_sc26xx_port *up;
+	int line = port->line;
+
+	port -= line;
+	up = container_of(port, struct uart_sc26xx_port, port[0]);
+
+	if (up->dtr_mask[line]) {
+		if (mctrl & TIOCM_DTR)
+			WRITE_SC(port, OPR_SET, up->dtr_mask[line]);
+		else
+			WRITE_SC(port, OPR_CLR, up->dtr_mask[line]);
+	}
+	if (up->rts_mask[line]) {
+		if (mctrl & TIOCM_RTS)
+			WRITE_SC(port, OPR_SET, up->rts_mask[line]);
+		else
+			WRITE_SC(port, OPR_CLR, up->rts_mask[line]);
+	}
+}
+
+/* port->lock is held by caller and interrupts are disabled.  */
+static unsigned int sc26xx_get_mctrl(struct uart_port *port)
+{
+	struct uart_sc26xx_port *up;
+	int line = port->line;
+	unsigned int mctrl = TIOCM_DSR | TIOCM_CTS | TIOCM_CAR;
+	u8 ipr;
+
+	port -= line;
+	up = container_of(port, struct uart_sc26xx_port, port[0]);
+	ipr = READ_SC(port, IPR) ^ 0xff;
+
+	if (up->dsr_mask[line]) {
+		mctrl &= ~TIOCM_DSR;
+		mctrl |= ipr & up->dsr_mask[line] ? TIOCM_DSR : 0;
+	}
+	if (up->cts_mask[line]) {
+		mctrl &= ~TIOCM_CTS;
+		mctrl |= ipr & up->cts_mask[line] ? TIOCM_CTS : 0;
+	}
+	if (up->dcd_mask[line]) {
+		mctrl &= ~TIOCM_CAR;
+		mctrl |= ipr & up->dcd_mask[line] ? TIOCM_CAR : 0;
+	}
+	if (up->ri_mask[line]) {
+		mctrl &= ~TIOCM_RNG;
+		mctrl |= ipr & up->ri_mask[line] ? TIOCM_RNG : 0;
+	}
+	return mctrl;
+}
+
+/* port->lock held by caller.  */
+static void sc26xx_stop_tx(struct uart_port *port)
+{
+	return;
+}
+
+/* port->lock held by caller.  */
+static void sc26xx_start_tx(struct uart_port *port)
+{
+	struct circ_buf *xmit = &port->info->xmit;
+
+	while (!uart_circ_empty(xmit)) {
+		if (!(READ_SC_PORT(port, SR) & SR_TXRDY)) {
+			sc26xx_enable_irq(port, IMR_TXRDY);
+			break;
+		}
+		WRITE_SC_PORT(port, THR, xmit->buf[xmit->tail]);
+		xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
+		port->icount.tx++;
+	}
+}
+
+/* port->lock held by caller.  */
+static void sc26xx_stop_rx(struct uart_port *port)
+{
+}
+
+/* port->lock held by caller.  */
+static void sc26xx_enable_ms(struct uart_port *port)
+{
+}
+
+/* port->lock is not held.  */
+static void sc26xx_break_ctl(struct uart_port *port, int break_state)
+{
+	if (break_state == -1)
+		WRITE_SC_PORT(port, CR, CR_STRT_BRK);
+	else
+		WRITE_SC_PORT(port, CR, CR_STOP_BRK);
+}
+
+/* port->lock is not held.  */
+static int sc26xx_startup(struct uart_port *port)
+{
+	sc26xx_disable_irq(port, IMR_TXRDY | IMR_RXRDY);
+	WRITE_SC(port, OPCR, 0);
+
+	/* reset tx and rx */
+	WRITE_SC_PORT(port, CR, CR_RES_RX);
+	WRITE_SC_PORT(port, CR, CR_RES_TX);
+
+	/* start rx/tx */
+	WRITE_SC_PORT(port, CR, CR_ENA_TX | CR_ENA_RX);
+
+	/* enable irqs */
+	sc26xx_enable_irq(port, IMR_RXRDY);
+	return 0;
+}
+
+/* port->lock is not held.  */
+static void sc26xx_shutdown(struct uart_port *port)
+{
+	/* disable interrupst */
+	sc26xx_disable_irq(port, IMR_TXRDY | IMR_RXRDY);
+
+	/* stop tx/rx */
+	WRITE_SC_PORT(port, CR, CR_DIS_TX | CR_DIS_RX);
+}
+
+/* port->lock is not held.  */
+static void sc26xx_set_termios(struct uart_port *port, struct ktermios *termios,
+			      struct ktermios *old)
+{
+	unsigned int baud = uart_get_baud_rate(port, termios, old, 0, 4000000);
+	unsigned int quot = uart_get_divisor(port, baud);
+	unsigned int iflag, cflag;
+	unsigned long flags;
+	u8 mr1, mr2, csr;
+
+	spin_lock_irqsave(&port->lock, flags);
+
+	while ((READ_SC_PORT(port, SR) & ((1 << 3) | (1 << 2))) != 0xc)
+		udelay(2);
+
+	WRITE_SC_PORT(port, CR, CR_DIS_TX | CR_DIS_RX);
+
+	iflag = termios->c_iflag;
+	cflag = termios->c_cflag;
+
+	port->read_status_mask = SR_OVERRUN;
+	if (iflag & INPCK)
+		port->read_status_mask |= SR_PARITY | SR_FRAME;
+	if (iflag & (BRKINT | PARMRK))
+		port->read_status_mask |= SR_BREAK;
+
+	port->ignore_status_mask = 0;
+	if (iflag & IGNBRK)
+		port->ignore_status_mask |= SR_BREAK;
+	if ((cflag & CREAD) == 0)
+		port->ignore_status_mask |= SR_BREAK | SR_FRAME |
+					    SR_PARITY | SR_OVERRUN;
+
+	switch (cflag & CSIZE) {
+	case CS5:
+		mr1 = 0x00;
+		break;
+	case CS6:
+		mr1 = 0x01;
+		break;
+	case CS7:
+		mr1 = 0x02;
+		break;
+	default:
+	case CS8:
+		mr1 = 0x03;
+		break;
+	}
+	mr2 = 0x07;
+	if (cflag & CSTOPB)
+		mr2 = 0x0f;
+	if (cflag & PARENB) {
+		if (cflag & PARODD)
+			mr1 |= (1 << 2);
+	} else
+		mr1 |= (2 << 3);
+
+	switch (baud) {
+	case 50:
+		csr = 0x00;
+		break;
+	case 110:
+		csr = 0x11;
+		break;
+	case 134:
+		csr = 0x22;
+		break;
+	case 200:
+		csr = 0x33;
+		break;
+	case 300:
+		csr = 0x44;
+		break;
+	case 600:
+		csr = 0x55;
+		break;
+	case 1200:
+		csr = 0x66;
+		break;
+	case 2400:
+		csr = 0x88;
+		break;
+	case 4800:
+		csr = 0x99;
+		break;
+	default:
+	case 9600:
+		csr = 0xbb;
+		break;
+	case 19200:
+		csr = 0xcc;
+		break;
+	}
+
+	WRITE_SC_PORT(port, CR, CR_RES_MR);
+	WRITE_SC_PORT(port, MRx, mr1);
+	WRITE_SC_PORT(port, MRx, mr2);
+
+	WRITE_SC(port, ACR, 0x80);
+	WRITE_SC_PORT(port, CSR, csr);
+
+	/* reset tx and rx */
+	WRITE_SC_PORT(port, CR, CR_RES_RX);
+	WRITE_SC_PORT(port, CR, CR_RES_TX);
+
+	WRITE_SC_PORT(port, CR, CR_ENA_TX | CR_ENA_RX);
+	while ((READ_SC_PORT(port, SR) & ((1 << 3) | (1 << 2))) != 0xc)
+		udelay(2);
+
+	/* XXX */
+	uart_update_timeout(port, cflag,
+			    (port->uartclk / (16 * quot)));
+
+	spin_unlock_irqrestore(&port->lock, flags);
+}
+
+static const char *sc26xx_type(struct uart_port *port)
+{
+	return "SC26XX";
+}
+
+static void sc26xx_release_port(struct uart_port *port)
+{
+}
+
+static int sc26xx_request_port(struct uart_port *port)
+{
+	return 0;
+}
+
+static void sc26xx_config_port(struct uart_port *port, int flags)
+{
+}
+
+static int sc26xx_verify_port(struct uart_port *port, struct serial_struct *ser)
+{
+	return -EINVAL;
+}
+
+static struct uart_ops sc26xx_ops = {
+	.tx_empty	= sc26xx_tx_empty,
+	.set_mctrl	= sc26xx_set_mctrl,
+	.get_mctrl	= sc26xx_get_mctrl,
+	.stop_tx	= sc26xx_stop_tx,
+	.start_tx	= sc26xx_start_tx,
+	.stop_rx	= sc26xx_stop_rx,
+	.enable_ms	= sc26xx_enable_ms,
+	.break_ctl	= sc26xx_break_ctl,
+	.startup	= sc26xx_startup,
+	.shutdown	= sc26xx_shutdown,
+	.set_termios	= sc26xx_set_termios,
+	.type		= sc26xx_type,
+	.release_port	= sc26xx_release_port,
+	.request_port	= sc26xx_request_port,
+	.config_port	= sc26xx_config_port,
+	.verify_port	= sc26xx_verify_port,
+};
+
+static struct uart_port *sc26xx_port;
+
+#ifdef CONFIG_SERIAL_SC26XX_CONSOLE
+static void sc26xx_console_putchar(struct uart_port *port, char c)
+{
+	unsigned long flags;
+	int limit = 1000000;
+
+	spin_lock_irqsave(&port->lock, flags);
+
+	while (limit-- > 0) {
+		if (READ_SC_PORT(port, SR) & SR_TXRDY) {
+			WRITE_SC_PORT(port, THR, c);
+			break;
+		}
+		udelay(2);
+	}
+
+	spin_unlock_irqrestore(&port->lock, flags);
+}
+
+static void sc26xx_console_write(struct console *con, const char *s, unsigned n)
+{
+	struct uart_port *port = sc26xx_port;
+	int i;
+
+	for (i = 0; i < n; i++) {
+		if (*s == '\n')
+			sc26xx_console_putchar(port, '\r');
+		sc26xx_console_putchar(port, *s++);
+	}
+}
+
+static int __init sc26xx_console_setup(struct console *con, char *options)
+{
+	struct uart_port *port = sc26xx_port;
+	int baud = 9600;
+	int bits = 8;
+	int parity = 'n';
+	int flow = 'n';
+
+	if (port->type != PORT_SC26XX)
+		return -1;
+
+	printk(KERN_INFO "Console: ttySC%d (SC26XX)\n", con->index);
+	if (options)
+		uart_parse_options(options, &baud, &parity, &bits, &flow);
+
+	return uart_set_options(port, con, baud, parity, bits, flow);
+}
+
+static struct uart_driver sc26xx_reg;
+static struct console sc26xx_console = {
+	.name	=	"ttySC",
+	.write	=	sc26xx_console_write,
+	.device	=	uart_console_device,
+	.setup  =       sc26xx_console_setup,
+	.flags	=	CON_PRINTBUFFER,
+	.index	=	-1,
+	.data	=	&sc26xx_reg,
+};
+#define SC26XX_CONSOLE   &sc26xx_console
+#else
+#define SC26XX_CONSOLE   NULL
+#endif
+
+static struct uart_driver sc26xx_reg = {
+	.owner			= THIS_MODULE,
+	.driver_name		= "SC26xx",
+	.dev_name		= "ttySC",
+	.major			= SC26XX_MAJOR,
+	.minor			= SC26XX_MINOR_START,
+	.nr			= SC26XX_NR,
+	.cons                   = SC26XX_CONSOLE,
+};
+
+static u8 sc26xx_flags2mask(unsigned int flags, unsigned int bitpos)
+{
+	unsigned int bit = (flags >> bitpos) & 15;
+
+	return bit ? (1 << (bit - 1)) : 0;
+}
+
+static void __devinit sc26xx_init_masks(struct uart_sc26xx_port *up,
+					int line, unsigned int data)
+{
+	up->dtr_mask[line] = sc26xx_flags2mask(data,  0);
+	up->rts_mask[line] = sc26xx_flags2mask(data,  4);
+	up->dsr_mask[line] = sc26xx_flags2mask(data,  8);
+	up->cts_mask[line] = sc26xx_flags2mask(data, 12);
+	up->dcd_mask[line] = sc26xx_flags2mask(data, 16);
+	up->ri_mask[line]  = sc26xx_flags2mask(data, 20);
+}
+
+static int __devinit sc26xx_probe(struct platform_device *dev)
+{
+	struct resource *res;
+	struct uart_sc26xx_port *up;
+	unsigned int *sc26xx_data = dev->dev.platform_data;
+	int err;
+
+	res = platform_get_resource(dev, IORESOURCE_MEM, 0);
+	if (!res)
+		return -ENODEV;
+
+	up = kzalloc(sizeof *up, GFP_KERNEL);
+	if (unlikely(!up))
+		return -ENOMEM;
+
+	up->port[0].line = 0;
+	up->port[0].ops = &sc26xx_ops;
+	up->port[0].type = PORT_SC26XX;
+	up->port[0].uartclk = (29491200 / 16); /* arbitrary */
+
+	up->port[0].mapbase = res->start;
+	up->port[0].membase = ioremap_nocache(up->port[0].mapbase, 0x40);
+	up->port[0].iotype = UPIO_MEM;
+	up->port[0].irq = platform_get_irq(dev, 0);
+
+	up->port[0].dev = &dev->dev;
+
+	sc26xx_init_masks(up, 0, sc26xx_data[0]);
+
+	sc26xx_port = &up->port[0];
+
+	up->port[1].line = 1;
+	up->port[1].ops = &sc26xx_ops;
+	up->port[1].type = PORT_SC26XX;
+	up->port[1].uartclk = (29491200 / 16); /* arbitrary */
+
+	up->port[1].mapbase = up->port[0].mapbase;
+	up->port[1].membase = up->port[0].membase;
+	up->port[1].iotype = UPIO_MEM;
+	up->port[1].irq = up->port[0].irq;
+
+	up->port[1].dev = &dev->dev;
+
+	sc26xx_init_masks(up, 1, sc26xx_data[1]);
+
+	err = uart_register_driver(&sc26xx_reg);
+	if (err)
+		goto out_free_port;
+
+	sc26xx_reg.tty_driver->name_base = sc26xx_reg.minor;
+
+	err = uart_add_one_port(&sc26xx_reg, &up->port[0]);
+	if (err)
+		goto out_unregister_driver;
+
+	err = uart_add_one_port(&sc26xx_reg, &up->port[1]);
+	if (err)
+		goto out_remove_port0;
+
+	err = request_irq(up->port[0].irq, sc26xx_interrupt, 0, "sc26xx", up);
+	if (err)
+		goto out_remove_ports;
+
+	dev_set_drvdata(&dev->dev, up);
+	return 0;
+
+out_remove_ports:
+	uart_remove_one_port(&sc26xx_reg, &up->port[1]);
+out_remove_port0:
+	uart_remove_one_port(&sc26xx_reg, &up->port[0]);
+
+out_unregister_driver:
+	uart_unregister_driver(&sc26xx_reg);
+
+out_free_port:
+	kfree(up);
+	sc26xx_port = NULL;
+	return err;
+}
+
+
+static int __exit sc26xx_driver_remove(struct platform_device *dev)
+{
+	struct uart_sc26xx_port *up = dev_get_drvdata(&dev->dev);
+
+	free_irq(up->port[0].irq, up);
+
+	uart_remove_one_port(&sc26xx_reg, &up->port[0]);
+	uart_remove_one_port(&sc26xx_reg, &up->port[1]);
+
+	uart_unregister_driver(&sc26xx_reg);
+
+	kfree(up);
+	sc26xx_port = NULL;
+
+	dev_set_drvdata(&dev->dev, NULL);
+	return 0;
+}
+
+static struct platform_driver sc26xx_driver = {
+	.probe	= sc26xx_probe,
+	.remove	= __devexit_p(sc26xx_driver_remove),
+	.driver	= {
+		.name	= "SC26xx",
+		.owner	= THIS_MODULE,
+	},
+};
+
+static int __init sc26xx_init(void)
+{
+	return platform_driver_register(&sc26xx_driver);
+}
+
+static void __exit sc26xx_exit(void)
+{
+	platform_driver_unregister(&sc26xx_driver);
+}
+
+module_init(sc26xx_init);
+module_exit(sc26xx_exit);
+
+
+MODULE_AUTHOR("Thomas BogendÃ¶rfer");
+MODULE_DESCRIPTION("SC681/SC2692 serial driver");
+MODULE_VERSION("1.0");
+MODULE_LICENSE("GPL");
+MODULE_ALIAS("platform:SC26xx");
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              <    D    ô    ü    ¼    Ä    „    Œ    L	    T	    \	    d	    l	    
+    
+    $
+    ,
+    4
+    <
+    D
+    Ü
+    ä
+    ì
+    ô
+    h    p    x    €    ˆ        ˜         ¨        $    ,    4    <    D    L    T    \    Ğ    Ø    à    è    ğ    ø         „    Œ    ”    œ    ¤    ¬    8    @    H    P    ì    ô         ¨    T    \                     (    0    8    @    H    P    X    `    h    p    x    €    ˆ        ˜         ¨    ¼    Ä    p    x    €    $    ,    Ø    à    Œ    ”    @    H    ô    ü                    $    ,    ¨    °    ¸    À    È    Ğ                         $    ,    0    4    <    @    D    L    P    T    \    `    d    l    p    t    |    €    „    Œ        ”    œ         ¤    ¬    °    ´    ¼    À    Ä    Ì    Ğ    Ô    Ü    à    ä    ì    ğ    ô    ü                                  $    ,    0    4    <    @    D    L    P    T    \    `    d    l    p    t    |    €    „    Œ        ”    œ         ¤    ¬    °    ´    ¼    À    Ä    Ì    Ğ    Ô    Ü    à    ä    ì    ğ    ô                 (        $    ,    (    0    4    <    D    L    @    H    P    X    `    h    L     T     \     X!    `!    h!    d"    l"    t"    p#    x#    €#    ˆ#    |$    „$    Œ$    ˆ%    %    ˜%     %    ”&    œ&    ¤&    ¬&    ´&     '    ¨'    °'    ¸'    À'    È'    Ğ'    Ø'    à'    è'    ğ'    ø'     (    (    (    (     (    ¬(    ´(    ¼(    Ä(    Ì(    Ô(    Ü(    ä(    ì(    ô(    ü(    )    )    )    )    $)    ,)    4)    <)    D)    L)    T)    \)    d)    l)    t)    |)    „)    Œ)    ¸)    À)    È)    Ğ)    Ø)    à)    è)    ğ)    ø)     *    *    *    Ä*    Ì*    Ô*    Ü*    ä*    ì*    ô*    Ğ+    Ø+    à+    è+    ğ+    ø+     ,    ,    ,    ,     ,    (,    0,    Ü,    ä,    ì,    ô,    ü,    -    -    -    -    $-    ,-    è-    ğ-    ø-     .    .    .    .     .    (.    0.    8.    @.    H.    ô.    ü.    1    1    (1    41    @1    L1    X1    d1    p1    |1    ˆ1    è2    ô2     3    3    3    $3    03    <3    H3    T3    `3    l3    6    ”6    ˜6     6    ¤6    ¨6    °6    ´6    ¸6    À6    Ä6    È6    ğ6    ô6    ø6     7    $7    07    47    87    @7    D7    H7    P7    T7    X7    À7    Ä7    È7    à7    ä7    è7    8    8    8     8    $8    (8    08    48    88    @8    D8    H8    P8    T8    X8    `8    d8    h8    p8    t8    x8    €8    „8    ˆ8    8    ”8    ˜8     8    ¤8    ¨8    °8    ´8    ¸8    À8    Ä8    È8    Ğ8    Ô8    Ø8    à8    ä8    è8    ğ8    ô8    ø8     9    9    9    9    9    9     9    $9    (9    09    49    89    @9    D9    H9    P9    T9    X9    `9    d9    h9    p9    t9    x9    €9    „9    ˆ9    9    ”9    ˜9     9    ¤9    ¨9    °9    ´9    ¸9    À9    Ä9    È9    Ğ9    Ô9    Ø9    à9    ä9    è9    ğ9    ô9    ø9     :    :    :    :    :    :     :    $:    (:    0:    4:    8:    @:    D:    H:    P:    T:    X:    `:    d:    h:    p:    t:    x:    €:    „:    ˆ:    :    ”:    ˜:     :    ¤:    ¨:    °:    ´:    ¸:    À:    Ä:    È:    Ğ:    Ô:    Ø:    à:    ä:    è:    ğ:    ô:    ø:     ;    ;    ;    ;    ;    ;     ;    $;    (;    0;    4;    8;    @;    D;    H;    P;    T;    X;    `;    d;    h;    p;    t;    x;    €;    „;    ˆ;    ;    ”;    ˜;     ;    ¤;    ¨;    °;    ´;    ¸;    À;    Ä;    È;    Ğ;    Ô;    Ø;    à;    ä;    è;    ğ;    ô;    ø;     <    <    <    <    <    <     <    $<    (<    0<    4<    8<    @<    D<    H<    P<    T<    X<    `<    d<    h<    p<    t<    x<    €<    „<    ˆ<    <    ”<    ˜<     <    ¤<    ¨<    °<    ´<    ¸<    À<    Ä<    È<    Ü<     @    ô=   è= 	  ì= ,  ğ= .  ü= …  ø= †  >   >   >   >   >    > !  $>   (> "  ,>   0>   4> )  8> *  <>   @>    D>   H> #  L>   P> (  T>   X>   \>   `> %  d>   h>   l> &  p> '  t> $  x>   |>   €>   „> 7  ˆ>   Œ> .  >   ”> W  ˜> 2  œ> Z   > E  ¤> D  ¨> 
+  ¬> P  °> Q  ´> J  ¸> K  ¼> L  À> M  Ä> R  È> S  Ì> O  Ğ> U  Ô> V  Ø> N  Ü> B  à> C  ä> [  è> Y  ì> X  ğ> T  ô> \  ø> G  ü> I   ? F  ? H  ?   ?   ?   ?   ? A  ? d   ? /  $? e  (? k  ,? g  0? j  4? h  8? f  <? 0  @? i  D? ^  H? _  L? `  P? a  T? b  X? r  \? c  `? m  d? l  h? q  l? p  p? o  t? s  x? n  |? {  €? |  „? y  ˆ? z  Œ? 3  ? „  ”? •  ˜? “  œ? ‘   ? –  ¤? ‡  ¨? œ  ¬? ™  °?   ´?   ¸? ›  ¼? š  À? ¢  Ä? £  È? ¡  Ì?    Ğ? ¤  Ô? §  Ø? ¨  Ü? ¦  à? ¥  ä? «  è? ¬  ì? ª  ğ? ©          ÿ³   ÿ£       ÿ£   h    éàÿÿÿÿ£   h   éĞÿÿÿÿ£   h   éÀÿÿÿÿ£   h   é°ÿÿÿÿ£   h    é ÿÿÿÿ£    h(   éÿÿÿÿ£$   h0   é€ÿÿÿÿ£(   h8   épÿÿÿÿ£,   h@   é`ÿÿÿÿ£0   hH   éPÿÿÿÿ£4   hP   é@ÿÿÿÿ£8   hX   é0ÿÿÿÿ£<   h`   é ÿÿÿÿ£@   hh   éÿÿÿÿ£D   hp   é ÿÿÿÿ£H   hx   éğşÿÿÿ£L   h€   éàşÿÿÿ£P   hˆ   éĞşÿÿÿ£T   h   éÀşÿÿÿ£X   h˜   é°şÿÿÿ£\   h    é şÿÿÿ£`   h¨   éşÿÿÿ£d   h°   é€şÿÿÿ£h   h¸   épşÿÿÿ£l   hÀ   é`şÿÿÿ£p   hÈ   éPşÿÿÿ£t   hĞ   é@şÿÿÿ£x   hØ   é0şÿÿÿ£|   hà   é şÿÿÿ£€   hè   éşÿÿÿ£„   hğ   é şÿÿÿ£ˆ   hø   éğıÿÿÿ£Œ   h   éàıÿÿÿ£   h  éĞıÿÿÿ£”   h  éÀıÿÿÿ£˜   h  é°ıÿÿÿ£œ   h   é ıÿÿÿ£    h(  éıÿÿÿ£¤   h0  é€ıÿÿÿ£¨   h8  épıÿÿÿ£¬   h@  é`ıÿÿÿ£°   hH  éPıÿÿÿ£´   hP  é@ıÿÿÿ£¸   hX  é0ıÿÿÿ£¼   h`  é ıÿÿÿ£À   hh  éıÿÿÿ£Ä   hp  é ıÿÿÿ£È   hx  éğüÿÿÿ£Ì   h€  éàüÿÿÿ£Ğ   hˆ  éĞüÿÿÿ£Ô   h  éÀüÿÿÿ£Ø   h˜  é°üÿÿÿ£Ü   h   é üÿÿÿ£à   h¨  éüÿÿÿ£ä   h°  é€üÿÿÿ£è   h¸  épüÿÿÿ£ì   hÀ  é`üÿÿÿ£ğ   hÈ  éPüÿÿÿ£ô   hĞ  é@üÿÿÿ£ø   hØ  é0üÿÿÿ£ü   hà  é üÿÿÿ£   hè  éüÿÿÿ£  hğ  é üÿÿÿ£  hø  éğûÿÿÿ£  h   éàûÿÿÿ£  h  éĞûÿÿÿ£  h  éÀûÿÿÿ£  h  é°ûÿÿÿ£  h   é ûÿÿÿ£   h(  éûÿÿÿ£$  h0  é€ûÿÿÿ£(  h8  épûÿÿÿ£,  h@  é`ûÿÿÿ£0  hH  éPûÿÿÿ£4  hP  é@ûÿÿÿ£8  hX  é0ûÿÿÿ£<  h`  é ûÿÿÿ£@  hh  éûÿÿÿ£D  hp  é ûÿÿÿ£H  hx  éğúÿÿÿ£L  h€  éàúÿÿÿ£P  hˆ  éĞúÿÿÿ£T  h  éÀúÿÿÿ£X  h˜  é°úÿÿÿ£\  h   é úÿÿÿ£`  h¨  éúÿÿÿ£d  h°  é€úÿÿÿ£h  h¸  épúÿÿÿ£l  hÀ  é`úÿÿÿ£p  hÈ  éPúÿÿÿ£t  hĞ  é@úÿÿÿ£x  hØ  é0úÿÿÿ£|  hà  é úÿÿÿ£€  hè  éúÿÿÿ£„  hğ  é úÿÿÿ£ˆ  hø  éğùÿÿÿ£Œ  h   éàùÿÿÿ£  h  éĞùÿÿÿ£”  h  éÀùÿÿÿ£˜  h  é°ùÿÿÿ£œ  h   é ùÿÿÿ£   h(  éùÿÿÿ£¤  h0  é€ùÿÿÿ£¨  h8  épùÿÿÿ£¬  h@  é`ùÿÿÿ£°  hH  éPùÿÿÿ£´  hP  é@ùÿÿÿ£¸  hX  é0ùÿÿÿ£¼  h`  é ùÿÿÿ£À  hh  éùÿÿÿ£Ä  hp  é ùÿÿÿ£È  hx  éğøÿÿÿ£Ì  h€  éàøÿÿÿ£Ğ  hˆ  éĞøÿÿÿ£Ô  h  éÀøÿÿÿ£Ø  h˜  é°øÿÿÿ£Ü  h   é øÿÿÿ£à  h¨  éøÿÿÿ£ä  h°  é€øÿÿÿ£è  h¸  épøÿÿÿ£ì  hÀ  é`øÿÿÿ£ğ  hÈ  éPøÿÿU‰åSd$ìè‡   ÃCÎ ƒ   ‰$è?øÿÿd$[]ÃU‰åd$øƒ} t‹EÿĞÉÃU‰åSd$ìèK   ÃÎ ƒ   ‰D$‹E‰D$ƒØ1ıÿ‰$èøÿÿd$[]ÃU‰åSd$üè   ÃÎÍ èó÷ÿÿd$[]Ã‹$Ã´&    è    XÀ«Í ‹L$…Éu€ğ=şÿÃƒùu€ù=şÿÃ1ÀÃ¶    USWVƒìè    [ÃtÍ è¨÷ÿÿ‰Æ1ÿ…ötQ‰4$ÇD$   è ÷ÿÿ‰Å…ít;‰4$ÇD$   èŠ÷ÿÿ‰E…ÀtÇ    ‹E‰p‰4$è÷ÿÿ‰ïë‰l$‰4$è÷ÿÿ‰4$è‡÷ÿÿ‰øƒÄ^_[]Ã¶    ¼'    USWVƒìè    [ÃäÌ ‹l$ 1ö…ítQ‰,$ÇD$   è÷ÿÿ‰Ç…ÿt;‰,$ÇD$   èıöÿÿ‰G…ÀtÇ    ‹G‰h‰,$èòöÿÿ‰şë‰|$‰,$èòöÿÿ‰ğƒÄ^_[]Ã´&    ‹D$‹@ÿ Ã¶    è    XÀ[Ì ‹L$‹Qÿ
+‹Iƒ9 tÃ‹€èÿÿÿÿàv ¼'    USWVƒìè    [Ã$Ì ‹t$ …öt{‹F1í…À¿    t‹xƒ~ ‹t‹¨‰$èuöÿÿE‹;nrí‰D$‰<$èAöÿÿ‹N1À…Ét‹A‰$è]öÿÿ‹F‰D$‰<$èöÿÿ‰t$‰<$èöÿÿ‰<$èöÿÿƒÄ^_[]ÃfUSWVì  è    [ÃË ‹´$4  ‹¼$0  e¡   ‰„$  ÷Æÿÿÿt!6‰D$D$‰$ÇD$    èìõÿÿDtëD$Æ  …ÿtB‹G‰D$D$‰D$ƒÿ=şÿ‰$èÎõÿÿƒ tF1í‹‹¨‰t$‰$è¿õÿÿE;orée¡   ;„$  uÄ  ^_[]Ãèúôÿÿv ¼'    USWVƒìè    [Ã´Ê ‹t$0…ö„¿   ‹F…À„´   ‹T$4…Ò„¨   ƒz …   ‹N1ÿ…Ét‹*‹1ÿ‹4º9.tLG9Ïrô‰Ï‹t$0‹‰ù‹@   ‰L$‰T$‰$è õÿÿ…À‹|$4tV‰w‹NQ‰V‰<ˆ‰‰<$èõÿÿë;…ö‹t$0t»‹p‰,$è
+õÿÿ‰D$ƒ3>şÿ‰D$ƒ'>şÿ‰D$‰4$ÇD$   èòôÿÿƒÄ^_[]Ãv ¼'    WV‹t$1À…öt"‹N…Ét‹T$‹61ÿ‹¾9tG1À9Ïrò^_ÃëUSWVƒìè    [Ã„É ‹|$0…ÿ„ß   ‹G…À„Ô   ‹l$4…í„È   9}…¿   ‹O…É„´   ‹1ö9,²tF9Îrö9Î„œ   ‹‹@ƒùrj‰D$‹DŠü‰D$IÁá‰L$‰T$‹D$‰$èàóÿÿ…Àtj‰‹OI‰O)ñtN°‰T$T°‰Æüÿÿÿ‰T$‹L$‰$‰D$èçóÿÿ‹G‹L$‰L†üë‰T$‰$èóÿÿÇ    ÇG    ÇE    ‰,$è"óÿÿƒÄ^_[]Ãv ¼'    USWVƒìè    [ÃtÈ ‹t$ …öt1‹L$$…Ét)ƒ~ t#1ÿ‹‹¸‹T$(‰T$‰$‰ÍÿÕ‰éG;~räƒÄ^_[]Ã¶    ¿    SWVƒìè    [ÃÈ ‹t$ …öt0‹F…Àt)‹|$$…ÿt!‹H9ùt…Ét‰$è„òÿÿ‹F‰x‰<$èóÿÿƒÄ^_[Ãë‹L$¸   …Ét:‹Q…Òt3¸   9Jt)1À9
+t#¸   9Jt¸   9Jt¸   9Jt¸   Ã´&    USWVƒì<è    [ÃdÇ ‹D$P…À„Õ  ‰Ç‹G¹   …Àt3¹   9xt)1É98t#¹   9xt¹   9xt¹   9xt¹   ‰L$(‰$èDòÿÿ‰D$$1Àƒ t(1ö‹‹°‰$è3òÿÿF‹G9Ærë‰D$,…À¸    „%  1í‹‹4¨…öt7‹V‹B…Àt=9PtB9tH9PtM9PtR¹   9Pt¹   ‰L$8ëEÇD$8   ‹   ë0ÇD$8   ë&ÇD$8   ëÇD$8    ëÇD$8   ëÇD$8   ‰T$4‹B‰$èañÿÿ‰÷‹7‰D$‹D$8‰D$‰4$èiñÿÿƒøuZ‹D$4‹@‹@‰D$0‹D$8‰$èZñÿÿ‰D$‰t$ƒİ>şÿ‰D$ƒ>şÿ‰D$‹D$0‰$ÇD$   èÊğÿÿ‰|$‹D$4‰$è*ñÿÿE‹|$P‹G9Å‚êşÿÿ9D$,…Àşÿÿèñÿÿ‰D$8…À„  1ö‰4$èñÿÿ‰Å‹D$$‰D$‹D$(‰D$‰,$è®ğÿÿƒø…¾   ‹D$P‹@…Àt*‹L$P‹	1Ò‹<‘9/tB9Ârôë…ÿ…“   ‹|$P‹G‹@‰D$4‹|$(‰|$‰,$è¢ğÿÿ‰D$0‰<$èVğÿÿ‰D$‹D$0‰D$ƒ>şÿ‰D$ƒ>şÿ‰D$‹D$4‰$ÇD$   èÂïÿÿèmğÿÿ‰Ç‰|$‹D$P‰$èkğÿÿ‰l$‰<$èoğÿÿ‰<$èïÿÿF;t$8…ÿÿÿƒÄ<^_[]Ãt& ‹L$1À…Ét
+‹I…Ét‹AÃt& ¼'    SWVƒìè    [ÃEÄ èyîÿÿ‰Æ‰4$èğÿÿ‰Ç‰4$è¥îÿÿ‰øƒÄ^_[Ã¶    ¿    USWVƒìè    [ÃÄ ‹l$ 1ÿ…í„§   ‰,$ÇD$    è/îÿÿ‰Æ…ö„   ‰,$ÇD$    èîÿÿ‰F…Àt^Ç@   ‹F‰h‰,$è	îÿÿ1ÿ‹F‹@‰$è’ïÿÿ‰¾…Àt9‰pGƒÿrâ‹FƒH‹FƒH‹F…À‰÷t#Ç@   ‰÷ë‰t$‰,$èÄíÿÿë
+‰4$èZïÿÿ1ÿ‰øƒÄ^_[]Ã´&    ¼'    SWVƒìè    [Ã%Ã ‹|$ …ÿ„ñ   ‹G1ö…Àt‹p‹…Àt‰$èïÿÿÇ    ‹G…Àt‰$èïÿÿÇG    ‹G…Àt‰$èíîÿÿÇG    ‹G…Àt‰$è×îÿÿÇG    ‹G…Àt‰$èÁîÿÿÇG    ‹G…Àt‰D$‰4$è÷ìÿÿÇG    ‹G…ÀtP‹H…Ét‰$è
+íÿÿ‹GÇ@    ‹G‹H…Ét‰$è~îÿÿ‹GÇ@    ‹G‰D$‰4$è¥ìÿÿ‰|$‰4$è™ìÿÿ‰4$è¡ìÿÿƒÄ^_[Ãv ¼'    ‹D$…Àt
+‹L$‹@	HÃ¶    ¼'    ‹D$…Àt‹@…Àt‹L$‰HÃ‰ö¼'    USWVƒìè    [ÃÄÁ ‹l$$èôëÿÿ‰Æ‰4$èšíÿÿ‰Ç‰4$è ìÿÿ‰l$‹D$ ‰D$‰<$èÌíÿÿ‰øƒÄ^_[]ÃfUSWVƒì,è    [ÃtÁ ‹D$@…À„½  ‹@…À„²  ‹l$D…í„¦  ‹|$H…ÿ„š  ‹@‰|$‹-?şÿ‰L$³$?şÿ‰t$‰$ÇD$   è#ìÿÿƒÿw‹D$@‹@‹@‹N?şÿ‰L$‰t$é=  ‰t$(ƒ˜ÿÿ‰D$$‰D$‰,$ÇD$   èíÿÿ…Àtuƒÿ‹T$(‹t$@†ä  …ÿ„ê  ¶E =Ø   t¶À=ÿ   uEOuçéÊ  EOë.ƒÿ‚£  =à   …˜  O¶MÁá¶E	È)Ç‚À  l(ƒÿw¡é€  ‹t$@‹F‹@‹}?şÿ‰L$‹L$(‰L$‰$ÇD$   è:ëÿÿƒÿw‹F‹@‹N?şÿë(‹D$$‰D$‰,$ÇD$   èOìÿÿ…À‹F‹@t‹Õ?şÿ‰L$‹L$(‰L$é*  ‹}?şÿ‰L$‹L$(‰L$‰$ÇD$   èÌêÿÿƒÿ‚  ÿşÿ  ¸şÿ  FÇ‰D$$M·E=II  t·=MM  ‹F‹T$(t‹@‹ò?şÿé¸  ‰L$ ‹FÇ    ë
+‰L$ Ç     E‹N‹	‰L$‰$è§ëÿÿ·Àƒø*…—  E
+‹N‹	‰L$‰$è—ëÿÿ‰D$‹N‹Q‰D$‹@şÿ‰L$‹L$(‰L$‰$ÇD$   èêÿÿ‹L$;L$$‡E  A;D$$‡8  ‰D$‹D$$@ú‰D$‰L$‰D$‹D$ ‰$ÇD$    1Ò‰ñèí  ‹D$D(‹N‹	‰L$‰$èôêÿÿ·ÀkÀ€Á  ‹T$L;L$$‡Ò   Ğè‹N‹	‰L$‰$èÑêÿÿ…À„)  ‹N‹Q‰D$‹@şÿ‰L$‹L$(‰L$‰$ÇD$   ‰D$è9éÿÿ‹T$‹L$$9Ê‡Á   B9È‡¶   ‰T$‹D$‰D$‹D$ ‰$ÇD$    º   ‰ñè'  é²   =á   uƒÿw:‹F‹@‹N?şÿë‹F‹@‹?şÿ‰L$‰T$‰$ÇD$   è´èÿÿƒÄ,^_[]Ã¶EÁà¶M	Á‹F‹@‰L$‹§?şÿ‰L$‰T$‰T$(‰$ÇD$   èsèÿÿƒÅƒÇıé.ıÿÿ‹F‹@‹@şÿ‰L$‹L$(‰L$‰$ÇD$   è@èÿÿ‹‰$ÇD$|’  èéÿÿ…Àt‹ër‹F‰$ÇD$|’  èƒéÿÿ…Àt‹FëV‹F‰$ÇD$|’  ègéÿÿ…Àt‹Fë:‹F‰$ÇD$|’  èKéÿÿ…Àt‹Fë‹F‰$ÇD$|’  è/éÿÿ…À„Ä  ‹F‰$ÇD$|’  èéÿÿ…À„©  ‰D$‰D$$‰4$èéÿÿ…Àt?‹N‹I‰D$ƒ¶Bşÿ‰D$‹D$(‰D$‰$ÇD$   è\çÿÿ‹F‹@‰$èŞèÿÿéø   ‹D$$‰D$‰4$èÙèÿÿ…ÀtF‹N‹I‰D$ƒØBşÿ‰D$‹D$(‰D$‰$ÇD$   è	çÿÿ‹F‹H‹@‰D$‰$è¤èÿÿé   ‹D$$‰D$‰4$èŸèÿÿ…Àt<‹N‹I‰D$ƒøBşÿ‰D$‹D$(‰D$‰$ÇD$   è¯æÿÿ‹F‹@‰$èqèÿÿëN‹D$$‰D$‰4$èoèÿÿ…Àt@‹N‹I‰D$ƒCşÿ‰D$‹D$(‰D$‰$ÇD$   è_æÿÿ‹F‹@‰$èAèÿÿ‹N‰A‹N‹A…ÀtN‹I‰L$‰$è2èÿÿ‹F‹‹@‰L$‰$è.èÿÿ‹F‹H‹@‰D$‰$è)èÿÿ‹F‹@‰|$‰l$‰$è#èÿÿ‹Fö@„2ıÿÿ‹ƒìÿÿÿƒÄ,^_[]ÿàt& USWVƒìlè    [Ã´º …É„Ã  ‹A…À„¸  ƒú‡¯  ‹¼$Œ   ƒÿr‹@‹8Cşÿéw  ‰Î‹Œ$ˆ   ‰ÍƒÅ‚K  ƒı‚B  ;¬$„   ‡5  ‰l$h‰|$D‰T$TŒ$€   ‹ ‰D$‰$èŒæÿÿf‰Å‹F‹@·ı‰|$‹wCşÿ‰L$‹$?şÿ‰L$\‰L$‰$ÇD$   èåÿÿkÇ€  ‹T$hĞ;„$„   ‰t$dvH‹„$„   )Ğ¹«ªªª‰×÷á‰ÕÁí‹F‹@·Í“Cşÿ‰T$‹T$\‰T$‰$‰L$ÇD$   è¢äÿÿ‰úf…í„¥  ·Å‰D$XÿD$DÇD$`    ÇD$L    ÇD$H    ‰T$h‹„$€   ,‹F‹ ‰D$‰,$è¡åÿÿ·øÿh‡  ‡ÿıÿÿƒør+é!  ÿi‡  tÿ%ˆ  tÿ   …ÿ   ‹F‹ ‹L$h‹”$€   L
+‰D$‰$èPåÿÿ‰Å‹F‹p‰<$èĞãÿÿ‰l$‰D$‰|$ƒ¶Cşÿ‰D$‹D$\‰D$‰4$ÇD$   è²ãÿÿÿh‡  Zÿ  …«  …í‹L$d„…  ‹D$H…À„y  ‰D$‰l$‹„$„   ‰$‹”$€   è  ‰l$Lé  ÿ   „§  ÿ%ˆ  ‹L$d…É  ‹D$Tƒø…™  ‹A‹pÇ$   é–  ‹t$T‰t$‰<$è¥ãÿÿ…À„ù  ‹|$d‹G‹@‰$è+åÿÿ‰Æ‰t$P‹G‹ ‰D$‰,$è$äÿÿ·À‰‹G‹ ‹t$h‹Œ$€   ‰ÍL5‰D$‰$èıãÿÿ·À‹L$P‰A‹G‹ L5‰D$‰$èîãÿÿ‹L$P‰A‹G‹p‹)‰Ï‰,$èeâÿÿ‰D$‰l$ƒÜDşÿ‰D$‹D$\‰D$‰4$‰şÇD$   èIâÿÿ‹F‰$èäÿÿ¶è‹F¯è9Å‚İ  …í„Õ  ƒı‚  ‹|$d‹G‹ ‹L$h‹”$€   L
+‰D$‰$èXãÿÿéò  ÿ  ‹L$d‹T$h…í  ƒ|$L „i  …í„j  ‰l$‹D$L‰D$‹„$„   ‰$‰Ö‹”$€   èX  ‰ò‰l$HéY  ‹D$Tƒø‹L$d…  ‹A‹pÇ$   èÚáÿÿ‰D$ƒ×Cşÿé>  ÿi‡  ‹D$T‹T$h…e  ƒø…ø   ‹A‹pÇ$   ‰Õèšáÿÿ‰D$ƒ×Cşÿ‰D$‹D$\‰D$‰4$ÇD$   èáÿÿ‰êéÉ  ‰l$Lé¼  ‹E ‰D$P‹D$d‹@‹@‰D$@‰4$èGáÿÿƒ|$P „ƒ  ‰D$‹D$`‰D$‰|$ƒtDşÿ‰D$‹D$\‰D$‹D$@‰$ÇD$   è¦àÿÿ‹L$d‹Aö@‰Ï…K  é˜ıÿÿ‹Aƒx „R  ‹A‹pÇ$   ë6‹Aƒx „f  ‹A‹pÇ$   ë‹Aƒx „z  ‹A‹pÇ$   è—àÿÿ‰D$ƒ	Dşÿ‰D$‹D$\‰D$‰4$ÇD$   èàÿÿéÄ  ‹D$h@‹|$d‰Áé‹WrT9érP;Œ$„   wG‰D$@‹B‰l$‰$èßÿÿ…À„1  ~‰F‰n‹Œ$€   ‹T$@‰l$‰L$‰$è	âÿÿéo  ‹j‹”$„   ‰T$‰L$ƒQCşÿ‰D$‹D$\‰D$‰,$ÇD$   èpßÿÿé  ‰l$Hé  ‰l$Hé  ‰D$‹D$`‰D$ƒGDşÿ‰D$‹D$\‰D$‹D$@‰$éÿÿÿ‹D$D‰D$‰l$‹„$„   ‰D$‹„$€   ‰$º   è4ùÿÿé·  ‹D$D‰D$‰l$‹„$„   ‰D$‹„$€   ‰$º   èùÿÿé‡  ‹D$D‰D$‰l$‹„$„   ‰D$‹„$€   ‰$º   èÔøÿÿéW  ‹G‹@‰l$‹jBşÿ‰L$<‰L$‰÷‹t$\‰t$‰$ÇD$   èmŞÿÿOÇG    ‹D$d‹@‹@‰l$‹T$<‰T$‰t$‰ş‰Ï‰$ÇD$   è5Şÿÿ>|’  ‰õ‹t$d…¾   ‹…À„‚   ƒ}‚    ‰÷‹w¶‰L$<¶H‰L$8¶H‰L$4¶H‰L$0¶P¶H‹v¶@‰D$(‰L$$‰T$ ‹D$0‰D$‹D$4‰D$‹D$8‰D$‹D$<‰D$ƒEşÿ‰D$‹D$\‰D$‰4$‰şë‹F‹@‹ùDşÿ‰L$‹L$\‰L$‰$ÇD$   èoİÿÿ‹F‹L$@‰H‹D$T‹†‰î‰t$‰$èŞÿÿ‰4$èÈÜÿÿ‹T$h‹D$`@‰D$`ƒÂ;D$X‹t$d‚ºøÿÿë6‹@‹Œ$„   ‰L$‰l$‹QCşÿ‰L$‹$?şÿ‰L$‰$ÇD$   èòÜÿÿƒÄl^_[]Ã´&    SVƒìè    [ÃÆ± ‹t$ …öt^‹‰$ÇD$    èU  ‹F‰$ÇD$    èB  ‹F‰$ÇD$    è/  ‹F‰$ÇD$    è  ‹F‰$ÇD$    è	  ƒÄ^[Ãv USWVƒìè    [ÃD± ‹|$8…ÿ„X  ‹t$0Ç    …ö„F  ‹l$4…í„:  Ç   ‹F‹@‰$ÇD$   èGÛÿÿ…À„×   ‰E fÇ@  Ç Exif‹Fƒ8‹E f¹IItf¹MMf‰H‹E ƒÀ‹N‹	‰L$‰$ÇD$*   è*Şÿÿ‹E ƒÀ
+‹N‹	‰L$‰$ÇD$   èŞÿÿ‹F‹@‹4@şÿ‰L$«$?şÿ‰l$‰$ÇD$   èqÛÿÿ‹‹ƒÀú‰D$‰|$‹D$4‰$‰ñèt   ‹F‹@‹‰L$‹C@şÿ‰L$‰l$‰$ÇD$   è*Ûÿÿë?‹F‹@‹jBşÿ‰L$‹$?şÿ‰L$‰$ÇD$   ÇD$   èöÚÿÿÇE     Ç    ƒÄ^_[]ÃUSWVƒìL‰L$Hè    [ÃÀ¯ …É„Š	  ‹D$h‰D$D‹D$d‰Î‰t$Hë=/‹F‹ ‹L$d‰Ï‹ƒÁú‰L$‰D$‰,$èşÜÿÿ‰ø‹V‹ƒÁú‰L$D‹N‰L$8…É„*	  …Ò„"	  ƒ|$` „	  1É…À„	  9tAƒùvõƒù†<  ÇD$<    1í‰L$,‹ l$<‹JékÉ‰T$@T‰T$<‹D$8‹@‹|$`‹‰T$‰L$‰$è·Ùÿÿ…À„X  ‰‹D$<‹L$d‰‹‹|$DD‰D$<‹N‹	‹D$@‹Pê‰l$ ·Ò‰T$‰L$‹D$<‰$èÜÿÿo‰l$$‹F‹@‰D$<‹|$@‹w‹D$,‰$èØÙÿÿ‰l$‰D$‰t$ƒŠBşÿ‰D$ƒ$?şÿ‰D$(‰D$‹D$<‰$ÇD$   è@Ùÿÿ1Ò‰øƒx ‰Á„¦  ‹D$DƒÀ1í‰Â‹‹4¨…ö„s  ‹D$H‹@…À„d  ‰l$<‹L$`‰Ï‹‹ Lø‰Õ‰l$D·‰T$‰D$‰$èIÛÿÿ‹‹|$H‹O‹	D(ú‰õ·U‰T$‰L$‰$è$Ûÿÿ‹Gö@…‡   } |’  u~ƒx tx‹@u‹M‰L$‰$èã×ÿÿÇE    E‰D$4ÇE    ‹|$H‹G‹@‹L$d‹	ƒÁú‰L$‰$èoÚÿÿ‹G‹@‹L$4‰L$‰t$‰$èÅÚÿÿ‹E‰E‹G‹L$`‹	‹ ‹U‰î‰t$8‹l$DL)ü‰T$‰D$‰$èwÚÿÿ‹F‰$è<Úÿÿ¶ø¯~ƒÿ‚ˆ   ‹D$d‹0‰øƒà‰D$08ò‰T$4‹D$H‹@‹@‹l$`‹M ‰T$‰L$‰$ès×ÿÿ…À„¼   ƒÆú‰E ‹D$d‹L$4‰‹D$H‹@‹ ‹M L$D‰t$‰D$‰$èëÙÿÿƒ|$0 t‹E ‹L$d‹	ÆDÿ ëuú‹D$8‹HƒÆ‹D$`‹ ğ…É‹l$<t‰|$‰L$‰$è‡Ùÿÿë‰|$‰$ÇD$    è±Öÿÿƒÿ‹T$Dwhş‹D$`0¸   )ø‰D$‰4$ÇD$    ‰×èƒÖÿÿ‰úë?‹D$H‹@‹@‹L$4‰L$‹jBşÿ‰L$‹L$(‰L$‰$ÇD$   è«Öÿÿ‹T$D‹l$<E‹L$@‹AƒÂ9Å‚mıÿÿkĞ‰L$@T$$‹D$,ƒø„Å  ƒø‹|$`…h  ‹t$Hƒ~ „õ  ‹D‹N‹	‰L$‰$ÇD$  ‰Õè©Øÿÿ‹D‹N‹	‰L$‰$ÇD$   èŠØÿÿ‹D
+‹N‹	‰L$‰$ÇD$   è{Øÿÿ‹D‰D$D‹N‹	‹T$d‹ƒÂú‰T$‰L$‹D$D‰$èOØÿÿ‰ğ‹p‹@‹L$d1‹@‹‰t$‰L$‰$è|Õÿÿ…À„=  ‰‹D$d‰0‹L$H‹A‹I)Î7‰L$‰D$‰4$èŞ×ÿÿ‹D‹t$H‹N‹	‰L$‰$ÇD$  èË×ÿÿ‹D‹N‹	‰L$‰$ÇD$   è¬×ÿÿ‹D‹N‹	‰L$‰$ÇD$   è×ÿÿ‹D‹N‹V‹‰L$‰T$‰$è×ÿÿ‹L$@ƒÅéã  ÇD$<    ‹¼‹€ÿÿß1íÿç‹~ƒ u‹~1íƒ t½   ‹~ƒƒİÿé‘úÿÿ‹l$H‹Eƒx ‹|$`„>  ‹D‹M‹	‰L$‰$ÇD$   ‰î‰ÕèèÖÿÿ‹D‹N‹	‰L$‰$ÇD$   èÉÖÿÿ‹D
+‹N‹	‰L$‰$ÇD$   èºÖÿÿ‹D‹N‹	‹T$d‹ƒÂú‰T$‰L$‰$è–Öÿÿ‹Véy  …À…‡  ‹t$H‹Fƒx u‹Fƒx „¶   ‹D‹N‹	‰L$‰$ÇD$i‡  ‰T$Dè+Öÿÿ‹‹L$DD‹N‹	‰L$‰$ÇD$   èÖÿÿ‹‹L$DD
+‹N‹	‰L$‰$ÇD$   èõÕÿÿ‹‹L$DD‹N‹	‹T$d‰Õ‹U ƒÂú‰T$‰L$‰$èÊÕÿÿ‹V‹E ƒÀú‰D$‰l$‰<$‰ñèOøÿÿ‹T$DƒÂ‹Fƒx „ù   ‹D‹N‹	‰L$‰$ÇD$%ˆ  ‰ÕèjÕÿÿ‹D‹N‹	‰L$‰$ÇD$   èKÕÿÿ‹D
+‹N‹	‰L$‰$ÇD$   è<Õÿÿ‹D‹N‹	‹T$d‹ƒÂú‰T$‰L$‰$èÕÿÿ‹V‹L$d‹ƒÀú‰D$‰L$‰<$‰ñèš÷ÿÿƒÅ‹L$@ëa‹L$@‹t$H‰ÕëU‹L$@‰ÕëM‹L$@‰î‰ÕëCƒ~ ¿    t¿   ‰|$<1íéøÿÿ‹~ƒ ‰Ï•Á¶é‰ùé øÿÿ‰Õ‹L$@‹D$ A‰ÂkÂôD(ƒÅ‹Nƒ9u‹ `ıÿë‹``ıÿ‰L$‰T$‰$ÇD$   èbÔÿÿƒ|$, u‹Fƒx …÷ÿÿƒ~ …÷ÿÿ/‹F‹ ‰D$‰,$ÇD$    è	ÔÿÿëP‹F‹@‹L$<‰L$‹jBşÿ‰L$‹$?şÿë‹D$H‹@‹@‰t$‹jBşÿ‰L$‹L$(‰L$‰$ÇD$   è7ÑÿÿƒÄL^_[]ÃëSWVƒìè    [Ã¦ ‹|$ èµÓÿÿ‰Æ‰|$‰4$è·Óÿÿ‰4$è¿Óÿÿ‰Ç‰4$èÅÓÿÿ‰øƒÄ^_[Ã¶    ¿    ‹D$…Àt‹@ÿ@Ãè    XÀ«¥ ‹L$…Ét‹QÿJ‹Iƒy tÃ‹€ğÿÿÿÿàt& SWVƒì è    [Ãu¥ ‹t$0…ö„‰  ‹…Àt6ƒx t0Ç$    èºĞÿÿ‰D$ƒ_@şÿ‰$èøÏÿÿ‹‰$ÇD$    è&Óÿÿ‹F…Àt7ƒx t1Ç$   è}Ğÿÿ‰D$ƒ_@şÿ‰$è»Ïÿÿ‹F‰$ÇD$    èèÒÿÿ‹F…Àt7ƒx t1Ç$   è?Ğÿÿ‰D$ƒ_@şÿ‰$è}Ïÿÿ‹F‰$ÇD$    èªÒÿÿ‹F…Àt7ƒx t1Ç$   èĞÿÿ‰D$ƒ_@şÿ‰$è?Ïÿÿ‹F‰$ÇD$    èlÒÿÿ‹F…Àt7ƒx t1Ç$   èÃÏÿÿ‰D$ƒ_@şÿ‰$èÏÿÿ‹F‰$ÇD$    è.Òÿÿƒ~ tO‹F‰D$ƒt@şÿ‰$èÓÎÿÿ‹Fƒør2‹N¶¶q¶|ş¶Dÿ‰D$‰|$‰t$‰T$ƒ™@şÿ‰$è™ÎÿÿƒÄ ^_[Ãf‹L$1À…Ét‹A‹ ÃUSWVƒìè    [Ã´£ ‹|$ …ÿtG‹t$$…öt?‹l$(‹‰l$‰$ÿÖ‹G‰l$‰$ÿÖ‹G‰l$‰$ÿÖ‹G‰l$‰$ÿÖ‹G‰l$‰$ÿÖƒÄ^_[]Ã¶    USWVƒìè    [ÃD£ ‹|$0…ÿ„    ‹L$4‹G‹ 9È„   ‰D$‰L$‹l$‰l$³°_ıÿ‰t$‰$èÑÿÿ‹G‰l$‰t$‰$èùĞÿÿ‹G‰l$‰t$‰$èæĞÿÿ‹G‰l$‰t$‰$èÓĞÿÿ‹G‰l$‰t$‰$èÀĞÿÿ‹L$4‹G‰‹G‹@…Àt‰L$‰$è±ÏÿÿƒÄ^_[]Ã‰ö¼'    SWVƒìè    [Ãu¢ ‹t$ …ötn‹F…Àtg‹|$$‹@‰$èğÌÿÿ‹F‰x‰<$èrÍÿÿ‹‰|$‰$èTĞÿÿ‹F‰|$‰$èEĞÿÿ‹F‰|$‰$è6Ğÿÿ‹F‰|$‰$è'Ğÿÿ‹F‰|$‰$èĞÿÿƒÄ^_[Ã‹L$1À…Ét
+‹I…Ét‹AÃt& ¼'    è    XÀË¡ ‹L$€ÔJÿÿº   9HütƒÀJuõ‹ Ãfè    XÀ›¡ ‹L$€ØJÿÿº   9HøtƒÀJuõ‹ Ãf‹D$…Àt‹L$÷Ñ‹@!HÃt& ¼'    USWVƒìè    [ÃD¡ ‹t$0‰4$èaÏÿÿƒøu	‹Fƒx t‹ƒôÿÿÿƒÄ^_[]ÿàƒ~ „‡   ‹@‹@‹Ä@şÿ‰L$»º@şÿ‰|$‰$ÇD$   èğËÿÿ‹n…ítV‹‹D¨ü‰D$‰4$è>Ìÿÿ‹F9Åu.‹F‹@‹@‹Aşÿ‰L$‰|$‰$ÇD$   è Ëÿÿ‹FH‰F…À‰Åu³ƒÄ^_[]Ãt& ¼'    ‹L$¸   …Ét
+‹I…Ét‹AÃ´&    SWVƒì è    [ÃE  ‹D$0…Àt*‹L$4‹P‹p‹@‹9‹I‰L$‰|$‰D$‰T$‰4$èLÎÿÿƒÄ ^_[Ãt& SWVƒìè    [ÃõŸ ‹|$$‹D$ ‰$ÇD$   è6Ìÿÿf‰Æ‰<$ÇD$   è#Ìÿÿ·Î·Ğ¸ÿÿÿÿ9Ñr9ÊÀƒàƒÄ^_[Ã¶    SWVƒìè    [Ã•Ÿ ‹|$$‹D$ ‰$ÇD$    èÖËÿÿf‰Æ‰<$ÇD$    èÃËÿÿ·Î·Ğ¸ÿÿÿÿ9Ñr9ÊÀƒàƒÄ^_[Ã¶    USWVƒì‰Îè    [Ã2Ÿ ‹l$8‹|$4‰øèrt9èrp‹L$09Èwh9Ïwd‰T$‹F…Àt‹N‹I‰D$‰$è`Éÿÿ…ö„¡   …í„™   ‹F‹@‰l$‰$èÉÿÿ…ÀtU‰F‰n‹L$ù‰l$‰L$‰$èÌÿÿé   ‹F‹@‰l$‰|$‹REşÿ‰L$‹$?şÿ‰L$‰$ÇD$   è‡Éÿÿëj‹F‹@‰l$‹jBşÿ‰L$‹$?şÿ‰L$‰$ÇD$   èWÉÿÿÇF    ‹F‹@‰l$‹jBşÿ‰L$‹$?şÿ‰L$‰$ÇD$   è"ÉÿÿÇF    ƒÄ^_[]Ãv USWVƒìè    [Ãô è(Èÿÿ‰Æ‰4$ÇD$   è&Èÿÿ‰Å1ÿ…ít;‰4$ÇD$   èÈÿÿ‰E…ÀtÇ    ‹E‰p‰4$èÈÿÿ‰ïë‰l$‰4$èÈÿÿ‰4$èÈÿÿ‰øƒÄ^_[]ÃUSWVƒìè    [Ãt ‹l$ ‰,$ÇD$   è©Çÿÿ‰Æ1ÿ…öt;‰,$ÇD$   è‘Çÿÿ‰F…ÀtÇ    ‹F‰h‰,$è†Çÿÿ‰÷ë‰t$‰,$è†Çÿÿ‰øƒÄ^_[]Ã¶    ¿    ‹D$…Àt‹@ÿ ÃfSWVƒìè    [Ãåœ ‹t$ …ötJ‹Fÿ‹Fƒ8 u=…Àt9‹x‹N…Ét‰L$‰<$èÇÿÿ‹F‰D$‰<$èÇÿÿ‰t$‰<$èÇÿÿ‰<$èÇÿÿƒÄ^_[Ãt& SWVƒìè    [Ãuœ ‹t$ …öt@‹F…Àt9‹x‹N…Ét‰L$‰<$è¹Æÿÿ‹F‰D$‰<$èªÆÿÿ‰t$‰<$èÆÿÿ‰<$è¦ÆÿÿƒÄ^_[ÃëUSWVƒì<è    [Ãœ ‹t$P…ö„  ƒ~ „  ‹>ÿ ¤  jÿ¢  €   ÿ    …   ÿ…’  Š   ÿ ’  V  ÿ&ˆ  Z  ÿ™‚  Ô  ÿ  
+  ‡úşÿÿƒø‡˜  ¹@ ë‡ÿ[ÿÿƒø	‡‚  ¹ç  £Á‚å  éo  ÿ¢  „Ô  é^  ÿ   „Ã  éM  ÿ†’  …A  ‹Fƒøt-‰$ècÉÿÿ‰D$ƒ@Fşÿ‰D$‰4$ÇD$   è%  ÇF   ½I   ¿ASCI‹Fƒør%‹N€9 …š  ÇA    Ç    ‹Fƒøƒ  ‹VƒÀ‰$‰ñèG  ‰F…À„  ‹N‰L$‰D$ƒÀ‰$è¦Åÿÿ‹F‰h‰8ƒFƒFƒFşÿ‰D$‰4$ÇD$   èŒ  éu  ‡ÿmÿÿƒø‡f  ¹   £Áƒ  ƒ~…N  ‹F…À„C  ‹@…À„8  ‰$èrÈÿÿ‰D$$ƒ~ „   1í‹~Ç$   èSÇÿÿ¶À¯Åø‹L$$‰L$L$(‰$‰D$èCÈÿÿƒì‹D$(‰D$ ‹D$,‰D$‹~Ç$
+   èÇÿÿ¶À¯Åø‹L$$‹T$‰T$‹T$ ‰T$‰L$‰$è	ÈÿÿE;nrÇF
+   ‹>‹F‰$èŸÇÿÿ‰D$‰<$èÅÿÿ‰ÇÇ$   è¥Çÿÿ‰ÅÇ$
+   é˜  ÿ'ˆ  „Ê  éT  ‹V1É€<
+ uA9Árõ…Éu1í…À„¯  ‹V1É¶<
+ƒÿ uA9Áròƒù‚‘  9Á‰Åƒ‰  ƒíFşÿ‰D$‰4$ÇD$   è  ‹F¹I   ‰H¹ASCI‰éß  ÿš‚  tÿ‚  …Ë  ë¹  £Áƒ#  ƒ~
+…±  ‹F…À„¦  ‹@…À„›  ‰$èÕÆÿÿ‰D$$ƒ~ „   1í‹~Ç$
+   è¶Åÿÿ¶À¯Åø‹L$$‰L$L$0‰$‰D$èÆÆÿÿƒì‹D$0‰D$ ‹D$4‰D$‹~Ç$   ètÅÿÿ¶À¯Åø‹L$$‹T$‰T$‹T$ ‰T$‰L$‰$èŒÆÿÿE;nrÇF   ‹>‹F‰$èÆÿÿ‰D$‰<$èvÃÿÿ‰ÇÇ$
+   èÆÿÿ‰ÅÇ$   èúÅÿÿ‰D$‰l$‰|$ƒ|Eşÿ‰D$‰4$ÇD$   è´  é  ‡îıÿÿƒø‚ÿ   é‰  ‰Å‹~ƒ½ÿÿ‰D$‰<$ÇD$   èœÃÿÿ…À„b  ƒÆÿÿ‰D$‰<$ÇD$   èzÃÿÿ…À„@  ƒÏÿÿ‰D$‰<$ÇD$   èXÃÿÿ…À„  ƒ´ÿÿ‰D$‰<$ÇD$   è6Ãÿÿ…À„ü  ƒÅ‰,$‰ñ‰úèo  ‰F…Àt;‹N‰L$‰D$ƒÀ‰$èÒÁÿÿ‹F¹I   ‰H¹ASCI‰ƒFƒFƒNGşÿéüÿÿÇF    ÇF    é˜  ƒø…  ‹Fƒø	‡Ë  ¹R  £Áƒ´  ‹F…À„j  ƒx „`  ‰$èjÄÿÿ‰D$‰<$èŞÁÿÿ‰Ç‹F‰$èqÄÿÿ‰ÅÇ$   ècÄÿÿ‰D$‰l$‰|$ƒ|Eşÿ‰D$‰4$ÇD$   è  ‹F‹@‰$è?Äÿÿ‰D$ ‹~Ç$   è,Ãÿÿ¶è¯ï‹F…À„»  …í„³  ‹@‰l$‰$èô¿ÿÿ‰D$…À„X  ‰l$ƒ~ „¸   1íÇ$   èÜÂÿÿˆD$$‹F‹~‰$èÊÂÿÿˆÁ‹V1ÀJƒúw^¶É¯ÍÏ‹Œ“¤ÿÿÙÿá¶ëF‹D$ ‰D$‰<$è•Áÿÿë4‹D$ ‰D$‰<$è“Áÿÿë"‹D$ ‰D$‰<$èÁÃÿÿë‹D$ ‰D$‰<$è¿Ãÿÿ¶L$$¯ÍL$·À‰D$‹D$ ‰D$‰$è\ÂÿÿE;n‚Jÿÿÿ‹F‹N‹I‰D$‰$è-¿ÿÿ‹D$‰F‹D$‰FÇF   éÁ   ƒø„¸   ‹F‰$è¿Âÿÿ‰D$‰<$è3Àÿÿ‰Ç‹F‰$èÆÂÿÿ‰ÅÇ$   è¸Âÿÿ‰D$‰l$‰|$ƒŞEşÿ‰D$‰4$ÇD$   èr   ë^‹N1À…Ét‹I…Ét‰$èøÂÿÿ‰l$‹jBşÿ‰L$‹¶Vşÿ‰L$‰$ÇD$   è¿ÿÿ‰l$ƒjBşÿ‰D$‰4$ÇD$   è   ƒÄ<^_[]Ãv ¼'    SVƒì$è    [ÃÆ“ ‹L$01À…Ét‹I…Ét‹I…Ét‰$èoÂÿÿ‹L$8‹T$4t$<‰t$ ‰t$‰L$‹¶Vşÿ‰L$‰T$‰$èQÂÿÿƒÄ$^[Ãt& ¼'    USWVƒì‰Ïè    [ÃR“ 1ö…ÿ„€   ‹G…Àty‹l$0‹@…ítb‰l$‰T$‰$èÿ½ÿÿ‰Æ…öuX‹O1ö…É¸    t‹I…É¸    t‰$èÇÁÿÿ‰l$‹jBşÿ‰L$‹¶Vşÿ‰L$‰$ÇD$   èß½ÿÿë‰T$‰$è1½ÿÿ‰ğƒÄ^_[]Ã´&    USWVì  è    [Ã¡’ ‹¼$4  ‹´$0  e¡   ‰„$  ÷Çÿÿÿt'?‰D$„$  ‰$ÇD$    è	½ÿÿ„|  ë„$  Æ  …ö„¿   ‹>‹F‰$èaÀÿÿ‰D$‰<$èÕ½ÿÿ‰D$‰|$¼$  ‰|$ƒGşÿ‰$èÄ¼ÿÿ‹n‰,$èIÀÿÿ‰D$‰l$‰|$ƒ±Gşÿ‰$èŸ¼ÿÿ‹F‰D$‰|$ƒÈGşÿ‰$è†¼ÿÿ‹F‰D$‰|$ƒÜGşÿ‰$èm¼ÿÿD$‰D$‰4$ÇD$   è…Àÿÿ‰D$‰|$ƒêGşÿ‰$è?¼ÿÿe¡   ;„$  uÄ  ^_[]Ãè»ÿÿUSWVìü   è    [ÃQ‘ ‹´$  ‹¬$  e¡   ‰„$ø   …í„l  ‹E…À„a  ƒx „W  ‹¼$  …ÿ„H  ‰|$‰4$ÇD$    èŸ»ÿÿOWÀ)„$à   )„$Ğ   )„$À   )„$°   ‹E‹@‰$è¿ÿÿ‰D$,‹E‰D$0‹E‹u‰$è¾ÿÿ¶À¯Æ9D$0…S  ‰|$(‹¼$  ‹E = ¤  ‰éŒ  =ÿ¢  é  =  ‰ş{  ƒø‡  ‹„ƒÿÿØÿàƒy…  ƒy…§	  ‹A¶ ‰D$ƒ’Kşÿ‰D$‹D$(‰D$‰4$ÇD$ÿÿÿÿÇD$    ‰Íè¿ÿÿ‰4$ÇD$ÿÿÿÿè¿ÿÿ‰éƒy‚,  )D$(ÇD$0   ‹A‹L$0¶‰D$ƒ•Kşÿ‰D$„$°   ‰Ç‰<$ÇD$@   ÇD$    ÇD$@   è™¾ÿÿ‹l$(‰l$‰|$‰4$ÇD$ÿÿÿÿè¾ÿÿ‰<$ÇD$@   è}¾ÿÿ‹Œ$  )Å‰l$(…í  ‹D$0@‰D$0;A‚kÿÿÿé†  ‹u‹E‹m‰$è¼ÿÿ¶À‰D$‰l$‰t$ƒùGşÿ‰D$‰|$‹„$  ‰Æ‰4$ÇD$ÿÿÿÿÇD$    èò½ÿÿé2  ¨ÿ[ÿÿƒı‰ş‡  ºç  £êƒ¿  ƒy…‘   ƒy…ö  ‹A‹T$,‰T$‰$‰Ïè»ÿÿ‹1É»°^ÿÿ9„Ü  AƒÇ,ƒùuïé£  = £  ‰ş…K  ƒy…  ƒy…ì  ‹A¶ ƒø…v  ‹D$(‰D$ƒpJşÿ‰D$‰4$ÇD$   éQ  ‰$‰Íè)¹ÿÿ‰D$0‹E‰$èj¼ÿÿ‰÷‰ÆÇ$   èZ¼ÿÿ‰D$‰t$‰ş‹D$0‰D$ƒ(Hşÿ‰D$‰,$éL  =¢    =¢  d  =ÿŸ  Ä  =šœ  Ì  =…’  Ñ  = ’  ]  = ‘  Â  =ÿ  ×
+  ‰Ï=!ˆ  O  =—‚  _  =  ¥  ='    =    =  ‰ù„#  =  „oşÿÿ=  …i  é_şÿÿ=£  …Y  ƒy…¼   ƒy…i  ‹A¶ ƒø…   ‹D$(‰D$ƒ¯Jşÿ‰D$‰4$ÇD$   ÇD$ÿÿÿÿè¼ÿÿé  Ç$ £  ër=¢  …ó  ééıÿÿ·ÀkÉ,”´^ÿÿ1ÿ‹º…Ét9Çrò…É„•  €9 ‹T$(„1  ‰T$‰L$é   Ç$ £  é«
+  =¢  …˜  é7
+  Ç$£  ‰ÏèN·ÿÿ‰D$0‹G‰$èºÿÿ‰ÅÇ$   èºÿÿ‰D$‰l$‹D$0‰D$ƒ(Hşÿ‰D$‰<$éu
+  ƒı„á	  é8  =    …’  ƒy…N  ƒy…™  ‹A80100„ú  80101„‚	  ‹D$(‰D$ƒŸIşÿ‰D$‰4$ÇD$   éÃşÿÿÇ$£  éØ	  ƒy…Æ  ‹A‹I‹T$(9ÊBÊ‰L$‰D$‰4$è°ºÿÿé°  ƒy…-  ƒy…Ñ  ‹A¶ ƒø…2  ‹D$(‰D$ƒ£Kşÿ‰D$‰4$ÇD$   éDşÿÿƒy…  ƒy…˜  ‹A‹l$,‰l$‰D$D$h‰$‰Ïèe¹ÿÿƒì‹L$l…É„¡  ‹D$h1Ò÷ñ‰D$0‹G‹w‰$è,¸ÿÿ¶Àğ‰l$‰î‰D$D$`‰$è!¹ÿÿƒì‹L$d…É„¶  ‹D$`1Ò÷ñ‰D$$‹G‹o‰$èè·ÿÿ¶ÀÀ€_  Å‰t$‰l$D$X‰$è×¸ÿÿƒì‹D$\…À„l  fnD$Xò‹ÿÿVÁò\ÁfnĞVÑò\Ñò^Â‹D$$‰D$‹D$0‰D$ƒ·Kşÿ‰D$‹D$(‰D$‹´$  ‰4$òD$éöúÿÿ‰D$ƒ?Jşÿé  ecÿÿƒøƒ  ‹AƒÀ‚  ‹Q‹R‰D$‰$‰Íè´ÿÿ‰ê‰Å…í„ù  ‹B‹J‰L$‰D$‰,$‰×è·ÿÿ‹GƒàşfÇD   ‹D$(‰D$‰l$‰4$èË¸ÿÿ‹G‹@‰l$‰$èÙ³ÿÿé©  =   …  é/  ‰D$ƒÈKşÿ‰D$‰T$é3úÿÿÇ$    ëÇ$   ‰Ïè&´ÿÿ‰D$0‹G‰$èg·ÿÿ‰ÅÇ$   éÓüÿÿÇ$   ‰Ïèû³ÿÿ‰D$0‹G‰$è<·ÿÿ‰ÅÇ$   é¨üÿÿ=†’  …
+  ‹iƒı„°   ƒı…Ù  ‹yƒÿ	‚Í  ‹I‰L$0ƒ½ÿÿ‰D$‰$ÇD$   èá´ÿÿ…Àt~ƒÆÿÿ‰D$‹D$0‰$ÇD$   è¿´ÿÿ…ÀtWƒÏÿÿ‰D$‹D$0‰$ÇD$   è´ÿÿ…Àt5ƒ´ÿÿ‰D$‹D$0‰$ÇD$   è{´ÿÿ…Àtƒı‹Œ$  …2  ‹yƒÿvp‹„$  ‹hƒ½ÿÿ‰D$‰,$ÇD$   è;´ÿÿ…À„†  ƒÆÿÿ‰D$‰,$ÇD$   è´ÿÿ…À„ˆ  ƒÏÿÿ‰D$‰,$ÇD$   è÷³ÿÿ…À„~  …ÿ‹„$  „Õ  ‰Á‹A‰Ê1íŠ(€É ¶Éƒù uE9ırí9ı‹|$(„­  ƒ¡Hşÿ‰D$‰$ÇD$   è~óÿÿ‹”$  ;jƒƒ  …ÿ„{  1ÉƒİHşÿ‰D$,‰L$0‹Bè‰Ï¶L= ‰D$‰L$‹D$,‰D$‰$ÇD$   è'óÿÿ‹„$  ‹@è¶‰$è?¶ÿÿ‹”$  ±.…Àt‹Bè‹L$0Š‹|$0ˆ>D=‰ù;B‹D$(ƒñ  A9Á‚yÿÿÿéã  Ç$    é=úÿÿÇ$    éD  Ç$   é¹  Ç$   ‰Ïèl±ÿÿ‹O‰L$‰D$ƒùHşÿ‰D$‰<$ÇD$   é­  ÿmÿÿƒú‡o  ‹”“ÈÿÿÚÿâƒy‰Ï…S  ƒ…à  ‹G‹L$,‰L$‰D$„$    ‰$èi´ÿÿƒì‹„$¤   …À„¢  ‹Œ$    ù   €„  fnÑòƒÿÿVĞò\ĞfnÈVÈò\Èò^Ñ)T$0ƒåIşÿ‰D$‹l$(‰l$‰4$òT$ÇD$ÿÿÿÿÇD$    è}´ÿÿ(D$0òYƒ(ÿÿò$èÖ´ÿÿİ\$ƒîIşÿ‰D$„$°   ‰$éë  Ç$    ‰Ïè;°ÿÿ‹O‰L$‰D$ƒùHşÿ‰D$‰<$ÇD$   é|  „À‹L$(…  ‰L$ƒ™Kşÿ‰D$‰4$ÇD$
+   é
+øÿÿ‹D$(‰$‰ù‹´$  é  =‘  …  ƒy‰Í…L  ƒ}…`  ‹E¶ ƒø‹¦Jşÿ‰L$0‰L$,s‹„ƒ aÿÿ‰D$,‰4$ÇD$ÿÿÿÿè’³ÿÿ‹|$(‰ù)Á‰L$‹D$,‰D$‰4$ÇD$ÿÿÿÿè~³ÿÿ‰4$ÇD$ÿÿÿÿè^³ÿÿ‰ù)Á‰L$ƒ¿Işÿ‰D$,‰D$‰4$ÇD$ÿÿÿÿèH³ÿÿ‹E¶@ƒø‹L$0‰L$$s‹„ƒ aÿÿ‰D$$‰4$ÇD$ÿÿÿÿè	³ÿÿ‰ù)Á‰L$‹D$$‰D$‰4$ÇD$ÿÿÿÿèù²ÿÿ‰4$ÇD$ÿÿÿÿèÙ²ÿÿ‰ù)Á‰L$‹D$,‰D$‰4$ÇD$ÿÿÿÿèÉ²ÿÿ‹E¶@ƒø‹L$0‰L$$w‹„ƒ aÿÿ‰D$$‰4$ÇD$ÿÿÿÿèŠ²ÿÿ‰ù)Á‰L$‹D$$‰D$‰4$ÇD$ÿÿÿÿèz²ÿÿ‰4$ÇD$ÿÿÿÿèZ²ÿÿ‰ù)Á‰L$‹D$,‰D$‰4$ÇD$ÿÿÿÿèJ²ÿÿ‹E¶@ƒøw‹„ƒ aÿÿ‰D$0‰4$ÇD$ÿÿÿÿè²ÿÿ)Ç‰|$‹D$0é½  ‰D$ƒtJşÿéd  Ç$†’  é„öÿÿ‹D$(‰D$ƒoIşÿ‰D$‰4$ÇD$   éÕõÿÿ=   …ã
+  ƒy‰Ï…s  ƒ…S  ‹l$(‰l$ƒBIşÿ‰D$‰4$ÇD$   ÇD$ÿÿÿÿèœ±ÿÿ‹O1À“Øÿÿ‰÷‹1;2„Ê	  @ƒÂƒø‰şuééŠ
+  ‹D$(‰D$ƒ‰IşÿéAõÿÿ="ˆ  ‰ù…\
+  ƒy…“   ƒyuQ‹A‹T$,‰T$‰$‰Ïè`®ÿÿ‹1ÿ“ Kÿÿ9
+„   GÂø  ƒÿ	uì·À‰D$ƒtJşÿ‰D$‹D$(‰D$éºòÿÿ‰$‰Ïèº¬ÿÿ‹O‰L$‰D$ƒùHşÿ‰D$‰<$ÇD$   ÇD$   è½íÿÿéÍ	  ‰$‰Ïè~¬ÿÿ‰D$0‹G‰$è¿¯ÿÿ‰ÅÇ$   é+õÿÿiÏø  ƒÿ	·Àu¿	   ŒKÿÿ1íëŒKÿÿ1í9}
+Eƒy Iuò‹	9Á…Cÿÿÿ‰L$,‹D$(‰D$‰4$ÇD$    è¶«ÿÿkÅiÏø  Œ Kÿÿ‹|…ÿtRl‰<$ÇD$ÿÿÿÿèê¯ÿÿ9D$(v.‰4$ÇD$ÿÿÿÿ‰D$0èĞ¯ÿÿ;D$0s‹D$(‰D$‰|$‰4$èæ¯ÿÿ‹} ƒÅ…ÿu²€> ‹L$(…Ô  ‹D$,‰D$ƒ?Jşÿ‰D$‰L$éjñÿÿÇ$‘  èh«ÿÿ‰D$0‰ïéôÿÿƒÅƒÇø‹D$(9ÇCø‰l$‰4$‰|$è~¯ÿÿé~  ‹D$(‰D$ƒoHşÿ‰D$‰4$ÇD$   é5óÿÿ=˜‚  „İ  =š‚  …&  ƒ…°  ƒ…&	  ‹G‹L$,‰L$‰D$„$ˆ   ‰$è?®ÿÿƒì‹„$Œ   …À„x  fn„$ˆ   ò‹ÿÿVÁò\ÁfnĞVÑò\Ñò^Âò‹ ÿÿf.È†È	  ò^ÈòX‹(ÿÿò,Á‹:Jşÿ‰L$‹L$(‰L$‰4$‰D$é·	  Ç$‘  èJªÿÿ‹M‰L$‰D$ƒùHşÿ‰D$‰,$é
+úÿÿÇ$   éÎòÿÿ‹D$(‰D$ƒŠHşÿ‰D$‰4$ÇD$   éòÿÿƒy
+‰Ï…¼  ƒ…®  ‹G‹L$,‰L$‰D$„$€   ‰$è[­ÿÿƒì‹„$„   …À„t  ò*Œ$€   ò*Àò^ÈòL$0òL$ƒåIşÿ‰D$‹D$(‰D$‰4$ÇD$ÿÿÿÿÇD$    èr­ÿÿòD$0ò$èÒ­ÿÿİ\$Hòƒ ÿÿ(Èò^L$Hf.Á†ì  ò^Áò,À‹HJşÿ‰L$Œ$°   ‰$‰D$éã  ƒy
+‰Ï…ä  ƒ…Ù  ‹G‹L$,‰L$‰D$D$x‰$è}¬ÿÿƒì‹D$|…À„™  ò*L$xò*Àò^ÈòL$0òL$ƒåIşÿ‰D$‹l$(‰l$‰4$ÇD$ÿÿÿÿÇD$    èš¬ÿÿòD$0ò$èú¬ÿÿİ\$PòD$PòYƒÿÿƒ`Jşÿ‰D$„$°   ‰$òD$ÇD$@   ÇD$    ÇD$@   éÅ
+  ƒy
+‰Ï…  ƒ…  ‹G‹L$,‰L$‰D$D$p‰$è «ÿÿƒì‹D$t…À„¼  ò*D$pò*Èò^ÁòD$ƒåIşÿéûÿÿƒy‰Ï…Ú  ƒ…µ  ‹G‹L$,‰L$‰D$„$   ‰$è«ÿÿƒì‹„$”   …À„W  fn„$   ò‹ÿÿVÁò\ÁfnĞVÑò\Ñò^Âƒ3Jşÿé  ƒy‰Ï…n  ƒ…I  ‹G‹L$,‰L$‰D$„$˜   ‰$è¦ªÿÿƒì‹¬$œ   …í„ß  ‹„$˜   ‰D$0‹G‹@‹ ‰$ÇD$  è¨ÿÿ…À„.	  ‹@…À„#	  ‹ùIşÿ‰L$‰$ÇD$   èT«ÿÿ…À…	  ‹G‹@‹ ‰$ÇD$  è4¨ÿÿ…À„á  ‹x…ÿ„Ö  ƒJşÿ‰D$‰<$ÇD$   è«ÿÿ…À„K  ƒ
+Jşÿ‰D$‰<$ÇD$   èåªÿÿ…À…’  òƒ8ÿÿé$  ƒy‰Î…`  ‹Fƒø„©  ƒø…!  ‹F‹|$,‰|$‰$è|§ÿÿf‰Å‹FƒÀ‰|$‰$èg§ÿÿf‰D$0‹FƒÀ‰|$‰$èP§ÿÿ·À·Í·T$0‰T$‰L$‰D$ƒòJşÿé_  ‰$éÆñÿÿ=  …m  ƒ…  ƒ…ı  ‹G‹l$,‰l$‰$èô¦ÿÿf‰D$0‹G‹‰$èá§ÿÿ¶Àø‰l$‰$èĞ¦ÿÿ·L$0ƒù…o  ·Ğƒú…c  ‹D$(‰D$ƒÅJşÿés  Ç$   é÷ôÿÿ‰$épøÿÿƒ…&  ‹G…À„ã  ‹O‰L$0…É„Ô  ‰Â‹l$0ŠM „É„Ã  ¶Éƒù …”  ƒÂÿ€É  E…ÒuÛé¤  =‚  ‰ù…  ƒy‰Ï…  ƒ…¹  ‹G‹L$,‰L$‰D$„$¨   ‰$è
+¨ÿÿƒì‹„$¬   …ÀtGfn„$¨   ò‹ÿÿVÁò\ÁfnĞVÑò\Ñò^ÂƒİIşÿ‰D$‹D$(‰D$‰4$òD$é>êÿÿ‹D$(‰$‰ùéu  Ç$’  ëÇ$’  ëÇ$’  è¤ÿÿ‰D$0‹G‰$èZ§ÿÿ‰ÅÇ$
+   éÆìÿÿÇ$’  éğïÿÿÇ$
+’  éäïÿÿÇ$’  èØ£ÿÿ‰Ç‹F‰$è§ÿÿ‰ÅÇ$   è§ÿÿ‰D$‰l$‰|$ƒ(Hşÿ‰D$‰4$ÇD$   èÇäÿÿ‹´$  éĞ   kÀ¾Œİÿÿ¾„Şÿÿ“WIşÿ‰T$‰l$‰ş‰4$‰D$‰L$éQéÿÿ=(  é!öÿÿ=  ëvÇ$š‚  é;ïÿÿÇ$’  épöÿÿÇ$’  édöÿÿÇ$’  éXöÿÿÇ$’  éLöÿÿÇ$
+’  é@öÿÿÇ$˜‚  èó¢ÿÿ‰D$0‹G‰$è4¦ÿÿ‰ÅÇ$   é ëÿÿ=  ‰ù„ûèÿÿ‹D$(‰$‰òè«  e¡   ;„$ø   …ù   ‰ğÄü   ^_[]ÃÇ$  éöÿÿ‹F‹|$,‰|$‰$èÜ£ÿÿf‰Å‹FƒÀ‰|$‰$èÇ£ÿÿf‰D$0‹FƒÀ‰|$‰$è°£ÿÿf‰D$$‹FƒÀ‰|$‰$è™£ÿÿ·L$$·À·Õ·t$0‰t$ ‰T$‰D$‰L$ƒKşÿéŸ   ƒø…Œ   ‹F‹|$,‰|$‰$èR£ÿÿf‰Å‹FƒÀ‰|$‰$è=£ÿÿ·Í·À‰D$‰L$ƒâJşÿëXÇ$š‚  éüôÿÿÇ$‚  é¯íÿÿèÚ ÿÿÇ$  è¡ÿÿ‹O‰L$‰D$ƒùHşÿ‰D$‰<$ÇD$   éßôÿÿ‰D$ƒVKşÿ‰D$‹D$(‰D$‹´$  éMçÿÿò,Á‰D$ƒUJşÿ‰D$„$°   ‰$ÇD$@   ÇD$    ÇD$@   è¥ÿÿ‰4$ÇD$ÿÿÿÿè¥ÿÿ‹L$()Á‰L$éÁ  Ç$‚  é4ôÿÿƒù…ç  ·Ğƒú…Û  ‹D$(‰D$ƒĞJşÿ‰D$‰4$ÇD$   éÚèÿÿò,À‰D$ƒ?Jşÿ‰D$‹D$(‰D$‰4$ÇD$ÿÿÿÿÇD$    èŠ¤ÿÿ‰4$ÇD$ÿÿÿÿèŠ¤ÿÿH‹T$(9Ê†°ıÿÿ)Â‰T$ƒBJşÿé#  …Òt‹L$(9ÁBÁ‹L$0‰L$‰4$‰D$èy¤ÿÿë*‹D$(‰D$ƒ¸Işÿ‰D$‰4$ÇD$   ÇD$ÿÿÿÿè=¤ÿÿ‰4$ÇD$ÿÿÿÿè¤ÿÿ‹l$(‰é)Á‰L$ƒ¿Işÿ‰D$0‰D$‰4$ÇD$ÿÿÿÿèó£ÿÿ‰4$ÇD$ÿÿÿÿèÓ£ÿÿ‰é)Á‰L$ƒÁIşÿ‰D$‰4$ÇD$ÿÿÿÿèÁ£ÿÿ‰4$ÇD$ÿÿÿÿè¡£ÿÿ‰é)Á‰L$ƒĞIşÿ‰D$‰4$ÇD$ÿÿÿÿè£ÿÿ‹o…í„§   ‹…ÿ„œ   ‰l$‰<$ÇD$    èÕ£ÿÿ…À„€   H‰L$,)Ïïts‰ù‹l$,ŠU „Òtf¶Òƒú u.ƒÁÿ€ö  ‰ÂƒÂ…É‰è‰ÕuÛëF·À‰D$‰L$ƒÛJşÿéòÿÿ…Ét,‰4$ÇD$ÿÿÿÿèé¢ÿÿ‹L$()Á9ùCÏ‹D$,‰D$‰4$‰L$ë'‰4$ÇD$ÿÿÿÿè½¢ÿÿ‹L$()Á‰L$ƒ¸Işÿ‰D$‰4$ÇD$ÿÿÿÿè©¢ÿÿ‰4$ÇD$ÿÿÿÿè‰¢ÿÿ‹|$(‰ù)Á‰L$‹D$0‰D$‰4$ÇD$ÿÿÿÿèu¢ÿÿ‰4$ÇD$ÿÿÿÿèU¢ÿÿ)Ç‰|$ƒÔIşÿéı   òƒ0ÿÿfnL$0ò“ÿÿVÊò\ÊòYÈfnÅVÂò\Âò^Èò,Á‹Jşÿ‰L$Œ$°   ‰$‰D$ÇD$@   ÇD$    ÇD$@   èË¡ÿÿfnD$0ò‹ÿÿVÁò\ÁfnÕVÑò\Ñò^Âƒ+Jşÿ‰D$‹l$(‰l$‰4$òD$ÇD$ÿÿÿÿÇD$    èw¡ÿÿ‰4$ÇD$ÿÿÿÿèw¡ÿÿ‰Ç„$°   ‰$ÇD$@   è^¡ÿÿø9Å†‰úÿÿ)ı‰l$„$°   ‰D$‰4$ÇD$ÿÿÿÿèC¡ÿÿécúÿÿv ¼'    USWVìœ   ‰T$p‰Í‰l$tè    [Ã÷q ‹E‹@‰$èB ÿÿ‰D$l‹E…ÀtE‹”$°   …Òt:r‹MIƒù	v9‰D$ƒ—Vşÿ‰D$‰t$‹D$p‰$ÇD$ÿÿÿÿÇD$    è’ ÿÿÄœ   ^_[]Ã‹Œ‹8ÿÿÙÿá‹E¶ ‰D$ƒPVşÿ‰D$‰t$‰t$h‹t$p‰4$ÇD$ÿÿÿÿÇD$    èD ÿÿ‰4$ÇD$ÿÿÿÿèD ÿÿƒ}vœ¾   ‰l$t‰Ç‹E‹L$p,9‹L$h)ù¶0‰D$ƒWVşÿ‰D$‰L$‰,$ÇD$ÿÿÿÿÇD$    èÜŸÿÿ‰,$‹l$tÇD$ÿÿÿÿèØŸÿÿ‹Œ$°   ø9Èƒ%ÿÿÿF;ur‘éÿÿÿ‹M9ĞGÂ‰D$‰L$‹t$p‰4$‰×èÎŸÿÿ‹E9øGÇÆ éëşÿÿ‹E‹L$l‰L$‰$èÊœÿÿ·À‰D$ƒ’Kşÿ‰D$‰t$‰t$h‹t$p‰4$ÇD$ÿÿÿÿÇD$    è5Ÿÿÿ‰4$ÇD$ÿÿÿÿè5Ÿÿÿƒ}†‰şÿÿ¾   ‰Ç‹E‰l$t‹L$t‹i‰$èXÿÿ¶À¯Æè‹L$l‰L$‰$è@œÿÿ‹L$p,9‹L$h)ù·À‰D$ƒ`Vşÿ‰D$‰L$‰,$ÇD$ÿÿÿÿÇD$    è¦ÿÿ‰,$‹l$tÇD$ÿÿÿÿè¢ÿÿ‹Œ$°   ø9ÈƒïıÿÿF;u‚gÿÿÿéàıÿÿ‹E‹L$l‰L$‰$èÏ›ÿÿ‰D$ƒjVşÿ‰D$‰t$‰t$h‹t$p‰4$ÇD$ÿÿÿÿÇD$    è-ÿÿ‰4$ÇD$ÿÿÿÿè-ÿÿƒ}†ıÿÿ¾   ‰l$t‰Ç‹E‹L$t‹i‰$èHœÿÿ¶À¯Æè‹L$l‰L$‰$è@›ÿÿ‹L$p,9‹L$h)ù‰D$ƒnVşÿ‰D$‰L$‰,$ÇD$ÿÿÿÿÇD$    è™ÿÿ‰,$‹l$tÇD$ÿÿÿÿè•ÿÿ‹Œ$°   ø9ÈƒâüÿÿF;u‚jÿÿÿéÓüÿÿ‰t$hƒ} „ÅüÿÿÇD$d    òƒÿÿ)D$Pòƒ@ÿÿòD$8òƒ ÿÿòD$01ö1ÿ…ÿtI‹D$p,0‹D$h)ğ‹~Vşÿ‰L$‰D$‰,$ÇD$ÿÿÿÿÇD$    èéœÿÿ‰,$ÇD$ÿÿÿÿèéœÿÿ‰Åõë‰õ‹D$t‹@D$d‹L$l‰L$‰D$„$   ‰$èœÿÿƒì‹´$   ‹„$”   …Àt{fnÀ(L$PVÁò\Á)D$@ò$èÿÿİ\$xòD$xòXD$8òXD$0ò,À‹L$p)‹T$h)êfnÆf(L$PfVÁò\Áò^D$@òD$³Vşÿ‰t$‰T$‰$‰D$ë*‹D$p(‹L$h)é‰t$“‡Vşÿ‰T$‰L$‰$ÇD$    ÇD$ÿÿÿÿÇD$    èÜ›ÿÿ‹D$p‰D$p(‰$ÇD$ÿÿÿÿèÑ›ÿÿ‰Æî‹„$°   9Æ‹D$tƒûÿÿGƒD$d;x‚{şÿÿéûÿÿ‰D$ƒ8VşÿéÑúÿÿ‹E‹L$l‰L$‰$è$›ÿÿ˜‰D$ƒ?Jşÿ‰D$‰t$‰t$h‹t$p‰4$ÇD$ÿÿÿÿÇD$    èA›ÿÿ‰4$ÇD$ÿÿÿÿèA›ÿÿƒ}†•úÿÿ¾   ‰l$t‰Ç‹E‹L$t‹i‰$èh™ÿÿ¶À¯Æè‹L$l‰L$‰$èP˜ÿÿ‹L$p,9‹L$h)ù˜‰D$ƒeVşÿ‰D$‰L$‰,$ÇD$ÿÿÿÿÇD$    è¸šÿÿ‰,$‹l$tÇD$ÿÿÿÿè´šÿÿ‹Œ$°   ø9ÈƒúÿÿF;u‚iÿÿÿéòùÿÿ‹E‹L$l‰L$‰$è1šÿÿ‰D$ƒtVşÿ‰D$‰t$‰t$h‹t$p‰4$ÇD$ÿÿÿÿÇD$    è?šÿÿ‰4$ÇD$ÿÿÿÿè?šÿÿƒ}†“ùÿÿ¾   ‰l$t‰Ç‹E‹L$t‹i‰$èh˜ÿÿ¶À¯Æè‹L$l‰L$‰$è°™ÿÿ‹L$p,9‹L$h)ù‰D$ƒxVşÿ‰D$‰L$‰,$ÇD$ÿÿÿÿÇD$    è¹™ÿÿ‰,$‹l$tÇD$ÿÿÿÿèµ™ÿÿ‹Œ$°   ø9ÈƒùÿÿF;u‚jÿÿÿéóøÿÿ‰t$hƒ} „åøÿÿÇD$d    òƒ€ÿÿòD$@òƒ@ÿÿòD$8òƒ ÿÿòD$01ö1ÿ…ÿtI‹D$p,0‹D$h)ğ‹~Vşÿ‰L$‰D$‰,$ÇD$ÿÿÿÿÇD$    è	™ÿÿ‰,$ÇD$ÿÿÿÿè	™ÿÿ‰Åõë‰õ‹D$t‹@

@@ -1,0 +1,143 @@
+2_format *f)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+	int ret;
+
+	WARN_ON(priv != file->private_data);
+
+	mutex_lock(&icf->vb_vidq.vb_lock);
+
+	if (videobuf_queue_is_busy(&icf->vb_vidq)) {
+		dev_err(&icd->dev, "S_FMT denied: queue busy\n");
+		ret = -EBUSY;
+		goto unlock;
+	}
+
+	ret = soc_camera_set_fmt(icf, f);
+
+unlock:
+	mutex_unlock(&icf->vb_vidq.vb_lock);
+
+	return ret;
+}
+
+static int soc_camera_enum_fmt_vid_cap(struct file *file, void  *priv,
+				       struct v4l2_fmtdesc *f)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+	const struct soc_camera_data_format *format;
+
+	WARN_ON(priv != file->private_data);
+
+	if (f->index >= icd->num_user_formats)
+		return -EINVAL;
+
+	format = icd->user_formats[f->index].host_fmt;
+
+	strlcpy(f->description, format->name, sizeof(f->description));
+	f->pixelformat = format->fourcc;
+	return 0;
+}
+
+static int soc_camera_g_fmt_vid_cap(struct file *file, void *priv,
+				    struct v4l2_format *f)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+	struct v4l2_pix_format *pix = &f->fmt.pix;
+
+	WARN_ON(priv != file->private_data);
+
+	pix->width		= icd->width;
+	pix->height		= icd->height;
+	pix->field		= icf->vb_vidq.field;
+	pix->pixelformat	= icd->current_fmt->fourcc;
+	pix->bytesperline	= pix->width *
+		DIV_ROUND_UP(icd->current_fmt->depth, 8);
+	pix->sizeimage		= pix->height * pix->bytesperline;
+	dev_dbg(&icd->dev, "current_fmt->fourcc: 0x%08x\n",
+		icd->current_fmt->fourcc);
+	return 0;
+}
+
+static int soc_camera_querycap(struct file *file, void  *priv,
+			       struct v4l2_capability *cap)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+	struct soc_camera_host *ici = to_soc_camera_host(icd->dev.parent);
+
+	WARN_ON(priv != file->private_data);
+
+	strlcpy(cap->driver, ici->drv_name, sizeof(cap->driver));
+	return ici->ops->querycap(ici, cap);
+}
+
+static int soc_camera_streamon(struct file *file, void *priv,
+			       enum v4l2_buf_type i)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+	int ret;
+
+	WARN_ON(priv != file->private_data);
+
+	dev_dbg(&icd->dev, "%s\n", __func__);
+
+	if (i != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+
+	mutex_lock(&icd->video_lock);
+
+	icd->ops->start_capture(icd);
+
+	/* This calls buf_queue from host driver's videobuf_queue_ops */
+	ret = videobuf_streamon(&icf->vb_vidq);
+
+	mutex_unlock(&icd->video_lock);
+
+	return ret;
+}
+
+static int soc_camera_streamoff(struct file *file, void *priv,
+				enum v4l2_buf_type i)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+
+	WARN_ON(priv != file->private_data);
+
+	dev_dbg(&icd->dev, "%s\n", __func__);
+
+	if (i != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+
+	mutex_lock(&icd->video_lock);
+
+	/* This calls buf_release from host driver's videobuf_queue_ops for all
+	 * remaining buffers. When the last buffer is freed, stop capture */
+	videobuf_streamoff(&icf->vb_vidq);
+
+	icd->ops->stop_capture(icd);
+
+	mutex_unlock(&icd->video_lock);
+
+	return 0;
+}
+
+static int soc_camera_queryctrl(struct file *file, void *priv,
+				struct v4l2_queryctrl *qc)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+	int i;
+
+	WARN_ON(priv != file->private_data);
+
+	if (!qc->id)
+		return -EINVAL;
+
+	for (i = 0; i < icd->ops->num_controls; i++)
+		if (qc->id == icd->ops->controls

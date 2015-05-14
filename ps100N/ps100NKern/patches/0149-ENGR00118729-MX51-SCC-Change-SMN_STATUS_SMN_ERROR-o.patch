@@ -1,0 +1,55 @@
+mory for vf.\n");
+			prp_vf_mem_free(cam);
+			return -1;
+		}
+
+		g_vaddr_vfbuf[i] =
+		    ioremap_cached(cam->vf_bufs[i], cam->vf_bufs_size[i]);
+		if (!g_vaddr_vfbuf[i]) {
+			pr_debug("Failed to ioremap_cached() for vf.\n");
+			prp_vf_mem_free(cam);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
+/*!
+ * @brief Free memory for overlay.
+ * @param cam	Pointer to cam_data structure
+ * @return	Zero on success, others on failure
+ */
+static void prp_vf_mem_free(cam_data * cam)
+{
+	int i;
+
+	for (i = 0; i < 2; i++) {
+		if (cam->vf_bufs_vaddr[i]) {
+			dma_free_coherent(0,
+					  cam->vf_bufs_size[i],
+					  cam->vf_bufs_vaddr[i],
+					  cam->vf_bufs[i]);
+		}
+		cam->vf_bufs[i] = 0;
+		cam->vf_bufs_vaddr[i] = 0;
+		cam->vf_bufs_size[i] = 0;
+		if (g_vaddr_vfbuf[i]) {
+			iounmap(g_vaddr_vfbuf[i]);
+			g_vaddr_vfbuf[i] = 0;
+		}
+	}
+}
+
+/*!
+ * @brief Allocate intermediate memory for overlay rotation/mirroring.
+ * @param cam	Pointer to cam_data structure
+ * @return	Zero on success, others on failure
+ */
+static int prp_rot_mem_alloc(cam_data * cam)
+{
+	int i;
+
+	for (i = 0; i < 2; i++) {
+		cam->rot_vf_buf_size[i] =
+		    cam->win.w.width

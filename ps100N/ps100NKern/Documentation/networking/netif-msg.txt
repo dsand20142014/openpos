@@ -1,0 +1,104 @@
+/*
+ * Support for emulating SAT (ata pass through) on devices based
+ *       on the Cypress USB/ATA bridge supporting ATACB.
+ *
+ * Copyright (c) 2008 Matthieu Castet (castet.matthieu@free.fr)
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
+
+#include <linux/module.h>
+#include <scsi/scsi.h>
+#include <scsi/scsi_cmnd.h>
+#include <scsi/scsi_eh.h>
+#include <linux/ata.h>
+
+#include "usb.h"
+#include "protocol.h"
+#include "scsiglue.h"
+#include "debug.h"
+
+MODULE_DESCRIPTION("SAT support for Cypress USB/ATA bridges with ATACB");
+MODULE_AUTHOR("Matthieu Castet <castet.matthieu@free.fr>");
+MODULE_LICENSE("GPL");
+
+/*
+ * The table of devices
+ */
+#define UNUSUAL_DEV(id_vendor, id_product, bcdDeviceMin, bcdDeviceMax, \
+		    vendorName, productName, useProtocol, useTransport, \
+		    initFunction, flags) \
+{ USB_DEVICE_VER(id_vendor, id_product, bcdDeviceMin, bcdDeviceMax), \
+  .driver_info = (flags)|(USB_US_TYPE_STOR<<24) }
+
+struct usb_device_id cypress_usb_ids[] = {
+#	include "unusual_cypress.h"
+	{ }		/* Terminating entry */
+};
+MODULE_DEVICE_TABLE(usb, cypress_usb_ids);
+
+#undef UNUSUAL_DEV
+
+/*
+ * The flags table
+ */
+#define UNUSUAL_DEV(idVendor, idProduct, bcdDeviceMin, bcdDeviceMax, \
+		    vendor_name, product_name, use_protocol, use_transport, \
+		    init_function, Flags) \
+{ \
+	.vendorName = vendor_name,	\
+	.productName = product_name,	\
+	.useProtocol = use_protocol,	\
+	.useTransport = use_transport,	\
+	.initFunction = init_function,	\
+}
+
+static struct us_unusual_dev cypress_unusual_dev_list[] = {
+#	include "unusual_cypress.h"
+	{ }		/* Terminating entry */
+};
+
+#undef UNUSUAL_DEV
+
+
+/*
+ * ATACB is a protocol used on cypress usb<->ata bridge to
+ * send raw ATA command over mass storage
+ * There is a ATACB2 protocol that support LBA48 on newer chip.
+ * More info that be found on cy7c68310_8.pdf and cy7c68300c_8.pdf
+ * datasheet from cypress.com.
+ */
+static void cypress_atacb_passthrough(struct scsi_cmnd *srb, struct us_data *us)
+{
+	unsigned char save_cmnd[MAX_COMMAND_SIZE];
+
+	if (likely(srb->cmnd[0] != ATA_16 && srb->cmnd[0] != ATA_12)) {
+		usb_stor_transparent_scsi_command(srb, us);
+		return;
+	}
+
+	memcpy(save_cmnd, srb->cmnd, sizeof(save_cmnd));
+	memset(srb->cmnd, 0, MAX_COMMAND_SIZE);
+
+	/* check if we support the command */
+	if (save_cmnd[1] >> 5) /* MULTIPLE_COUNT */
+		goto invalid_fld;
+	/* check protocol */
+	switch((save_cmnd[1] >> 1) & 0xf) {
+		case 3: /*no DATA */
+		case 4: /* PIO in */
+		case 5: /* PIO out */
+			break;
+		default:

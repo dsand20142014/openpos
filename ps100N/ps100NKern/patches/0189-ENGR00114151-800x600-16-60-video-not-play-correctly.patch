@@ -1,0 +1,76 @@
+v->pgm_info_write_idx = 0;
+		itv->pgm_info_read_idx = 0;
+
+		IVTV_DEBUG_INFO("PGM Index at 0x%08x with %d elements\n",
+				itv->pgm_info_offset, itv->pgm_info_num);
+
+		/* Setup API for Stream */
+		cx2341x_update(itv, ivtv_api_func, NULL, p);
+
+		/* mute if capturing radio */
+		if (test_bit(IVTV_F_I_RADIO_USER, &itv->i_flags))
+			ivtv_vapi(itv, CX2341X_ENC_MUTE_VIDEO, 1,
+				1 | (p->video_mute_yuv << 8));
+	}
+
+	/* Vsync Setup */
+	if (itv->has_cx23415 && !test_and_set_bit(IVTV_F_I_DIG_RST, &itv->i_flags)) {
+		/* event notification (on) */
+		ivtv_vapi(itv, CX2341X_ENC_SET_EVENT_NOTIFICATION, 4, 0, 1, IVTV_IRQ_ENC_VIM_RST, -1);
+		ivtv_clear_irq_mask(itv, IVTV_IRQ_ENC_VIM_RST);
+	}
+
+	if (atomic_read(&itv->capturing) == 0) {
+		/* Clear all Pending Interrupts */
+		ivtv_set_irq_mask(itv, IVTV_IRQ_MASK_CAPTURE);
+
+		clear_bit(IVTV_F_I_EOS, &itv->i_flags);
+
+		/* Initialize Digitizer for Capture */
+		v4l2_subdev_call(itv->sd_video, video, s_stream, 0);
+		ivtv_msleep_timeout(300, 1);
+		ivtv_vapi(itv, CX2341X_ENC_INITIALIZE_INPUT, 0);
+		v4l2_subdev_call(itv->sd_video, video, s_stream, 1);
+	}
+
+	/* begin_capture */
+	if (ivtv_vapi(itv, CX2341X_ENC_START_CAPTURE, 2, captype, subtype))
+	{
+		IVTV_DEBUG_WARN( "Error starting capture!\n");
+		return -EINVAL;
+	}
+
+	/* Start Passthrough */
+	if (enable_passthrough) {
+		ivtv_passthrough_mode(itv, 1);
+	}
+
+	if (s->type == IVTV_ENC_STREAM_TYPE_VBI)
+		ivtv_clear_irq_mask(itv, IVTV_IRQ_ENC_VBI_CAP);
+	else
+		ivtv_clear_irq_mask(itv, IVTV_IRQ_MASK_CAPTURE);
+
+	/* you're live! sit back and await interrupts :) */
+	atomic_inc(&itv->capturing);
+	return 0;
+}
+
+static int ivtv_setup_v4l2_decode_stream(struct ivtv_stream *s)
+{
+	u32 data[CX2341X_MBOX_MAX_DATA];
+	struct ivtv *itv = s->itv;
+	struct cx2341x_mpeg_params *p = &itv->params;
+	int datatype;
+
+	if (s->vdev == NULL)
+		return -EINVAL;
+
+	IVTV_DEBUG_INFO("Setting some initial decoder settings\n");
+
+	/* set audio mode to left/stereo  for dual/stereo mode. */
+	ivtv_vapi(itv, CX2341X_DEC_SET_AUDIO_MODE, 2, itv->audio_bilingual_mode, itv->audio_stereo_mode);
+
+	/* set number of internal decoder buffers */
+	ivtv_vapi(itv, CX2341X_DEC_SET_DISPLAY_BUFFERS, 1, 0);
+
+	/* prebufferin

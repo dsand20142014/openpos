@@ -1,0 +1,2203 @@
+,0},
+{0x0450,0xFF,0},
+{0x0451,0xE8,0},
+{0x0452,0xC4,0},
+{0x0453,0x88,0},
+{0x0454,0x00,0},
+{0x0458,0x98,0},
+{0x0459,0x03,0},
+{0x045A,0x00,0},
+{0x045B,0x30,0},
+{0x045C,0x00,0},
+{0x045D,0x70,0},
+{0x0466,0x14,0},
+{0x047A,0x00,0},
+{0x047B,0x00,0},
+{0x0480,0x58,0},
+{0x0481,0x06,0},
+{0x0482,0x0C,0},
+{0x04B0,0x50,0},
+{0x04B6,0x30,0},
+{0x04B9,0x10,0},
+{0x04B3,0x10,0},
+{0x04B1,0x8E,0},
+{0x04B4,0x20,0},
+{0x0540,0x00,0},
+{0x0541,0x9D,0},
+{0x0542,0x00,0},
+{0x0543,0xBC,0},
+{0x0580,0x01,0},
+{0x0581,0x0F,0},
+{0x0582,0x04,0},
+{0x0594,0x00,0},
+{0x0595,0x04,0},
+{0x05A9,0x03,0},
+{0x05AA,0x40,0},
+{0x05AB,0x80,0},
+{0x05AC,0x0A,0},
+{0x05AD,0x10,0},
+{0x05AE,0x0C,0},
+{0x05AF,0x0C,0},
+{0x05B0,0x03,0},
+{0x05B1,0x03,0},
+{0x05B2,0x1C,0},
+{0x05B3,0x02,0},
+{0x05B4,0x00,0},
+{0x05B5,0x0C,0},
+{0x05B8,0x80,0},
+{0x05B9,0x32,0},
+{0x05BA,0x00,0},
+{0x05BB,0x80,0},
+{0x05BC,0x03,0},
+{0x05BD,0x00,0},
+{0x05BF,0x05,0},
+{0x05C0,0x10,0},
+{0x05C3,0x00,0},
+{0x05C4,0x0C,0},
+{0x05C5,0x20,0},
+{0x05C7,0x01,0},
+{0x05C8,0x14,0},
+{0x05C9,0x54,0},
+{0x05CA,0x14,0},
+{0x05CB,0xE0,0},
+{0x05CC,0x20,0},
+{0x05CD,0x00,0},
+{0x05CE,0x08,0},
+{0x05CF,0x60,0},
+{0x05D0,0x10,0},
+{0x05D1,0x05,0},
+{0x05D2,0x03,0},
+{0x05D4,0x00,0},
+{0x05D5,0x05,0},
+{0x05D6,0x05,0},
+{0x05D7,0x05,0},
+{0x05D8,0x08,0},
+{0x05DC,0x0C,0},
+{0x05D9,0x00,0},
+{0x05DB,0x00,0},
+{0x05DD,0x0F,0},
+{0x05DE,0x00,0},
+{0x05DF,0x0A,0},
+#if 0  //VGA
+{0x05E0,0xA0,0}, //scaler
+{0x05E1,0x00,0},
+{0x05E2,0xA0,0},
+{0x05E3,0x00,0},
+{0x05E4,0x04,0},//windows
+{0x05E5,0x00,0},
+{0x05E6,0x38,0},
+{0x05E7,0x02,0},
+{0x05E8,0x06,0},
+{0x05E9,0x00,0},
+{0x05EA,0xE5,0},
+{0x05EB,0x01,0},
+#else  //QVGA
+{0x05E0,0x40,0}, //scaler
+{0x05E1,0x01,0},
+{0x05E2,0x40,0},
+{0x05E3,0x01,0},
+{0x05E4,0x02,0},//windows
+{0x05E5,0x00,0},
+{0x05E6,0x41,0},
+{0x05E7,0x01,0},
+{0x05E8,0x03,0},
+{0x05E9,0x00,0},
+{0x05EA,0xF2,0},
+{0x05EB,0x00,0},
+#endif
+{0x0660,0x04,0},
+{0x0661,0x16,0},
+{0x0662,0x04,0},
+{0x0663,0x28,0},
+{0x0664,0x04,0},
+{0x0665,0x18,0},
+{0x0666,0x04,0},
+{0x0667,0x21,0},
+{0x0668,0x04,0},
+{0x0669,0x0C,0},
+{0x066A,0x04,0},
+{0x066B,0x25,0},
+{0x066C,0x00,0},
+{0x066D,0x12,0},
+{0x066E,0x00,0},
+{0x066F,0x80,0},
+{0x0670,0x00,0},
+{0x0671,0x0A,0},
+{0x0672,0x04,0},
+{0x0673,0x1D,0},
+{0x0674,0x04,0},
+{0x0675,0x1D,0},
+{0x0676,0x00,0},
+{0x0677,0x7E,0},
+{0x0678,0x01,0},
+{0x0679,0x47,0},
+{0x067A,0x00,0},
+{0x067B,0x73,0},
+{0x067C,0x04,0},
+{0x067D,0x14,0},
+{0x067E,0x04,0},
+{0x067F,0x28,0},
+{0x0680,0x00,0},
+{0x0681,0x22,0},
+{0x0682,0x00,0},
+{0x0683,0xA5,0},
+{0x0684,0x00,0},
+{0x0685,0x1E,0},
+{0x0686,0x04,0},
+{0x0687,0x1D,0},
+{0x0688,0x04,0},
+{0x0689,0x19,0},
+{0x068A,0x04,0},
+{0x068B,0x21,0},
+{0x068C,0x04,0},
+{0x068D,0x0A,0},
+{0x068E,0x04,0},
+{0x068F,0x25,0},
+{0x0690,0x04,0},
+{0x0691,0x15,0},
+{0x0698,0x20,0},
+{0x0699,0x20,0},
+{0x069A,0x01,0},
+{0x069C,0x22,0},
+{0x069D,0x10,0},
+{0x069E,0x10,0},
+{0x069F,0x08,0},
+{0x0000,0x01,0},
+{0x0100,0x01,0},
+{0x0101,0x01,0},
+{0x0005,0x01,0}
+};
+
+/*!
+ * Maintains the information on the current state of the sesor.
+ */
+struct sensor {
+	const struct ov2640_platform_data *platform_data;
+	struct v4l2_int_device *v4l2_int_device;
+	struct i2c_client *i2c_client;
+	struct v4l2_pix_format pix;
+	struct v4l2_captureparm streamcap;
+	bool on;
+
+	/* control settings */
+	int brightness;
+	int hue;
+	int contrast;
+	int saturation;
+	int red;
+	int green;
+	int blue;
+	int ae_mode;
+
+	u32 csi;
+	u32 mclk;
+
+} ov2640_data;
+
+static struct regulator *io_regulator;
+static struct regulator *core_regulator;
+static struct regulator *analog_regulator;
+static struct regulator *gpo_regulator;
+
+extern void gpio_sensor_active(void);
+extern void gpio_sensor_inactive(void);
+
+/* list of image formats supported by this sensor */
+/*
+const static struct v4l2_fmtdesc ov2640_formats[] = {
+	{
+		.description = "YUYV (YUV 4:2:2), packed",
+		.pixelformat = V4L2_PIX_FMT_UYVY,
+	},
+};
+ */
+
+static int ov2640_init_mode(struct sensor *s)
+{
+	pr_alert("camera: %s\n",__func__);
+	int ret = -1;
+	struct reg_value *setting;
+	int i, num;
+
+	pr_debug("In ov2640:ov2640_init_mode capturemode is %d\n",
+		s->streamcap.capturemode);
+
+	if (s->streamcap.capturemode & V4L2_MODE_HIGHQUALITY) {
+		s->pix.width = 1600;
+		s->pix.height = 1200;
+		setting = ov2640_setting_1600_1120;
+		num = ARRAY_SIZE(ov2640_setting_1600_1120);
+	} else {
+		s->pix.width = 320;
+		s->pix.height = 240;
+		setting = ov2640_setting_800_600;
+		num = ARRAY_SIZE(ov2640_setting_800_600);
+	}
+	
+	/*******************/
+	u32 tgt_xclk;   /* target xclk */
+                
+        pr_debug("In ov2640:ioctl_dev_init\n");
+        
+        gpio_sensor_active();
+	
+        ov2640_data.on = true;
+
+        tgt_xclk = ov2640_data.mclk;
+        tgt_xclk = min(tgt_xclk, (u32)OV2640_XCLK_MAX);
+        tgt_xclk = max(tgt_xclk, (u32)OV2640_XCLK_MIN);
+        ov2640_data.mclk = tgt_xclk;
+        
+        pr_alert("   Setting mclk to %d MHz\n",
+                tgt_xclk / 1000000);
+        set_mclk_rate(&ov2640_data.mclk);
+
+
+	hw2057_hw_read(ov2640_data.i2c_client, 0x0001);
+	hw2057_hw_read(ov2640_data.i2c_client, 0x0002);
+	
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x038F, 0x0004) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0005, 0x0001) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0000, 0x0001) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0100, 0x0001) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0101, 0x0001) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	
+	hw2057_hw_read(ov2640_data.i2c_client, 0x038F);
+	hw2057_hw_read(ov2640_data.i2c_client, 0x0005);
+	/***********************/
+#if 1
+
+	for (i = 0; i < num; i++) {
+		ret = i2c_smbus_write_word_data(s->i2c_client,
+						setting[i].reg,
+						setting[i].value);
+		if (ret < 0) {
+			pr_err("write reg error: reg=%x, val=%x\n",
+			       setting[i].reg, setting[i].value);
+			return ret;
+		}
+		if (setting[i].delay_ms > 0)
+			msleep(setting[i].delay_ms);
+	}
+
+#endif
+
+	return ret;
+}
+
+/* At present only support change to 15fps(only for SVGA mode) */
+static int ov2640_set_fps(struct sensor *s, int fps)
+{
+	pr_alert("camera: %s\n",__func__);
+	int ret = 0;
+
+#if 1
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x038F, 0x04) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0390, 0x00) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0000, 0x01) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0100, 0x01) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0101, 0x01) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+#endif
+
+	return ret;
+}
+
+static int ov2640_set_format(struct sensor *s, int format)
+{
+	pr_alert("camera: %s\n",__func__);
+	int ret = 0;
+#if 1
+	if (format == V4L2_PIX_FMT_RGB565) {
+		/* set RGB565 format */
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0027, 0x40) < 0)
+			ret = -EPERM;
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0000, 0x01) < 0) {
+			ret = -EPERM;
+		}
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0100, 0x01) < 0) {
+			ret = -EPERM;
+		}
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0101, 0x01) < 0) {
+			ret = -EPERM;
+		}
+	} else if (format == V4L2_PIX_FMT_YUV420) {
+		/* set YUV420 format */
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0027, 0x30) < 0)
+			ret = -EPERM;
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0000, 0x01) < 0) {
+			ret = -EPERM;
+		}
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0100, 0x01) < 0) {
+			ret = -EPERM;
+		}
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0101, 0x01) < 0) {
+			ret = -EPERM;
+		}
+	} else {
+		pr_debug("format not supported\n");
+	}
+#endif
+	return ret;
+}
+
+/* --------------- IOCTL functions from v4l2_int_ioctl_desc --------------- */
+
+/*!
+ * ioctl_g_ifparm - V4L2 sensor interface handler for vidioc_int_g_ifparm_num
+ * s: pointer to standard V4L2 device structure
+ * p: pointer to standard V4L2 vidioc_int_g_ifparm_num ioctl structure
+ *
+ * Gets slave interface parameters.
+ * Calculates the required xclk value to support the requested
+ * clock parameters in p.  This value is returned in the p
+ * parameter.
+ *
+ * vidioc_int_g_ifparm returns platform-specific information about the
+ * interface settings used by the sensor.
+ *
+ * Given the image capture format in pix, the nominal frame period in
+ * timeperframe, calculate the required xclk frequency.
+ *
+ * Called on open.
+ */
+static int ioctl_g_ifparm(struct v4l2_int_device *s, struct v4l2_ifparm *p)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640:ioctl_g_ifparm\n");
+
+	if (s == NULL) {
+		pr_err("   ERROR!! no slave device set!\n");
+		return -1;
+	}
+
+	memset(p, 0, sizeof(*p));
+	p->u.bt656.clock_curr = ov2640_data.mclk;
+	p->if_type = V4L2_IF_TYPE_BT656;
+	p->u.bt656.mode = V4L2_IF_TYPE_BT656_MODE_NOBT_8BIT;
+	p->u.bt656.clock_min = OV2640_XCLK_MIN;
+	p->u.bt656.clock_max = OV2640_XCLK_MAX;
+
+	return 0;
+}
+
+/*!
+ * Sets the camera power.
+ *
+ * s  pointer to the camera device
+ * on if 1, power is to be turned on.  0 means power is to be turned off
+ *
+ * ioctl_s_power - V4L2 sensor interface handler for vidioc_int_s_power_num
+ * @s: pointer to standard V4L2 device structure
+ * @on: power state to which device is to be set
+ *
+ * Sets devices power state to requrested state, if possible.
+ * This is called on open, close, suspend and resume.
+ */
+static int ioctl_s_power(struct v4l2_int_device *s, int on)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+
+	pr_debug("In ov2640:ioctl_s_power\n");
+
+	if (on && !sensor->on) {
+		gpio_sensor_active();
+		if (io_regulator)
+			if (regulator_enable(io_regulator) != 0)
+				return -EIO;
+		if (core_regulator)
+			if (regulator_enable(core_regulator) != 0)
+				return -EIO;
+		if (gpo_regulator)
+			if (regulator_enable(gpo_regulator) != 0)
+				return -EIO;
+		if (analog_regulator)
+			if (regulator_enable(analog_regulator) != 0)
+				return -EIO;
+	} else if (!on && sensor->on) {
+		if (analog_regulator)
+			regulator_disable(analog_regulator);
+		if (core_regulator)
+			regulator_disable(core_regulator);
+		if (io_regulator)
+			regulator_disable(io_regulator);
+		if (gpo_regulator)
+			regulator_disable(gpo_regulator);
+		gpio_sensor_inactive();
+	}
+
+	sensor->on = on;
+
+	return 0;
+}
+
+/*!
+ * ioctl_g_parm - V4L2 sensor interface handler for VIDIOC_G_PARM ioctl
+ * @s: pointer to standard V4L2 device structure
+ * @a: pointer to standard V4L2 VIDIOC_G_PARM ioctl structure
+ *
+ * Returns the sensor's video CAPTURE parameters.
+ */
+static int ioctl_g_parm(struct v4l2_int_device *s, struct v4l2_streamparm *a)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+	struct v4l2_captureparm *cparm = &a->parm.capture;
+	int ret = 0;
+
+	pr_debug("In ov2640:ioctl_g_parm\n");
+
+	switch (a->type) {
+	/* This is the only case currently handled. */
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
+		pr_debug("   type is V4L2_BUF_TYPE_VIDEO_CAPTURE\n");
+		memset(a, 0, sizeof(*a));
+		a->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		cparm->capability = sensor->streamcap.capability;
+		cparm->timeperframe = sensor->streamcap.timeperframe;
+		cparm->capturemode = sensor->streamcap.capturemode;
+		ret = 0;
+		break;
+
+	/* These are all the possible cases. */
+	case V4L2_BUF_TYPE_VIDEO_OUTPUT:
+	case V4L2_BUF_TYPE_VIDEO_OVERLAY:
+	case V4L2_BUF_TYPE_VBI_CAPTURE:
+	case V4L2_BUF_TYPE_VBI_OUTPUT:
+	case V4L2_BUF_TYPE_SLICED_VBI_CAPTURE:
+	case V4L2_BUF_TYPE_SLICED_VBI_OUTPUT:
+		pr_err("   type is not V4L2_BUF_TYPE_VIDEO_CAPTURE " \
+			"but %d\n", a->type);
+		ret = -EINVAL;
+		break;
+
+	default:
+		pr_err("   type is unknown - %d\n", a->type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/*!
+ * ioctl_s_parm - V4L2 sensor interface handler for VIDIOC_S_PARM ioctl
+ * @s: pointer to standard V4L2 device structure
+ * @a: pointer to standard V4L2 VIDIOC_S_PARM ioctl structure
+ *
+ * Configures the sensor to use the input parameters, if possible.  If
+ * not possible, reverts to the old parameters and returns the
+ * appropriate error code.
+ */
+static int ioctl_s_parm(struct v4l2_int_device *s, struct v4l2_streamparm *a)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+	struct v4l2_fract *timeperframe = &a->parm.capture.timeperframe;
+	u32 tgt_fps;	/* target frames per secound */
+	int ret = 0;
+
+	pr_debug("In ov2640:ioctl_s_parm\n");
+
+	switch (a->type) {
+	/* This is the only case currently handled. */
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
+		pr_debug("   type is V4L2_BUF_TYPE_VIDEO_CAPTURE\n");
+
+		/* Check that the new frame rate is allowed. */
+		if ((timeperframe->numerator == 0)
+		    || (timeperframe->denominator == 0)) {
+			timeperframe->denominator = DEFAULT_FPS;
+			timeperframe->numerator = 1;
+		}
+		tgt_fps = timeperframe->denominator
+			  / timeperframe->numerator;
+
+		if (tgt_fps > MAX_FPS) {
+			timeperframe->denominator = MAX_FPS;
+			timeperframe->numerator = 1;
+		} else if (tgt_fps < MIN_FPS) {
+			timeperframe->denominator = MIN_FPS;
+			timeperframe->numerator = 1;
+		}
+		sensor->streamcap.timeperframe = *timeperframe;
+		sensor->streamcap.capturemode =
+				(u32)a->parm.capture.capturemode;
+
+		ret = ov2640_init_mode(sensor);
+		if (tgt_fps == 15)
+			ov2640_set_fps(sensor, tgt_fps);
+		break;
+
+	/* These are all the possible cases. */
+	case V4L2_BUF_TYPE_VIDEO_OUTPUT:
+	case V4L2_BUF_TYPE_VIDEO_OVERLAY:
+	case V4L2_BUF_TYPE_VBI_CAPTURE:
+	case V4L2_BUF_TYPE_VBI_OUTPUT:
+	case V4L2_BUF_TYPE_SLICED_VBI_CAPTURE:
+	case V4L2_BUF_TYPE_SLICED_VBI_OUTPUT:
+		pr_err("   type is not V4L2_BUF_TYPE_VIDEO_CAPTURE " \
+			"but %d\n", a->type);
+		ret = -EINVAL;
+		break;
+
+	default:
+		pr_err("   type is unknown - %d\n", a->type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/*!
+ * ioctl_s_fmt_cap - V4L2 sensor interface handler for ioctl_s_fmt_cap
+ * 		     set camera output format and resolution format
+ *
+ * @s: pointer to standard V4L2 device structure
+ * @arg: pointer to parameter, according this to set camera
+ *
+ * Returns 0 if set succeed, else return -1
+ */
+static int ioctl_s_fmt_cap(struct v4l2_int_device *s, struct v4l2_format *f)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+	u32 format = f->fmt.pix.pixelformat;
+	int size = 0, ret = 0;
+
+	size = f->fmt.pix.width * f->fmt.pix.height;
+	switch (format) {
+	case V4L2_PIX_FMT_RGB565:
+		if (size > 640 * 480)
+			sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
+		else
+			sensor->streamcap.capturemode = 0;
+		ret = ov2640_init_mode(sensor);
+
+		ret = ov2640_set_format(sensor, V4L2_PIX_FMT_RGB565);
+		break;
+	case V4L2_PIX_FMT_UYVY:
+		if (size > 640 * 480)
+			sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
+		else
+			sensor->streamcap.capturemode = 0;
+		ret = ov2640_init_mode(sensor);
+		break;
+	case V4L2_PIX_FMT_YUV420:
+		if (size > 640 * 480)
+			sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
+		else
+			sensor->streamcap.capturemode = 0;
+		ret = ov2640_init_mode(sensor);
+
+		/* YUYV: width * 2, YY: width */
+		ret = ov2640_set_format(sensor, V4L2_PIX_FMT_YUV420);
+		break;
+	default:
+		pr_debug("case not supported\n");
+		break;
+	}
+
+	return ret;
+}
+
+/*!
+ * ioctl_g_fmt_cap - V4L2 sensor interface handler for ioctl_g_fmt_cap
+ * @s: pointer to standard V4L2 device structure
+ * @f: pointer to standard V4L2 v4l2_format structure
+ *
+ * Returns the sensor's current pixel format in the v4l2_format
+ * parameter.
+ */
+static int ioctl_g_fmt_cap(struct v4l2_int_device *s, struct v4l2_format *f)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+
+	pr_debug("In ov2640:ioctl_g_fmt_cap.\n");
+
+	f->fmt.pix = sensor->pix;
+
+	return 0;
+}
+
+/*!
+ * ioctl_g_ctrl - V4L2 sensor interface handler for VIDIOC_G_CTRL ioctl
+ * @s: pointer to standard V4L2 device structure
+ * @vc: standard V4L2 VIDIOC_G_CTRL ioctl structure
+ *
+ * If the requested control is supported, returns the control's current
+ * value from the video_control[] array.  Otherwise, returns -EINVAL
+ * if the control is not supported.
+ */
+static int ioctl_g_ctrl(struct v4l2_int_device *s, struct v4l2_control *vc)
+{
+	pr_alert("camera: %s\n",__func__);
+	int ret = 0;
+
+	pr_debug("In ov2640:ioctl_g_ctrl\n");
+
+	switch (vc->id) {
+	case V4L2_CID_BRIGHTNESS:
+		vc->value = ov2640_data.brightness;
+		break;
+	case V4L2_CID_HUE:
+		vc->value = ov2640_data.hue;
+		break;
+	case V4L2_CID_CONTRAST:
+		vc->value = ov2640_data.contrast;
+		break;
+	case V4L2_CID_SATURATION:
+		vc->value = ov2640_data.saturation;
+		break;
+	case V4L2_CID_RED_BALANCE:
+		vc->value = ov2640_data.red;
+		break;
+	case V4L2_CID_BLUE_BALANCE:
+		vc->value = ov2640_data.blue;
+		break;
+	case V4L2_CID_EXPOSURE:
+		vc->value = ov2640_data.ae_mode;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
+/*!
+ * ioctl_s_ctrl - V4L2 sensor interface handler for VIDIOC_S_CTRL ioctl
+ * @s: pointer to standard V4L2 device structure
+ * @vc: standard V4L2 VIDIOC_S_CTRL ioctl structure
+ *
+ * If the requested control is supported, sets the control's current
+ * value in HW (and updates the video_control[] array).  Otherwise,
+ * returns -EINVAL if the control is not supported.
+ */
+static int ioctl_s_ctrl(struct v4l2_int_device *s, struct v4l2_control *vc)
+{
+	pr_alert("camera: %s\n",__func__);
+	int retval = 0;
+
+	pr_debug("In ov2640:ioctl_s_ctrl %d\n", vc->id);
+
+	switch (vc->id) {
+	case V4L2_CID_BRIGHTNESS:
+		pr_debug("   V4L2_CID_BRIGHTNESS\n");
+		break;
+	case V4L2_CID_CONTRAST:
+		pr_debug("   V4L2_CID_CONTRAST\n");
+		break;
+	case V4L2_CID_SATURATION:
+		pr_debug("   V4L2_CID_SATURATION\n");
+		break;
+	case V4L2_CID_HUE:
+		pr_debug("   V4L2_CID_HUE\n");
+		break;
+	case V4L2_CID_AUTO_WHITE_BALANCE:
+		pr_debug(
+			"   V4L2_CID_AUTO_WHITE_BALANCE\n");
+		break;
+	case V4L2_CID_DO_WHITE_BALANCE:
+		pr_debug(
+			"   V4L2_CID_DO_WHITE_BALANCE\n");
+		break;
+	case V4L2_CID_RED_BALANCE:
+		pr_debug("   V4L2_CID_RED_BALANCE\n");
+		break;
+	case V4L2_CID_BLUE_BALANCE:
+		pr_debug("   V4L2_CID_BLUE_BALANCE\n");
+		break;
+	case V4L2_CID_GAMMA:
+		pr_debug("   V4L2_CID_GAMMA\n");
+		break;
+	case V4L2_CID_EXPOSURE:
+		pr_debug("   V4L2_CID_EXPOSURE\n");
+		break;
+	case V4L2_CID_AUTOGAIN:
+		pr_debug("   V4L2_CID_AUTOGAIN\n");
+		break;
+	case V4L2_CID_GAIN:
+		pr_debug("   V4L2_CID_GAIN\n");
+		break;
+	case V4L2_CID_HFLIP:
+		pr_debug("   V4L2_CID_HFLIP\n");
+		break;
+	case V4L2_CID_VFLIP:
+		pr_debug("   V4L2_CID_VFLIP\n");
+		break;
+	default:
+		pr_debug("   Default case\n");
+		retval = -EPERM;
+		break;
+	}
+
+	return retval;
+}
+
+/*!
+ * ioctl_init - V4L2 sensor interface handler for VIDIOC_INT_INIT
+ * @s: pointer to standard V4L2 device structure
+ */
+static int ioctl_init(struct v4l2_int_device *s)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640:ioctl_init\n");
+
+	return 0;
+}
+
+/*!
+ * ioctl_dev_init - V4L2 sensor interface handler for vidioc_int_dev_init_num
+ * @s: pointer to standard V4L2 device structure
+ *
+ * Initialise the device when slave attaches to the master.
+ */
+static int ioctl_dev_init(struct v4l2_int_device *s)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+	u32 tgt_xclk;	/* target xclk */
+
+	pr_debug("In ov2640:ioctl_dev_init\n");
+
+	gpio_sensor_active();
+	ov2640_data.on = true;
+
+	tgt_xclk = ov2640_data.mclk;
+	tgt_xclk = min(tgt_xclk, (u32)OV2640_XCLK_MAX);
+	tgt_xclk = max(tgt_xclk, (u32)OV2640_XCLK_MIN);
+	ov2640_data.mclk = tgt_xclk;
+
+	pr_alert("   Setting mclk to %d MHz\n",
+		tgt_xclk / 1000000);
+	set_mclk_rate(&ov2640_data.mclk);
+	return ov2640_init_mode(sensor);
+}
+
+/*!
+ * ioctl_dev_exit - V4L2 sensor interface handler for vidioc_int_dev_exit_num
+ * @s: pointer to standard V4L2 device structure
+ *
+ * Delinitialise the device when slave detaches to the master.
+ */
+static int ioctl_dev_exit(struct v4l2_int_device *s)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640:ioctl_dev_exit\n");
+
+	gpio_sensor_inactive();
+
+	return 0;
+}
+
+/*!
+ * This structure defines all the ioctls for this module and links them to the
+ * enumeration.
+ */
+static struct v4l2_int_ioctl_desc ov2640_ioctl_desc[] = {
+	{vidioc_int_dev_init_num, (v4l2_int_ioctl_func *)ioctl_dev_init},
+	{vidioc_int_dev_exit_num, (v4l2_int_ioctl_func*)ioctl_dev_exit},
+	{vidioc_int_s_power_num, (v4l2_int_ioctl_func *)ioctl_s_power},
+	{vidioc_int_g_ifparm_num, (v4l2_int_ioctl_func *)ioctl_g_ifparm},
+/*	{vidioc_int_g_needs_reset_num,
+				(v4l2_int_ioctl_func *)ioctl_g_needs_reset}, */
+/*	{vidioc_int_reset_num, (v4l2_int_ioctl_func *)ioctl_reset}, */
+	{vidioc_int_init_num, (v4l2_int_ioctl_func *)ioctl_init},
+/*	{vidioc_int_enum_fmt_cap_num,
+				(v4l2_int_ioctl_func *)ioctl_enum_fmt_cap}, */
+/*	{vidioc_int_try_fmt_cap_num,
+				(v4l2_int_ioctl_func *)ioctl_try_fmt_cap}, */
+	{vidioc_int_g_fmt_cap_num, (v4l2_int_ioctl_func *)ioctl_g_fmt_cap},
+	{vidioc_int_s_fmt_cap_num, (v4l2_int_ioctl_func*)ioctl_s_fmt_cap},
+	{vidioc_int_g_parm_num, (v4l2_int_ioctl_func *)ioctl_g_parm},
+	{vidioc_int_s_parm_num, (v4l2_int_ioctl_func *)ioctl_s_parm},
+/*	{vidioc_int_queryctrl_num, (v4l2_int_ioctl_func *)ioctl_queryctrl}, */
+	{vidioc_int_g_ctrl_num, (v4l2_int_ioctl_func *)ioctl_g_ctrl},
+	{vidioc_int_s_ctrl_num, (v4l2_int_ioctl_func *)ioctl_s_ctrl},
+};
+
+static struct v4l2_int_slave ov2640_slave = {
+	.ioctls = ov2640_ioctl_desc,
+	.num_ioctls = ARRAY_SIZE(ov2640_ioctl_desc),
+};
+
+static struct v4l2_int_device ov2640_int_device = {
+	.module = THIS_MODULE,
+	.name = "ov2640",
+	.type = v4l2_int_type_slave,
+	.u = {
+		.slave = &ov2640_slave,
+		},
+};
+
+
+static unsigned int hw2057_hw_read(struct i2c_client *client1,	     unsigned int reg)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct i2c_client *client = client1;
+	int i2c_ret;
+	u16 value;
+	u8 buf0[2], buf1[2];
+	u16 addr = client->addr;
+	u16 flags = client->flags;
+	struct i2c_msg msg[2] = {
+		{addr, flags, 2, buf0},
+		{addr, flags | I2C_M_RD, 2, buf1},
+	};
+
+	buf0[0] = (reg & 0xff00) >> 8;
+	buf0[1] = reg & 0xff;
+	i2c_ret = i2c_transfer(client->adapter, msg, 2);
+	if (i2c_ret < 0) {
+		printk("%s: read reg error : Reg 0x%02x\n", __func__, reg);
+		return 0;
+	}
+
+	value = buf1[0] << 8 | buf1[1];
+
+	printk("\r\nr r:%04x,v:%04x\r\n", reg, value);
+	return value;
+}
+
+/*!
+ * ov2640 I2C attach function
+ * Function set in i2c_driver struct.
+ * Called by insmod ov2640_camera.ko.
+ *
+ * @param client            struct i2c_client*
+ * @return  Error code indicating success or failure
+ */
+static int ov2640_probe(struct i2c_client *client,
+			const struct i2c_device_id *id)
+{
+	pr_alert("camera: %s\n",__func__);
+	int retval;
+	struct mxc_camera_platform_data *plat_data = client->dev.platform_data;
+
+	pr_debug("In ov2640_probe (RH_BT565)\n");
+
+	printk("\r\nIn client addr:0x%x\r\n", client->addr);
+
+
+	/* Set initial values for the sensor struct. */
+	memset(&ov2640_data, 0, sizeof(ov2640_data));
+	ov2640_data.i2c_client = client;
+	ov2640_data.mclk = 24000000;
+	ov2640_data.mclk = plat_data->mclk;
+	ov2640_data.pix.pixelformat = V4L2_PIX_FMT_UYVY;
+	ov2640_data.pix.width = 800;
+	ov2640_data.pix.height = 600;
+	ov2640_data.streamcap.capability = V4L2_MODE_HIGHQUALITY
+					   | V4L2_CAP_TIMEPERFRAME;
+	ov2640_data.streamcap.capturemode = 0;
+	ov2640_data.streamcap.timeperframe.denominator = DEFAULT_FPS;
+	ov2640_data.streamcap.timeperframe.numerator = 1;
+
+	//set_mclk_rate(&ov2640_data.mclk);
+
+	if (plat_data->io_regulator) {
+		io_regulator =
+		    regulator_get(&client->dev, plat_data->io_regulator);
+		if (!IS_ERR(io_regulator)) {
+			regulator_set_voltage(io_regulator, 2800000, 2800000);
+			if (regulator_enable(io_regulator) != 0) {
+				pr_err("%s:io set voltage error\n", __func__);
+				goto err1;
+			} else {
+				dev_dbg(&client->dev,
+					"%s:io set voltage ok\n", __func__);
+			}
+		} else
+			io_regulator = NULL;
+	}
+
+	if (plat_data->core_regulator) {
+		core_regulator =
+		    regulator_get(&client->dev, plat_data->core_regulator);
+		if (!IS_ERR(core_regulator)) {
+			regulator_set_voltage(core_regulator,
+					 1300000, 1300000);
+			if (regulator_enable(core_regulator) != 0) {
+				pr_err("%s:core set voltage error\n", __func__);
+				goto err2;
+			} else {
+				dev_dbg(&client->dev,
+					"%s:core set voltage ok\n", __func__);
+			}
+		} else
+			core_regulator = NULL;
+	}
+
+	if (plat_data->analog_regulator) {
+		analog_regulator =
+		    regulator_get(&client->dev, plat_data->analog_regulator);
+		if (!IS_ERR(analog_regulator)) {
+			regulator_set_voltage(analog_regulator, 2000000, 2000000);
+			if (regulator_enable(analog_regulator) != 0) {
+				pr_err("%s:analog set voltage error\n",
+					 __func__);
+				goto err3;
+			} else {
+				dev_dbg(&client->dev,
+					"%s:analog set voltage ok\n", __func__);
+			}
+		} else
+			analog_regulator = NULL;
+	}
+
+	if (plat_data->gpo_regulator) {
+		gpo_regulator =
+		    regulator_get(&client->dev, plat_data->gpo_regulator);
+		if (!IS_ERR(gpo_regulator)) {
+			if (regulator_enable(gpo_regulator) != 0) {
+				pr_err("%s:gpo3 set voltage error\n", __func__);
+				goto err4;
+			} else {
+				dev_dbg(&client->dev,
+					"%s:gpo3 set voltage ok\n", __func__);
+			}
+		} else
+			gpo_regulator = NULL;
+	}
+
+	/* This function attaches this structure to the /dev/video0 device.
+	 * The pointer in priv points to the ov2640_data structure here.*/
+	ov2640_int_device.priv = &ov2640_data;
+	
+	retval = v4l2_int_device_register(&ov2640_int_device);
+
+	return retval;
+err4:
+	if (analog_regulator) {
+		regulator_disable(analog_regulator);
+		regulator_put(analog_regulator);
+	}
+err3:
+	if (core_regulator) {
+		regulator_disable(core_regulator);
+		regulator_put(core_regulator);
+	}
+err2:
+	if (io_regulator) {
+		regulator_disable(io_regulator);
+		regulator_put(io_regulator);
+	}
+err1:
+	return -1;
+}
+
+/*!
+ * ov2640 I2C detach function
+ * Called on rmmod ov2640_camera.ko
+ *
+ * @param client            struct i2c_client*
+ * @return  Error code indicating success or failure
+ */
+static int ov2640_remove(struct i2c_client *client)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640_remove\n");
+
+	v4l2_int_device_unregister(&ov2640_int_device);
+
+	if (gpo_regulator) {
+		regulator_disable(gpo_regulator);
+		regulator_put(gpo_regulator);
+	}
+
+	if (analog_regulator) {
+		regulator_disable(analog_regulator);
+		regulator_put(analog_regulator);
+	}
+
+	if (core_regulator) {
+		regulator_disable(core_regulator);
+		regulator_put(core_regulator);
+	}
+
+	if (io_regulator) {
+		regulator_disable(io_regulator);
+		regulator_put(io_regulator);
+	}
+
+	return 0;
+}
+
+static const struct i2c_device_id ov2640_id[] = {
+	{"ov2640", 0},
+	{},
+};
+
+MODULE_DEVICE_TABLE(i2c, ov2640_id);
+
+static struct i2c_driver ov2640_i2c_driver = {
+	.driver = {
+		   .owner = THIS_MODULE,
+		   .name = "ov2640",
+		  },
+	.probe = ov2640_probe,
+	.remove = ov2640_remove,
+	.id_table = ov2640_id,
+/* To add power management add .suspend and .resume functions */
+};
+
+/*!
+ * ov2640 init function
+ * Called by insmod ov2640_camera.ko.
+ *
+ * @return  Error code indicating success or failure
+ */
+static __init int ov2640_init(void)
+{
+	pr_alert("camera: %s\n",__func__);
+	u8 err;
+
+	err = i2c_add_driver(&ov2640_i2c_driver);
+	if (err != 0)
+		pr_err("%s:driver registration failed, error=%d \n",
+			__func__, err);
+
+	return err;
+}
+
+/*!
+ * OV2640 cleanup function
+ * Called on rmmod ov2640_camera.ko
+ *
+ * @return  Error code indicating success or failure
+ */
+static void __exit ov2640_clean(void)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640_clean\n");
+	i2c_del_driver(&ov2640_i2c_driver);
+}
+
+module_init(ov2640_init);
+module_exit(ov2640_clean);
+
+MODULE_AUTHOR("Freescale Semiconductor, Inc.");
+MODULE_DESCRIPTION("OV2640 Camera Driver");
+MODULE_LICENSE("GPL");
+
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      /*
+ * WUSB Wire Adapter: WLP interface
+ * Sysfs interfaces
+ *
+ * Copyright (C) 2005-2006 Intel Corporation
+ * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
+ *
+ *
+ * FIXME: docs
+ */
+
+#include <linux/netdevice.h>
+#include <linux/etherdevice.h>
+#include <linux/device.h>
+
+#include "i1480u-wlp.h"
+
+
+/**
+ *
+ * @dev: Class device from the net_device; assumed refcnted.
+ *
+ * Yes, I don't lock--we assume it is refcounted and I am getting a
+ * single byte value that is kind of atomic to read.
+ */
+ssize_t uwb_phy_rate_show(const struct wlp_options *options, char *buf)
+{
+	return sprintf(buf, "%u\n",
+		       wlp_tx_hdr_phy_rate(&options->def_tx_hdr));
+}
+EXPORT_SYMBOL_GPL(uwb_phy_rate_show);
+
+
+ssize_t uwb_phy_rate_store(struct wlp_options *options,
+			   const char *buf, size_t size)
+{
+	ssize_t result;
+	unsigned rate;
+
+	result = sscanf(buf, "%u\n", &rate);
+	if (result != 1) {
+		result = -EINVAL;
+		goto out;
+	}
+	result = -EINVAL;
+	if (rate >= UWB_PHY_RATE_INVALID)
+		goto out;
+	wlp_tx_hdr_set_phy_rate(&options->def_tx_hdr, rate);
+	result = 0;
+out:
+	return result < 0 ? result : size;
+}
+EXPORT_SYMBOL_GPL(uwb_phy_rate_store);
+
+
+ssize_t uwb_rts_cts_show(const struct wlp_options *options, char *buf)
+{
+	return sprintf(buf, "%u\n",
+		       wlp_tx_hdr_rts_cts(&options->def_tx_hdr));
+}
+EXPORT_SYMBOL_GPL(uwb_rts_cts_show);
+
+
+ssize_t uwb_rts_cts_store(struct wlp_options *options,
+			  const char *buf, size_t size)
+{
+	ssize_t result;
+	unsigned value;
+
+	result = sscanf(buf, "%u\n", &value);
+	if (result != 1) {
+		result = -EINVAL;
+		goto out;
+	}
+	result = -EINVAL;
+	wlp_tx_hdr_set_rts_cts(&options->def_tx_hdr, !!value);
+	result = 0;
+out:
+	return result < 0 ? result : size;
+}
+EXPORT_SYMBOL_GPL(uwb_rts_cts_store);
+
+
+ssize_t uwb_ack_policy_show(const struct wlp_options *options, char *buf)
+{
+	return sprintf(buf, "%u\n",
+		       wlp_tx_hdr_ack_policy(&options->def_tx_hdr));
+}
+EXPORT_SYMBOL_GPL(uwb_ack_policy_show);
+
+
+ssize_t uwb_ack_policy_store(struct wlp_options *options,
+			     const char *buf, size_t size)
+{
+	ssize_t result;
+	unsigned value;
+
+	result = sscanf(buf, "%u\n", &value);
+	if (result != 1 || value > UWB_ACK_B_REQ) {
+		result = -EINVAL;
+		goto out;
+	}
+	wlp_tx_hdr_set_ack_policy(&options->def_tx_hdr, value);
+	result = 0;
+out:
+	return result < 0 ? result : size;
+}
+EXPORT_SYMBOL_GPL(uwb_ack_policy_store);
+
+
+/**
+ * Show the PCA base priority.
+ *
+ * We can access without locking, as the value is (for now) orthogonal
+ * to other values.
+ */
+ssize_t uwb_pca_base_priority_show(const struct wlp_options *options,
+				   char *buf)
+{
+	return sprintf(buf, "%u\n",
+		       options->pca_base_priority);
+}
+EXPORT_SYMBOL_GPL(uwb_pca_base_priority_show);
+
+
+/**
+ * Set the PCA base priority.
+ *
+ * We can access without locking, as the value is (for now) orthogonal
+ * to other values.
+ */
+ssize_t uwb_pca_base_priority_store(struct wlp_options *options,
+				    const char *buf, size_t size)
+{
+	ssize_t result = -EINVAL;
+	u8 pca_base_priority;
+
+	result = sscanf(buf, "%hhu\n", &pca_base_priority);
+	if (result != 1) {
+		result = -EINVAL;
+		goto out;
+	}
+	result = -EINVAL;
+	if (pca_base_priority >= 8)
+		goto out;
+	options->pca_base_priority = pca_base_priority;
+	/* Update TX header if we are currently using PCA. */
+	if (result >= 0 && (wlp_tx_hdr_delivery_id_type(&options->def_tx_hdr) & WLP_DRP) == 0)
+		wlp_tx_hdr_set_delivery_id_type(&options->def_tx_hdr, options->pca_base_priority);
+	result = 0;
+out:
+	return result < 0 ? result : size;
+}
+EXPORT_SYMBOL_GPL(uwb_pca_base_priority_store);
+
+/**
+ * Show current inflight values
+ *
+ * Will print the current MAX and THRESHOLD values for the basic flow
+ * control. In addition it will report how many times the TX queue needed
+ * to be restarted since the last time this query was made.
+ */
+static ssize_t wlp_tx_inflight_show(struct i1480u_tx_inflight *inflight,
+				    char *buf)
+{
+	ssize_t result;
+	unsigned long sec_elapsed = (jiffies - inflight->restart_ts)/HZ;
+	unsigned long restart_count = atomic_read(&inflight->restart_count);
+
+	result = scnprintf(buf, PAGE_SIZE, "%lu %lu %d %lu %lu %lu\n"
+			   "#read: threshold max inflight_count restarts "
+			   "seconds restarts/sec\n"
+			   "#write: threshold max\n",
+			   inflight->threshold, inflight->max,
+			   atomic_read(&inflight->count),
+			   restart_count, sec_elapsed,
+			   sec_elapsed == 0 ? 0 : restart_count/sec_elapsed);
+	inflight->restart_ts = jiffies;
+	atomic_set(&inflight->restart_count, 0);
+	return result;
+}
+
+static
+ssize_t wlp_tx_inflight_store(struct i1480u_tx_inflight *inflight,
+				const char *buf, size_t size)
+{
+	unsigned long in_threshold, in_max;
+	ssize_t result;
+	result = sscanf(buf, "%lu %lu", &in_threshold, &in_max);
+	if (result != 2)
+		return -EINVAL;
+	if (in_max <= in_threshold)
+		return -EINVAL;
+	inflight->max = in_max;
+	inflight->threshold = in_threshold;
+	return size;
+}
+/*
+ * Glue (or function adaptors) for accesing info on sysfs
+ *
+ * [we need this indirection because the PCI driver does almost the
+ * same]
+ *
+ * Linux 2.6.21 changed how 'struct netdevice' does attributes (from
+ * having a 'struct class_dev' to having a 'struct device'). That is
+ * quite of a pain.
+ *
+ * So we try to abstract that here. i1480u_SHOW() and i1480u_STORE()
+ * create adaptors for extracting the 'struct i1480u' from a 'struct
+ * dev' and calling a function for doing a sysfs operation (as we have
+ * them factorized already). i1480u_ATTR creates the attribute file
+ * (CLASS_DEVICE_ATTR or DEVICE_ATTR) and i1480u_ATTR_NAME produces a
+ * class_device_attr_NAME or device_attr_NAME (for group registration).
+ */
+
+#define i1480u_SHOW(name, fn, param)				\
+static ssize_t i1480u_show_##name(struct device *dev,		\
+				  struct device_attribute *attr,\
+				  char *buf)			\
+{								\
+	struct i1480u *i1480u = netdev_priv(to_net_dev(dev));	\
+	return fn(&i1480u->param, buf);				\
+}
+
+#define i1480u_STORE(name, fn, param)				\
+static ssize_t i1480u_store_##name(struct device *dev,		\
+				   struct device_attribute *attr,\
+				   const char *buf, size_t size)\
+{								\
+	struct i1480u *i1480u = netdev_priv(to_net_dev(dev));	\
+	return fn(&i1480u->param, buf, size);			\
+}
+
+#define i1480u_ATTR(name, perm) static DEVICE_ATTR(name, perm,  \
+					     i1480u_show_##name,\
+					     i1480u_store_##name)
+
+#define i1480u_ATTR_SHOW(name) static DEVICE_ATTR(name,		\
+					S_IRUGO,		\
+					i1480u_show_##name, NULL)
+
+#define i1480u_ATTR_NAME(a) (dev_attr_##a)
+
+
+/*
+ * Sysfs adaptors
+ */
+i1480u_SHOW(uwb_phy_rate, uwb_phy_rate_show, options);
+i1480u_STORE(uwb_phy_rate, uwb_phy_rate_store, options);
+i1480u_ATTR(uwb_phy_rate, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(uwb_rts_cts, uwb_rts_cts_show, options);
+i1480u_STORE(uwb_rts_cts, uwb_rts_cts_store, options);
+i1480u_ATTR(uwb_rts_cts, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(uwb_ack_policy, uwb_ack_policy_show, options);
+i1480u_STORE(uwb_ack_policy, uwb_ack_policy_store, options);
+i1480u_ATTR(uwb_ack_policy, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(uwb_pca_base_priority, uwb_pca_base_priority_show, options);
+i1480u_STORE(uwb_pca_base_priority, uwb_pca_base_priority_store, options);
+i1480u_ATTR(uwb_pca_base_priority, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_eda, wlp_eda_show, wlp);
+i1480u_STORE(wlp_eda, wlp_eda_store, wlp);
+i1480u_ATTR(wlp_eda, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_uuid, wlp_uuid_show, wlp);
+i1480u_STORE(wlp_uuid, wlp_uuid_store, wlp);
+i1480u_ATTR(wlp_uuid, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_name, wlp_dev_name_show, wlp);
+i1480u_STORE(wlp_dev_name, wlp_dev_name_store, wlp);
+i1480u_ATTR(wlp_dev_name, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_manufacturer, wlp_dev_manufacturer_show, wlp);
+i1480u_STORE(wlp_dev_manufacturer, wlp_dev_manufacturer_store, wlp);
+i1480u_ATTR(wlp_dev_manufacturer, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_model_name, wlp_dev_model_name_show, wlp);
+i1480u_STORE(wlp_dev_model_name, wlp_dev_model_name_store, wlp);
+i1480u_ATTR(wlp_dev_model_name, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_model_nr, wlp_dev_model_nr_show, wlp);
+i1480u_STORE(wlp_dev_model_nr, wlp_dev_model_nr_store, wlp);
+i1480u_ATTR(wlp_dev_model_nr, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_serial, wlp_dev_serial_show, wlp);
+i1480u_STORE(wlp_dev_serial, wlp_dev_serial_store, wlp);
+i1480u_ATTR(wlp_dev_serial, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_prim_category, wlp_dev_prim_category_show, wlp);
+i1480u_STORE(wlp_dev_prim_category, wlp_dev_prim_category_store, wlp);
+i1480u_ATTR(wlp_dev_prim_category, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_prim_OUI, wlp_dev_prim_OUI_show, wlp);
+i1480u_STORE(wlp_dev_prim_OUI, wlp_dev_prim_OUI_store, wlp);
+i1480u_ATTR(wlp_dev_prim_OUI, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_prim_OUI_sub, wlp_dev_prim_OUI_sub_show, wlp);
+i1480u_STORE(wlp_dev_prim_OUI_sub, wlp_dev_prim_OUI_sub_store, wlp);
+i1480u_ATTR(wlp_dev_prim_OUI_sub, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_dev_prim_subcat, wlp_dev_prim_subcat_show, wlp);
+i1480u_STORE(wlp_dev_prim_subcat, wlp_dev_prim_subcat_store, wlp);
+i1480u_ATTR(wlp_dev_prim_subcat, S_IRUGO | S_IWUSR);
+
+i1480u_SHOW(wlp_neighborhood, wlp_neighborhood_show, wlp);
+i1480u_ATTR_SHOW(wlp_neighborhood);
+
+i1480u_SHOW(wss_activate, wlp_wss_activate_show, wlp.wss);
+i1480u_STORE(wss_activate, wlp_wss_activate_store, wlp.wss);
+i1480u_ATTR(wss_activate, S_IRUGO | S_IWUSR);
+
+/*
+ * Show the (min, max, avg) Line Quality Estimate (LQE, in dB) as over
+ * the last 256 received WLP frames (ECMA-368 13.3).
+ *
+ * [the -7dB that have to be substracted from the LQI to make the LQE
+ * are already taken into account].
+ */
+i1480u_SHOW(wlp_lqe, stats_show, lqe_stats);
+i1480u_STORE(wlp_lqe, stats_store, lqe_stats);
+i1480u_ATTR(wlp_lqe, S_IRUGO | S_IWUSR);
+
+/*
+ * Show the Receive Signal Strength Indicator averaged over all the
+ * received WLP frames (ECMA-368 13.3). Still is not clear what
+ * this value is, but is kind of a percentage of the signal strength
+ * at the antenna.
+ */
+i1480u_SHOW(wlp_rssi, stats_show, rssi_stats);
+i1480u_STORE(wlp_rssi, stats_store, rssi_stats);
+i1480u_ATTR(wlp_rssi, S_IRUGO | S_IWUSR);
+
+/**
+ * We maintain a basic flow control counter. "count" how many TX URBs are
+ * outstanding. Only allow "max"
+ * TX URBs to be outstanding. If this value is reached the queue will be
+ * stopped. The queue will be restarted when there are
+ * "threshold" URBs outstanding.
+ */
+i1480u_SHOW(wlp_tx_inflight, wlp_tx_inflight_show, tx_inflight);
+i1480u_STORE(wlp_tx_inflight, wlp_tx_inflight_store, tx_inflight);
+i1480u_ATTR(wlp_tx_inflight, S_IRUGO | S_IWUSR);
+
+static struct attribute *i1480u_attrs[] = {
+	&i1480u_ATTR_NAME(uwb_phy_rate).attr,
+	&i1480u_ATTR_NAME(uwb_rts_cts).attr,
+	&i1480u_ATTR_NAME(uwb_ack_policy).attr,
+	&i1480u_ATTR_NAME(uwb_pca_base_priority).attr,
+	&i1480u_ATTR_NAME(wlp_lqe).attr,
+	&i1480u_ATTR_NAME(wlp_rssi).attr,
+	&i1480u_ATTR_NAME(wlp_eda).attr,
+	&i1480u_ATTR_NAME(wlp_uuid).attr,
+	&i1480u_ATTR_NAME(wlp_dev_name).attr,
+	&i1480u_ATTR_NAME(wlp_dev_manufacturer).attr,
+	&i1480u_ATTR_NAME(wlp_dev_model_name).attr,
+	&i1480u_ATTR_NAME(wlp_dev_model_nr).attr,
+	&i1480u_ATTR_NAME(wlp_dev_serial).attr,
+	&i1480u_ATTR_NAME(wlp_dev_prim_category).attr,
+	&i1480u_ATTR_NAME(wlp_dev_prim_OUI).attr,
+	&i1480u_ATTR_NAME(wlp_dev_prim_OUI_sub).attr,
+	&i1480u_ATTR_NAME(wlp_dev_prim_subcat).attr,
+	&i1480u_ATTR_NAME(wlp_neighborhood).attr,
+	&i1480u_ATTR_NAME(wss_activate).attr,
+	&i1480u_ATTR_NAME(wlp_tx_inflight).attr,
+	NULL,
+};
+
+static struct attribute_group i1480u_attr_group = {
+	.name = NULL,	/* we want them in the same directory */
+	.attrs = i1480u_attrs,
+};
+
+int i1480u_sysfs_setup(struct i1480u *i1480u)
+{
+	int result;
+	struct device *dev = &i1480u->usb_iface->dev;
+	result = sysfs_create_group(&i1480u->net_dev->dev.kobj,
+				    &i1480u_attr_group);
+	if (result < 0)
+		dev_err(dev, "cannot initialize sysfs attributes: %d\n",
+			result);
+	return result;
+}
+
+
+void i1480u_sysfs_release(struct i1480u *i1480u)
+{
+	sysfs_remove_group(&i1480u->net_dev->dev.kobj,
+			   &i1480u_attr_group);
+}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   /*
+ * uartlite.c: Serial driver for Xilinx uartlite serial controller
+ *
+ * Copyright (C) 2006 Peter Korsgaard <jacmet@sunsite.dk>
+ * Copyright (C) 2007 Secret Lab Technologies Ltd.
+ *
+ * This file is licensed under the terms of the GNU General Public License
+ * version 2.  This program is licensed "as is" without any warranty of any
+ * kind, whether express or implied.
+ */
+
+#include <linux/platform_device.h>
+#include <linux/module.h>
+#include <linux/console.h>
+#include <linux/serial.h>
+#include <linux/serial_core.h>
+#include <linux/tty.h>
+#include <linux/delay.h>
+#include <linux/interrupt.h>
+#include <linux/init.h>
+#include <asm/io.h>
+#if defined(CONFIG_OF)
+#include <linux/of.h>
+#include <linux/of_device.h>
+#include <linux/of_platform.h>
+
+/* Match table for of_platform binding */
+static struct of_device_id ulite_of_match[] __devinitdata = {
+	{ .compatible = "xlnx,opb-uartlite-1.00.b", },
+	{ .compatible = "xlnx,xps-uartlite-1.00.a", },
+	{}
+};
+MODULE_DEVICE_TABLE(of, ulite_of_match);
+
+#endif
+
+#define ULITE_NAME		"ttyUL"
+#define ULITE_MAJOR		204
+#define ULITE_MINOR		187
+#define ULITE_NR_UARTS		4
+
+/* ---------------------------------------------------------------------
+ * Register definitions
+ *
+ * For register details see datasheet:
+ * http://www.xilinx.com/bvdocs/ipcenter/data_sheet/opb_uartlite.pdf
+ */
+
+#define ULITE_RX		0x00
+#define ULITE_TX		0x04
+#define ULITE_STATUS		0x08
+#define ULITE_CONTROL		0x0c
+
+#define ULITE_REGION		16
+
+#define ULITE_STATUS_RXVALID	0x01
+#define ULITE_STATUS_RXFULL	0x02
+#define ULITE_STATUS_TXEMPTY	0x04
+#define ULITE_STATUS_TXFULL	0x08
+#define ULITE_STATUS_IE		0x10
+#define ULITE_STATUS_OVERRUN	0x20
+#define ULITE_STATUS_FRAME	0x40
+#define ULITE_STATUS_PARITY	0x80
+
+#define ULITE_CONTROL_RST_TX	0x01
+#define ULITE_CONTROL_RST_RX	0x02
+#define ULITE_CONTROL_IE	0x10
+
+
+static struct uart_port ulite_ports[ULITE_NR_UARTS];
+
+/* ---------------------------------------------------------------------
+ * Core UART driver operations
+ */
+
+static int ulite_receive(struct uart_port *port, int stat)
+{
+	struct tty_struct *tty = port->info->port.tty;
+	unsigned char ch = 0;
+	char flag = TTY_NORMAL;
+
+	if ((stat & (ULITE_STATUS_RXVALID | ULITE_STATUS_OVERRUN
+		     | ULITE_STATUS_FRAME)) == 0)
+		return 0;
+
+	/* stats */
+	if (stat & ULITE_STATUS_RXVALID) {
+		port->icount.rx++;
+		ch = readb(port->membase + ULITE_RX);
+
+		if (stat & ULITE_STATUS_PARITY)
+			port->icount.parity++;
+	}
+
+	if (stat & ULITE_STATUS_OVERRUN)
+		port->icount.overrun++;
+
+	if (stat & ULITE_STATUS_FRAME)
+		port->icount.frame++;
+
+
+	/* drop byte with parity error if IGNPAR specificed */
+	if (stat & port->ignore_status_mask & ULITE_STATUS_PARITY)
+		stat &= ~ULITE_STATUS_RXVALID;
+
+	stat &= port->read_status_mask;
+
+	if (stat & ULITE_STATUS_PARITY)
+		flag = TTY_PARITY;
+
+
+	stat &= ~port->ignore_status_mask;
+
+	if (stat & ULITE_STATUS_RXVALID)
+		tty_insert_flip_char(tty, ch, flag);
+
+	if (stat & ULITE_STATUS_FRAME)
+		tty_insert_flip_char(tty, 0, TTY_FRAME);
+
+	if (stat & ULITE_STATUS_OVERRUN)
+		tty_insert_flip_char(tty, 0, TTY_OVERRUN);
+
+	return 1;
+}
+
+static int ulite_transmit(struct uart_port *port, int stat)
+{
+	struct circ_buf *xmit  = &port->info->xmit;
+
+	if (stat & ULITE_STATUS_TXFULL)
+		return 0;
+
+	if (port->x_char) {
+		writeb(port->x_char, port->membase + ULITE_TX);
+		port->x_char = 0;
+		port->icount.tx++;
+		return 1;
+	}
+
+	if (uart_circ_empty(xmit) || uart_tx_stopped(port))
+		return 0;
+
+	writeb(xmit->buf[xmit->tail], port->membase + ULITE_TX);
+	xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE-1);
+	port->icount.tx++;
+
+	/* wake up */
+	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+		uart_write_wakeup(port);
+
+	return 1;
+}
+
+static irqreturn_t ulite_isr(int irq, void *dev_id)
+{
+	struct uart_port *port = dev_id;
+	int busy;
+
+	do {
+		int stat = readb(port->membase + ULITE_STATUS);
+		busy  = ulite_receive(port, stat);
+		busy |= ulite_transmit(port, stat);
+	} while (busy);
+
+	tty_flip_buffer_push(port->info->port.tty);
+
+	return IRQ_HANDLED;
+}
+
+static unsigned int ulite_tx_empty(struct uart_port *port)
+{
+	unsigned long flags;
+	unsigned int ret;
+
+	spin_lock_irqsave(&port->lock, flags);
+	ret = readb(port->membase + ULITE_STATUS);
+	spin_unlock_irqrestore(&port->lock, flags);
+
+	return ret & ULITE_STATUS_TXEMPTY ? TIOCSER_TEMT : 0;
+}
+
+static unsigned int ulite_get_mctrl(struct uart_port *port)
+{
+	return TIOCM_CTS | TIOCM_DSR | TIOCM_CAR;
+}
+
+static void ulite_set_mctrl(struct uart_port *port, unsigned int mctrl)
+{
+	/* N/A */
+}
+
+static void ulite_stop_tx(struct uart_port *port)
+{
+	/* N/A */
+}
+
+static void ulite_start_tx(struct uart_port *port)
+{
+	ulite_transmit(port, readb(port->membase + ULITE_STATUS));
+}
+
+static void ulite_stop_rx(struct uart_port *port)
+{
+	/* don't forward any more data (like !CREAD) */
+	port->ignore_status_mask = ULITE_STATUS_RXVALID | ULITE_STATUS_PARITY
+		| ULITE_STATUS_FRAME | ULITE_STATUS_OVERRUN;
+}
+
+static void ulite_enable_ms(struct uart_port *port)
+{
+	/* N/A */
+}
+
+static void ulite_break_ctl(struct uart_port *port, int ctl)
+{
+	/* N/A */
+}
+
+static int ulite_startup(struct uart_port *port)
+{
+	int ret;
+
+	ret = request_irq(port->irq, ulite_isr,
+			  IRQF_DISABLED | IRQF_SAMPLE_RANDOM, "uartlite", port);
+	if (ret)
+		return ret;
+
+	writeb(ULITE_CONTROL_RST_RX | ULITE_CONTROL_RST_TX,
+	       port->membase + ULITE_CONTROL);
+	writeb(ULITE_CONTROL_IE, port->membase + ULITE_CONTROL);
+
+	return 0;
+}
+
+static void ulite_shutdown(struct uart_port *port)
+{
+	writeb(0, port->membase + ULITE_CONTROL);
+	readb(port->membase + ULITE_CONTROL); /* dummy */
+	free_irq(port->irq, port);
+}
+
+static void ulite_set_termios(struct uart_port *port, struct ktermios *termios,
+			      struct ktermios *old)
+{
+	unsigned long flags;
+	unsigned int baud;
+
+	spin_lock_irqsave(&port->lock, flags);
+
+	port->read_status_mask = ULITE_STATUS_RXVALID | ULITE_STATUS_OVERRUN
+		| ULITE_STATUS_TXFULL;
+
+	if (termios->c_iflag & INPCK)
+		port->read_status_mask |=
+			ULITE_STATUS_PARITY | ULITE_STATUS_FRAME;
+
+	port->ignore_status_mask = 0;
+	if (termios->c_iflag & IGNPAR)
+		port->ignore_status_mask |= ULITE_STATUS_PARITY
+			| ULITE_STATUS_FRAME | ULITE_STATUS_OVERRUN;
+
+	/* ignore all characters if CREAD is not set */
+	if ((termios->c_cflag & CREAD) == 0)
+		port->ignore_status_mask |=
+			ULITE_STATUS_RXVALID | ULITE_STATUS_PARITY
+			| ULITE_STATUS_FRAME | ULITE_STATUS_OVERRUN;
+
+	/* update timeout */
+	baud = uart_get_baud_rate(port, termios, old, 0, 460800);
+	uart_update_timeout(port, termios->c_cflag, baud);
+
+	spin_unlock_irqrestore(&port->lock, flags);
+}
+
+static const char *ulite_type(struct uart_port *port)
+{
+	return port->type == PORT_UARTLITE ? "uartlite" : NULL;
+}
+
+static void ulite_release_port(struct uart_port *port)
+{
+	release_mem_region(port->mapbase, ULITE_REGION);
+	iounmap(port->membase);
+	port->membase = NULL;
+}
+
+static int ulite_request_port(struct uart_port *port)
+{
+	pr_debug("ulite console: port=%p; port->mapbase=%llx\n",
+		 port, (unsigned long long) port->mapbase);
+
+	if (!request_mem_region(port->mapbase, ULITE_REGION, "uartlite")) {
+		dev_err(port->dev, "Memory region busy\n");
+		return -EBUSY;
+	}
+
+	port->membase = ioremap(port->mapbase, ULITE_REGION);
+	if (!port->membase) {
+		dev_err(port->dev, "Unable to map registers\n");
+		release_mem_region(port->mapbase, ULITE_REGION);
+		return -EBUSY;
+	}
+
+	return 0;
+}
+
+static void ulite_config_port(struct uart_port *port, int flags)
+{
+	if (!ulite_request_port(port))
+		port->type = PORT_UARTLITE;
+}
+
+static int ulite_verify_port(struct uart_port *port, struct serial_struct *ser)
+{
+	/* we don't want the core code to modify any port params */
+	return -EINVAL;
+}
+
+static struct uart_ops ulite_ops = {
+	.tx_empty	= ulite_tx_empty,
+	.set_mctrl	= ulite_set_mctrl,
+	.get_mctrl	= ulite_get_mctrl,
+	.stop_tx	= ulite_stop_tx,
+	.start_tx	= ulite_start_tx,
+	.stop_rx	= ulite_stop_rx,
+	.enable_ms	= ulite_enable_ms,
+	.break_ctl	= ulite_break_ctl,
+	.startup	= ulite_startup,
+	.shutdown	= ulite_shutdown,
+	.set_termios	= ulite_set_termios,
+	.type		= ulite_type,
+	.release_port	= ulite_release_port,
+	.request_port	= ulite_request_port,
+	.config_port	= ulite_config_port,
+	.verify_port	= ulite_verify_port
+};
+
+/* ---------------------------------------------------------------------
+ * Console driver operations
+ */
+
+#ifdef CONFIG_SERIAL_UARTLITE_CONSOLE
+static void ulite_console_wait_tx(struct uart_port *port)
+{
+	int i;
+	u8 val;
+
+	/* Spin waiting for TX fifo to have space available */
+	for (i = 0; i < 100000; i++) {
+		val = readb(port->membase + ULITE_STATUS);
+		if ((val & ULITE_STATUS_TXFULL) == 0)
+			break;
+		cpu_relax();
+	}
+}
+
+static void ulite_console_putchar(struct uart_port *port, int ch)
+{
+	ulite_console_wait_tx(port);
+	writeb(ch, port->membase + ULITE_TX);
+}
+
+static void ulite_console_write(struct console *co, const char *s,
+				unsigned int count)
+{
+	struct uart_port *port = &ulite_ports[co->index];
+	unsigned long flags;
+	unsigned int ier;
+	int locked = 1;
+
+	if (oops_in_progress) {
+		locked = spin_trylock_irqsave(&port->lock, flags);
+	} else
+		spin_lock_irqsave(&port->lock, flags);
+
+	/* save and disable interrupt */
+	ier = readb(port->membase + ULITE_STATUS) & ULITE_STATUS_IE;
+	writeb(0, port->membase + ULITE_CONTROL);
+
+	uart_console_write(port, s, count, ulite_console_putchar);
+
+	ulite_console_wait_tx(port);
+
+	/* restore interrupt state */
+	if (ier)
+		writeb(ULITE_CONTROL_IE, port->membase + ULITE_CONTROL);
+
+	if (locked)
+		spin_unlock_irqrestore(&port->lock, flags);
+}
+
+static int __init ulite_console_setup(struct console *co, char *options)
+{
+	struct uart_port *port;
+	int baud = 9600;
+	int bits = 8;
+	int parity = 'n';
+	int flow = 'n';
+
+	if (co->index < 0 || co->index >= ULITE_NR_UARTS)
+		return -EINVAL;
+
+	port = &ulite_ports[co->index];
+
+	/* Has the device been initialized yet? */
+	if (!port->mapbase) {
+		pr_debug("console on ttyUL%i not present\n", co->index);
+		return -ENODEV;
+	}
+
+	/* not initialized yet? */
+	if (!port->membase) {
+		if (ulite_request_port(port))
+			return -ENODEV;
+	}
+
+	if (options)
+		uart_parse_options(options, &baud, &parity, &bits, &flow);
+
+	return uart_set_options(port, co, baud, parity, bits, flow);
+}
+
+static struct uart_driver ulite_uart_driver;
+
+static struct console ulite_console = {
+	.name	= ULITE_NAME,
+	.write	= ulite_console_write,
+	.device	= uart_console_device,
+	.setup	= ulite_console_setup,
+	.flags	= CON_PRINTBUFFER,
+	.index	= -1, /* Specified on the cmdline (e.g. console=ttyUL0 ) */
+	.data	= &ulite_uart_driver,
+};
+
+static int __init ulite_console_init(void)
+{
+	register_console(&ulite_console);
+	return 0;
+}
+
+console_initcall(ulite_console_init);
+
+#endif /* CONFIG_SERIAL_UARTLITE_CONSOLE */
+
+static struct uart_driver ulite_uart_driver = {
+	.owner		= THIS_MODULE,
+	.driver_name	= "uartlite",
+	.dev_name	= ULITE_NAME,
+	.major		= ULITE_MAJOR,
+	.minor		= ULITE_MINOR,
+	.nr		= ULITE_NR_UARTS,
+#ifdef CONFIG_SERIAL_UARTLITE_CONSOLE
+	.cons		= &ulite_console,
+#endif
+};
+
+/* ---------------------------------------------------------------------
+ * Port assignment functions (mapping devices to uart_port structures)
+ */
+
+/** ulite_assign: register a uartlite device with the driver
+ *
+ * @dev: pointer to device structure
+ * @id: requested id number.  Pass -1 for automatic port assignment
+ * @base: base address of uartlite registers
+ * @irq: irq number for uartlite
+ *
+ * Returns: 0 on success, <0 otherwise
+ */
+static int __devinit ulite_assign(struct device *dev, int id, u32 base, int irq)
+{
+	struct uart_port *port;
+	int rc;
+
+	/* if id = -1; then scan for a free id and use that */
+	if (id < 0) {
+		for (id = 0; id < ULITE_NR_UARTS; id++)
+			if (ulite_ports[id].mapbase == 0)
+				break;
+	}
+	if (id < 0 || id >= ULITE_NR_UARTS) {
+		dev_err(dev, "%s%i too large\n", ULITE_NAME, id);
+		return -EINVAL;
+	}
+
+	if ((ulite_ports[id].mapbase) && (ulite_ports[id].mapbase != base)) {
+		dev_err(dev, "cannot assign to %s%i; it is already in use\n",
+			ULITE_NAME, id);
+		return -EBUSY;
+	}
+
+	port = &ulite_ports[id];
+
+	spin_lock_init(&port->lock);
+	port->fifosize = 16;
+	port->regshift = 2;
+	port->iotype = UPIO_MEM;
+	port->iobase = 1; /* mark port in use */
+	port->mapbase = base;
+	port->membase = NULL;
+	port->ops = &ulite_ops;
+	port->irq = irq;
+	port->flags = UPF_BOOT_AUTOCONF;
+	port->dev = dev;
+	port->type = PORT_UNKNOWN;
+	port->line = id;
+
+	dev_set_drvdata(dev, port);
+
+	/* Register the port */
+	rc = uart_add_one_port(&ulite_uart_driver, port);
+	if (rc) {
+		dev_err(dev, "uart_add_one_port() failed; err=%i\n", rc);
+		port->mapbase = 0;
+		dev_set_drvdata(dev, NULL);
+		return rc;
+	}
+
+	return 0;
+}
+
+/** ulite_release: register a uartlite device with the driver
+ *
+ * @dev: pointer to device structure
+ */
+static int __devexit ulite_release(struct device *dev)
+{
+	struct uart_port *port = dev_get_drvdata(dev);
+	int rc = 0;
+
+	if (port) {
+		rc = uart_remove_one_port(&ulite_uart_driver, port);
+		dev_set_drvdata(dev, NULL);
+		port->mapbase = 0;
+	}
+
+	return rc;
+}
+
+/* ---------------------------------------------------------------------
+ * Platform bus binding
+ */
+
+static int __devinit ulite_probe(struct platform_device *pdev)
+{
+	struct resource *res, *res2;
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!res)
+		return -ENODEV;
+
+	res2 = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
+	if (!res2)
+		return -ENODEV;
+
+	return ulite_assign(&pdev->dev, pdev->id, res->start, res2->start);
+}
+
+static int __devexit ulite_remove(struct platform_device *pdev)
+{
+	return ulite_release(&pdev->dev);
+}
+
+/* work with hotplug and coldplug */
+MODULE_ALIAS("platform:uartlite");
+
+static struct platform_driver ulite_platform_driver = {
+	.probe	= ulite_probe,
+	.remove	= __devexit_p(ulite_remove),
+	.driver	= {
+		   .owner = THIS_MODULE,
+		   .name  = "uartlite",
+		   },
+};
+
+/* ---------------------------------------------------------------------
+ * OF bus bindings
+ */
+#if defined(CONFIG_OF)
+static int __devinit
+ulite_of_probe(struct of_device *op, const struct of_device_id *match)
+{
+	struct resource res;
+	const unsigned int *id;
+	int irq, rc;
+
+	dev_dbg(&op->dev, "%s(%p, %p)\n", __func__, op, match);
+
+	rc = of_address_to_resource(op->node, 0, &res);
+	if (rc) {
+		dev_err(&op->dev, "invalid address\n");
+		return rc;
+	}
+
+	irq = irq_of_parse_and_map(op->node, 0);
+
+	id = of_get_property(op->node, "port-number", NULL);
+
+	return ulite_assign(&op->dev, id ? *id : -1, res.start+3, irq);
+}
+
+static int __devexit ulite_of_remove(struct of_device *op)
+{
+	return ulite_release(&op->dev);
+}
+
+static struct of_platform_driver ulite_of_driver = {
+	.owner = THIS_MODULE,
+	.name = "uartlite",
+	.match_table = ulite_of_match,
+	.probe = ulite_of_probe,
+	.remove = __devexit_p(ulite_of_remove),
+	.driver = {
+		.name = "uartlite",
+	},
+};
+
+/* Registration helpers to keep the number of #ifdefs to a minimum */
+static inline int __init ulite_of_register(void)
+{
+	pr_debug("uartlite: calling of_register_platform_driver()\n");
+	return of_register_platform_driver(&ulite_of_driver);
+}
+
+static inline void __exit ulite_of_unregister(void)
+{
+	of_unregister_platform_driver(&ulite_of_driver);
+}
+#else /* CONFIG_OF */
+/* CONFIG_OF not enabled; do nothing helpers */
+static inline int __init ulite_of_register(void) { return 0; }
+static inline void __exit ulite_of_unregister(void) { }
+#endif /* CONFIG_OF */
+
+/* ---------------------------------------------------------------------
+ * Module setup/teardown
+ */
+
+int __init ulite_init(void)
+{
+	int ret;
+
+	pr_debug("uartlite: calling uart_register_driver()\n");
+	ret = uart_register_driver(&ulite_uart_driver);
+	if (ret)
+		goto err_uart;
+
+	ret = ulite_of_register();
+	if (ret)
+		goto err_of;
+
+	pr_debug("uartlite: calling platform_driver_register()\n");
+	ret = platform_driver_register(&ulite_platform_driver);
+	if (ret)
+		goto err_plat;
+
+	return 0;
+
+err_plat:
+	ulite_of_unregister();
+err_of:
+	uart_unregister_driver(&ulite_uart_driver);
+err_uart:
+	printk(KERN_ERR "registering uartlite driver failed: err=%i", ret);
+	return ret;
+}
+
+void __exit ulite_exit(void)
+{
+	platform_driver_unregister(&ulite_platform_driver);
+	ulite_of_unregister();
+	uart_unregister_driver(&ulite_uart_driver);
+}
+
+module_init(ulite_init);
+module_exit(ulite_exit);
+
+MODULE_AUTHOR("Peter Korsgaard <jacmet@sunsite.dk>");
+MODULE_DESCRIPTION("Xilinx uartlite serial driver");
+MODULE_LICENSE("GPL");
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       

@@ -1,0 +1,12 @@
+#iwconfig wlan0 mode  Managed 
+ifconfig wlan0 up
+#iwconfig wlan0 mode master
+iwconfig wlan0 mode  managed 
+#iwconfig wlan0 essid "sandyf2"    key 6666-6666-6666-6666-6666-6666-66
+iwconfig wlan0 essid "sandjk13"     key s:sandjksandjk
+#iwconfig wlan0 key open
+#iwconfig wlan0 essid "gxdwifi" 
+#iwconfig wlan0 essid "sandyf2" 
+
+ifconfig wlan0 172.16.3.103 up
+

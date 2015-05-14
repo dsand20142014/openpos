@@ -1,0 +1,89 @@
+put_report_key(dev, gc_snes_btn[j], s & data[gc_snes_bytes[j]]);
+
+		if (s & gc->pads[GC_SNESMOUSE]) {
+			/*
+			 * The 4 unused bits from SNES controllers appear to be ID bits
+			 * so use them to make sure iwe are dealing with a mouse.
+			 * gamepad is connected. This is important since
+			 * my SNES gamepad sends 1's for bits 16-31, which
+			 * cause the mouse pointer to quickly move to the
+			 * upper left corner of the screen.
+			 */
+			if (!(s & data[12]) && !(s & data[13]) &&
+			    !(s & data[14]) && (s & data[15])) {
+				input_report_key(dev, BTN_LEFT, s & data[9]);
+				input_report_key(dev, BTN_RIGHT, s & data[8]);
+
+				x_rel = y_rel = 0;
+				for (j = 0; j < 7; j++) {
+					x_rel <<= 1;
+					if (data[25 + j] & s)
+						x_rel |= 1;
+
+					y_rel <<= 1;
+					if (data[17 + j] & s)
+						y_rel |= 1;
+				}
+
+				if (x_rel) {
+					if (data[24] & s)
+						x_rel = -x_rel;
+					input_report_rel(dev, REL_X, x_rel);
+				}
+
+				if (y_rel) {
+					if (data[16] & s)
+						y_rel = -y_rel;
+					input_report_rel(dev, REL_Y, y_rel);
+				}
+			}
+		}
+		input_sync(dev);
+	}
+}
+
+/*
+ * Multisystem joystick support
+ */
+
+#define GC_MULTI_LENGTH		5	/* Multi system joystick packet length is 5 */
+#define GC_MULTI2_LENGTH	6	/* One more bit for one more button */
+
+/*
+ * gc_multi_read_packet() reads a Multisystem joystick packet.
+ */
+
+static void gc_multi_read_packet(struct gc *gc, int length, unsigned char *data)
+{
+	int i;
+
+	for (i = 0; i < length; i++) {
+		parport_write_data(gc->pd->port, ~(1 << i));
+		data[i] = parport_read_status(gc->pd->port) ^ 0x7f;
+	}
+}
+
+static void gc_multi_process_packet(struct gc *gc)
+{
+	unsigned char data[GC_MULTI2_LENGTH];
+	struct input_dev *dev;
+	int i, s;
+
+	gc_multi_read_packet(gc, gc->pads[GC_MULTI2] ? GC_MULTI2_LENGTH : GC_MULTI_LENGTH, data);
+
+	for (i = 0; i < GC_MAX_DEVICES; i++) {
+
+		dev = gc->dev[i];
+		if (!dev)
+			continue;
+
+		s = gc_status_bit[i];
+
+		if (s & (gc->pads[GC_MULTI] | gc->pads[GC_MULTI2])) {
+			input_report_abs(dev, ABS_X,  !(s & data[2]) - !(s & data[3]));
+			input_report_abs(dev, ABS_Y,  !(s & data[0]) - !(s & data[1]));
+			input_report_key(dev, BTN_TRIGGER, s & data[4]);
+		}
+
+		if (s & gc->pads[GC_MULTI2])
+			input_repor

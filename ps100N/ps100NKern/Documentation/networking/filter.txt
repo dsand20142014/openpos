@@ -1,0 +1,66 @@
+P:
+		ipath_set_ib_lstate(dd, INFINIPATH_IBCC_LINKCMD_DOWN,
+					INFINIPATH_IBCC_LINKINITCMD_SLEEP);
+		/* don't wait */
+		ret = 0;
+		goto bail;
+
+	case IPATH_IB_LINKDOWN_DISABLE:
+		ipath_set_ib_lstate(dd, INFINIPATH_IBCC_LINKCMD_DOWN,
+					INFINIPATH_IBCC_LINKINITCMD_DISABLE);
+		/* don't wait */
+		ret = 0;
+		goto bail;
+
+	case IPATH_IB_LINKARM:
+		if (dd->ipath_flags & IPATH_LINKARMED) {
+			ret = 0;
+			goto bail;
+		}
+		if (!(dd->ipath_flags &
+		      (IPATH_LINKINIT | IPATH_LINKACTIVE))) {
+			ret = -EINVAL;
+			goto bail;
+		}
+		ipath_set_ib_lstate(dd, INFINIPATH_IBCC_LINKCMD_ARMED, 0);
+
+		/*
+		 * Since the port can transition to ACTIVE by receiving
+		 * a non VL 15 packet, wait for either state.
+		 */
+		lstate = IPATH_LINKARMED | IPATH_LINKACTIVE;
+		break;
+
+	case IPATH_IB_LINKACTIVE:
+		if (dd->ipath_flags & IPATH_LINKACTIVE) {
+			ret = 0;
+			goto bail;
+		}
+		if (!(dd->ipath_flags & IPATH_LINKARMED)) {
+			ret = -EINVAL;
+			goto bail;
+		}
+		ipath_set_ib_lstate(dd, INFINIPATH_IBCC_LINKCMD_ACTIVE, 0);
+		lstate = IPATH_LINKACTIVE;
+		break;
+
+	case IPATH_IB_LINK_LOOPBACK:
+		dev_info(&dd->pcidev->dev, "Enabling IB local loopback\n");
+		dd->ipath_ibcctrl |= INFINIPATH_IBCC_LOOPBACK;
+		ipath_write_kreg(dd, dd->ipath_kregs->kr_ibcctrl,
+				 dd->ipath_ibcctrl);
+
+		/* turn heartbeat off, as it causes loopback to fail */
+		dd->ipath_f_set_ib_cfg(dd, IPATH_IB_CFG_HRTBT,
+				       IPATH_IB_HRTBT_OFF);
+		/* don't wait */
+		ret = 0;
+		goto bail;
+
+	case IPATH_IB_LINK_EXTERNAL:
+		dev_info(&dd->pcidev->dev,
+			"Disabling IB local loopback (normal)\n");
+		dd->ipath_f_set_ib_cfg(dd, IPATH_IB_CFG_HRTBT,
+				       IPATH_IB_HRTBT_ON);
+		dd->ipath_ibcctrl &= ~INFINIPATH_IBCC_LOOPBACK;
+		ipath_write_kreg(dd, dd->ipath_kregs->kr

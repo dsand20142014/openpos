@@ -1,0 +1,46 @@
+ocating.
+		 */
+
+		for (j = va->logical; j < va->logical + va->size;
+		     j += PAGE_SIZE) {
+			(void)put_page_testzero(virt_to_page(j));
+		}
+
+		printk(KERN_DEBUG MODULE_NAME
+		       ": Freeing %ld bytes vram area at 0x%08lx\n",
+		       va->size, va->phys);
+		free_pages(va->logical, va->order);
+
+		va->logical = 0;
+	}
+}
+
+/*
+ * Free allocated vram.
+ */
+
+static void vmlfb_free_vram(struct vml_info *vinfo)
+{
+	int i;
+
+	for (i = 0; i < vinfo->num_areas; ++i) {
+		vmlfb_free_vram_area(&vinfo->vram[i]);
+	}
+	vinfo->num_areas = 0;
+}
+
+/*
+ * Allocate vram. Currently we try to allocate contiguous areas from the
+ * __GFP_DMA zone and puzzle them together. A better approach would be to
+ * allocate one contiguous area for scanout and use one-page allocations for
+ * offscreen areas. This requires user-space and GPU virtual mappings.
+ */
+
+static int vmlfb_alloc_vram(struct vml_info *vinfo,
+			    size_t requested,
+			    size_t min_total, size_t min_contig)
+{
+	int i, j;
+	int order;
+	int contiguous;
+	int err

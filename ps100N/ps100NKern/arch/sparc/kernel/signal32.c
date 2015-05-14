@@ -1,0 +1,503 @@
+ed long flags;
+
+	spin_lock_irqsave(&rc->neh_lock, flags);
+	__uwb_rc_neh_rm(rc, neh);
+	spin_unlock_irqrestore(&rc->neh_lock, flags);
+
+	del_timer_sync(&neh->timer);
+	uwb_rc_neh_put(neh);
+}
+
+/**
+ * uwb_rc_neh_arm - arm an event handler timeout timer
+ *
+ * @rc:     UWB Radio Controller
+ * @neh:    Notification/event handler for @rc
+ *
+ * The timer is only armed if the neh is active.
+ */
+void uwb_rc_neh_arm(struct uwb_rc *rc, struct uwb_rc_neh *neh)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rc->neh_lock, flags);
+	if (neh->context)
+		mod_timer(&neh->timer,
+			  jiffies + msecs_to_jiffies(UWB_RC_CMD_TIMEOUT_MS));
+	spin_unlock_irqrestore(&rc->neh_lock, flags);
+}
+
+static void uwb_rc_neh_cb(struct uwb_rc_neh *neh, struct uwb_rceb *rceb, size_t size)
+{
+	(*neh->cb)(neh->rc, neh->arg, rceb, size);
+	uwb_rc_neh_put(neh);
+}
+
+static bool uwb_rc_neh_match(struct uwb_rc_neh *neh, const struct uwb_rceb *rceb)
+{
+	return neh->evt_type == rceb->bEventType
+		&& neh->evt == rceb->wEvent
+		&& neh->context == rceb->bEventContext;
+}
+
+/**
+ * Find the handle waiting for a RC Radio Control Event
+ *
+ * @rc:         UWB Radio Controller
+ * @rceb:       Pointer to the RCEB buffer
+ * @event_size: Pointer to the size of the RCEB buffer. Might be
+ *              adjusted to take into account the @neh->extra_size
+ *              settings.
+ *
+ * If the listener has no buffer (NULL buffer), one is allocated for
+ * the right size (the amount of data received). @neh->ptr will point
+ * to the event payload, which always starts with a 'struct
+ * uwb_rceb'. kfree() it when done.
+ */
+static
+struct uwb_rc_neh *uwb_rc_neh_lookup(struct uwb_rc *rc,
+				     const struct uwb_rceb *rceb)
+{
+	struct uwb_rc_neh *neh = NULL, *h;
+	unsigned long flags;
+
+	spin_lock_irqsave(&rc->neh_lock, flags);
+
+	list_for_each_entry(h, &rc->neh_list, list_node) {
+		if (uwb_rc_neh_match(h, rceb)) {
+			neh = h;
+			break;
+		}
+	}
+
+	if (neh)
+		__uwb_rc_neh_rm(rc, neh);
+
+	spin_unlock_irqrestore(&rc->neh_lock, flags);
+
+	return neh;
+}
+
+
+/*
+ * Process notifications coming from the radio control interface
+ *
+ * @rc:    UWB Radio Control Interface descriptor
+ * @neh:   Notification/Event Handler @neh->ptr points to
+ *         @uwb_evt->buffer.
+ *
+ * This function is called by the event/notif handling subsystem when
+ * notifications arrive (hwarc_probe() arms a notification/event handle
+ * that calls back this function for every received notification; this
+ * function then will rearm itself).
+ *
+ * Notification data buffers are dynamically allocated by the NEH
+ * handling code in neh.c [uwb_rc_neh_lookup()]. What is actually
+ * allocated is space to contain the notification data.
+ *
+ * Buffers are prefixed with a Radio Control Event Block (RCEB) as
+ * defined by the WUSB Wired-Adapter Radio Control interface. We
+ * just use it for the notification code.
+ *
+ * On each case statement we just transcode endianess of the different
+ * fields. We declare a pointer to a RCI definition of an event, and
+ * then to a UWB definition of the same event (which are the same,
+ * remember). Event if we use different pointers
+ */
+static
+void uwb_rc_notif(struct uwb_rc *rc, struct uwb_rceb *rceb, ssize_t size)
+{
+	struct device *dev = &rc->uwb_dev.dev;
+	struct uwb_event *uwb_evt;
+
+	if (size == -ESHUTDOWN)
+		return;
+	if (size < 0) {
+		dev_err(dev, "ignoring event with error code %zu\n",
+			size);
+		return;
+	}
+
+	uwb_evt = kzalloc(sizeof(*uwb_evt), GFP_ATOMIC);
+	if (unlikely(uwb_evt == NULL)) {
+		dev_err(dev, "no memory to queue event 0x%02x/%04x/%02x\n",
+			rceb->bEventType, le16_to_cpu(rceb->wEvent),
+			rceb->bEventContext);
+		return;
+	}
+	uwb_evt->rc = __uwb_rc_get(rc);	/* will be put by uwbd's uwbd_event_handle() */
+	uwb_evt->ts_jiffies = jiffies;
+	uwb_evt->type = UWB_EVT_TYPE_NOTIF;
+	uwb_evt->notif.size = size;
+	uwb_evt->notif.rceb = rceb;
+
+	uwbd_event_queue(uwb_evt);
+}
+
+static void uwb_rc_neh_grok_event(struct uwb_rc *rc, struct uwb_rceb *rceb, size_t size)
+{
+	struct device *dev = &rc->uwb_dev.dev;
+	struct uwb_rc_neh *neh;
+	struct uwb_rceb *notif;
+
+	if (rceb->bEventContext == 0) {
+		notif = kmalloc(size, GFP_ATOMIC);
+		ier(from->si_tid, &to->si_tid);
+			err |= __put_user(from->si_overrun, &to->si_overrun);
+			err |= __put_user(from->si_int, &to->si_int);
+			break;
+		case __SI_CHLD >> 16:
+			err |= __put_user(from->si_utime, &to->si_utime);
+			err |= __put_user(from->si_stime, &to->si_stime);
+			err |= __put_user(from->si_status, &to->si_status);
+		default:
+			err |= __put_user(from->si_pid, &to->si_pid);
+			err |= __put_user(from->si_uid, &to->si_uid);
+			break;
+		case __SI_FAULT >> 16:
+			err |= __put_user(from->si_trapno, &to->si_trapno);
+			err |= __put_user((unsigned long)from->si_addr, &to->si_addr);
+			break;
+		case __SI_POLL >> 16:
+			err |= __put_user(from->si_band, &to->si_band);
+			err |= __put_user(from->si_fd, &to->si_fd);
+			break;
+		case __SI_RT >> 16: /* This is not generated by the kernel as of now.  */
+		case __SI_MESGQ >> 16:
+			err |= __put_user(from->si_pid, &to->si_pid);
+			err |= __put_user(from->si_uid, &to->si_uid);
+			err |= __put_user(from->si_int, &to->si_int);
+			break;
+		}
+	}
+	return err;
+}
+
+/* CAUTION: This is just a very minimalist implementation for the
+ *          sake of compat_sys_rt_sigqueueinfo()
+ */
+int copy_siginfo_from_user32(siginfo_t *to, compat_siginfo_t __user *from)
+{
+	if (!access_ok(VERIFY_WRITE, from, sizeof(compat_siginfo_t)))
+		return -EFAULT;
+
+	if (copy_from_user(to, from, 3*sizeof(int)) ||
+	    copy_from_user(to->_sifields._pad, from->_sifields._pad,
+			   SI_PAD_SIZE))
+		return -EFAULT;
+
+	return 0;
+}
+
+static int restore_fpu_state32(struct pt_regs *regs, __siginfo_fpu_t __user *fpu)
+{
+	unsigned long *fpregs = current_thread_info()->fpregs;
+	unsigned long fprs;
+	int err;
+	
+	err = __get_user(fprs, &fpu->si_fprs);
+	fprs_write(0);
+	regs->tstate &= ~TSTATE_PEF;
+	if (fprs & FPRS_DL)
+		err |= copy_from_user(fpregs, &fpu->si_float_regs[0], (sizeof(unsigned int) * 32));
+	if (fprs & FPRS_DU)
+		err |= copy_from_user(fpregs+16, &fpu->si_float_regs[32], (sizeof(unsigned int) * 32));
+	err |= __get_user(current_thread_info()->xfsr[0], &fpu->si_fsr);
+	err |= __get_user(current_thread_info()->gsr[0], &fpu->si_gsr);
+	current_thread_info()->fpsaved[0] |= fprs;
+	return err;
+}
+
+void do_sigreturn32(struct pt_regs *regs)
+{
+	struct signal_frame32 __user *sf;
+	unsigned int psr;
+	unsigned pc, npc, fpu_save;
+	sigset_t set;
+	unsigned seta[_COMPAT_NSIG_WORDS];
+	int err, i;
+	
+	/* Always make any pending restarted system calls return -EINTR */
+	current_thread_info()->restart_block.fn = do_no_restart_syscall;
+
+	synchronize_user_stack();
+
+	regs->u_regs[UREG_FP] &= 0x00000000ffffffffUL;
+	sf = (struct signal_frame32 __user *) regs->u_regs[UREG_FP];
+
+	/* 1. Make sure we are not getting garbage from the user */
+	if (!access_ok(VERIFY_READ, sf, sizeof(*sf)) ||
+	    (((unsigned long) sf) & 3))
+		goto segv;
+
+	get_user(pc, &sf->info.si_regs.pc);
+	__get_user(npc, &sf->info.si_regs.npc);
+
+	if ((pc | npc) & 3)
+		goto segv;
+
+	if (test_thread_flag(TIF_32BIT)) {
+		pc &= 0xffffffff;
+		npc &= 0xffffffff;
+	}
+	regs->tpc = pc;
+	regs->tnpc = npc;
+
+	/* 2. Restore the state */
+	err = __get_user(regs->y, &sf->info.si_regs.y);
+	err |= __get_user(psr, &sf->info.si_regs.psr);
+
+	for (i = UREG_G1; i <= UREG_I7; i++)
+		err |= __get_user(regs->u_regs[i], &sf->info.si_regs.u_regs[i]);
+	if ((psr & (PSR_VERS|PSR_IMPL)) == PSR_V8PLUS) {
+		err |= __get_user(i, &sf->v8plus.g_upper[0]);
+		if (i == SIGINFO_EXTRA_V8PLUS_MAGIC) {
+			unsigned long asi;
+
+			for (i = UREG_G1; i <= UREG_I7; i++)
+				err |= __get_user(((u32 *)regs->u_regs)[2*i], &sf->v8plus.g_upper[i]);
+			err |= __get_user(asi, &sf->v8plus.asi);
+			regs->tstate &= ~TSTATE_ASI;
+			regs->tstate |= ((asi & 0xffUL) << 24UL);
+		}
+	}
+
+	/* User can only change condition codes in %tstate. */
+	regs->tstate &= ~(TSTATE_ICC|TSTATE_XCC);
+	regs->tstate |= psr_to_tstate_icc(psr);
+
+	/* Prevent syscall restart.  */
+	pt_regs_clear_syscall(regs);
+
+	err |= __get_user(fpu_save, &sf->fpu_save);
+	if (fpu_save)
+		err |= restore_fpu_state32(regs, &sf->fpu_state);
+	err |= __get_user(seta[0], &sf->info.si_mask);
+	err |= copy_from_user(seta+1, &sf->extramask,
+			      (_COMPAT_NSIG_WORDS - 1) * sizeof(unsigned int));
+	if &rc->neh_list)) {
+			spin_unlock_irqrestore(&rc->neh_lock, flags);
+			break;
+		}
+		neh = list_first_entry(&rc->neh_list, struct uwb_rc_neh, list_node);
+		__uwb_rc_neh_rm(rc, neh);
+		spin_unlock_irqrestore(&rc->neh_lock, flags);
+
+		del_timer_sync(&neh->timer);
+		uwb_rc_neh_cb(neh, NULL, error);
+	}
+}
+EXPORT_SYMBOL_GPL(uwb_rc_neh_error);
+
+
+static void uwb_rc_neh_timer(unsigned long arg)
+{
+	struct uwb_rc_neh *neh = (struct uwb_rc_neh *)arg;
+	struct uwb_rc *rc = neh->rc;
+	unsigned long flags;
+
+	spin_lock_irqsave(&rc->neh_lock, flags);
+	if (neh->context)
+		__uwb_rc_neh_rm(rc, neh);
+	else
+		neh = NULL;
+	spin_unlock_irqrestore(&rc->neh_lock, flags);
+
+	if (neh)
+		uwb_rc_neh_cb(neh, NULL, -ETIMEDOUT);
+}
+
+/** Initializes the @rc's neh subsystem
+ */
+void uwb_rc_neh_create(struct uwb_rc *rc)
+{
+	spin_lock_init(&rc->neh_lock);
+	INIT_LIST_HEAD(&rc->neh_list);
+	set_bit(0, rc->ctx_bm);		/* 0 is reserved (see [WUSB] table 8-65) */
+	set_bit(0xff, rc->ctx_bm);	/* and 0xff is invalid */
+	rc->ctx_roll = 1;
+}
+
+
+/** Release's the @rc's neh subsystem */
+void uwb_rc_neh_destroy(struct uwb_rc *rc)
+{
+	unsigned long flags;
+	struct uwb_rc_neh *neh;
+
+	for (;;) {
+		spin_lock_irqsave(&rc->neh_lock, flags);
+		if (list_empty(&rc->neh_list)) {
+			spin_unlock_irqrestore(&rc->neh_lock, flags);
+			break;
+		}
+		neh = list_first_entry(&rc->neh_list, struct uwb_rc_neh, list_node);
+		__uwb_rc_neh_rm(rc, neh);
+		spin_unlock_irqrestore(&rc->neh_lock, flags);
+
+		del_timer_sync(&neh->timer);
+		uwb_rc_neh_put(neh);
+	}
+}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       #
+# Makefile for the PMIC core drivers.
+#
+obj-$(CONFIG_MXC_PMIC_MC13783) += pmic_mc13783_mod.o
+pmic_mc13783_mod-objs := pmic_external.o pmic_event.o pmic_common.o pmic_core_spi.o mc13783.o
+
+obj-$(CONFIG_MXC_PMIC_MC13892) += pmic_mc13892_mod.o
+pmic_mc13892_mod-objs := pmic_external.o pmic_event.o pmic_common.o mc13892.o
+
+ifneq ($(CONFIG_MXC_PMIC_SPI),)
+pmic_mc13892_mod-objs += pmic_core_spi.o
+endif
+
+ifneq ($(CONFIG_MXC_PMIC_I2C),)
+pmic_mc13892_mod-objs += pmic_core_i2c.o
+endif
+
+obj-$(CONFIG_MXC_PMIC_MC34704) += pmic_mc34704_mod.o
+pmic_mc34704_mod-objs := pmic_external.o pmic_event.o mc34704.o
+
+obj-$(CONFIG_MXC_PMIC_CHARDEV)	+= pmic-dev.o
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           pud_t *pudp = pud_offset(pgdp, address);
+		pmd_t *pmdp = pmd_offset(pudp, address);
+		pte_t *ptep;
+		pte_t pte;
+
+		regs->u_regs[UREG_I7] = (unsigned long) (&(sf->insns[0]) - 2);
+	
+		err  = __put_user(0x821020d8, &sf->insns[0]); /*mov __NR_sigreturn, %g1*/
+		err |= __put_user(0x91d02010, &sf->insns[1]); /*t 0x10*/
+		if (err)
+			goto sigsegv;
+
+		preempt_disable();
+		ptep = pte_offset_map(pmdp, address);
+		pte = *ptep;
+		if (pte_present(pte)) {
+			unsigned long page = (unsigned long)
+				page_address(pte_page(pte));
+
+			wmb();
+			__asm__ __volatile__("flush	%0 + %1"
+					     : /* no outputs */
+					     : "r" (page),
+					       "r" (address & (PAGE_SIZE - 1))
+					     : "memory");
+		}
+		pte_unmap(ptep);
+		preempt_enable();
+	}
+	return;
+
+sigill:
+	do_exit(SIGILL);
+sigsegv:
+	force_sigsegv(signo, current);
+}
+
+static void setup_rt_frame32(struct k_sigaction *ka, struct pt_regs *regs,
+			     unsigned long signr, sigset_t *oldset,
+			     siginfo_t *info)
+{
+	struct rt_signal_frame32 __user *sf;
+	int sigframe_size;
+	u32 psr;
+	int i, err;
+	compat_sigset_t seta;
+
+	/* 1. Make sure everything is clean */
+	synchronize_user_stack();
+	save_and_clear_fpu();
+	
+	sigframe_size = RT_ALIGNEDSZ;
+	if (!(current_thread_info()->fpsaved[0] & FPRS_FEF))
+		sigframe_size -= sizeof(__siginfo_fpu_t);
+
+	sf = (struct rt_signal_frame32 __user *)
+		get_sigframe(&ka->sa, regs, sigframe_size);
+	
+	if (invalid_frame_pointer(sf, sigframe_size))
+		goto sigill;
+
+	if (get_thread_wsaved() != 0)
+		goto sigill;
+
+	/* 2. Save the current process state */
+	if (test_thread_flag(TIF_32BIT)) {
+		regs->tpc &= 0xffffffff;
+		regs->tnpc &= 0xffffffff;
+	}
+	err  = put_user(regs->tpc, &sf->regs.pc);
+	err |= __put_user(regs->tnpc, &sf->regs.npc);
+	err |= __put_user(regs->y, &sf->regs.y);
+	psr = tstate_to_psr(regs->tstate);
+	if (current_thread_info()->fpsaved[0] & FPRS_FEF)
+		psr |= PSR_EF;
+	err |= __put_user(psr, &sf->regs.psr);
+	for (i = 0; i < 16; i++)
+		err |= __put_user(regs->u_regs[i], &sf->regs.u_regs[i]);
+	err |= __put_user(sizeof(siginfo_extra_v8plus_t), &sf->extra_size);
+	err |= __put_user(SIGINFO_EXTRA_V8PLUS_MAGIC, &sf->v8plus.g_upper[0]);
+	for (i = 1; i < 16; i++)
+		err |= __put_user(((u32 *)regs->u_regs)[2*i],
+				  &sf->v8plus.g_upper[i]);
+	err |= __put_user((regs->tstate & TSTATE_ASI) >> 24UL,
+			  &sf->v8plus.asi);
+
+	if (psr & PSR_EF) {
+		err |= save_fpu_state32(regs, &sf->fpu_state);
+		err |= __put_user((u64)&sf->fpu_state, &sf->fpu_save);
+	} else {
+		err |= __put_user(0, &sf->fpu_save);
+	}
+
+	/* Update the siginfo structure.  */
+	err |= copy_siginfo_to_user32(&sf->info, info);
+	
+	/* Setup sigaltstack */
+	err |= __put_user(current->sas_ss_sp, &sf->stack.ss_sp);
+	err |= __put_user(sas_ss_flags(regs->u_regs[UREG_FP]), &sf->stack.ss_flags);
+	err |= __put_user(current->sas_ss_size, &sf->stack.ss_size);
+
+	switch (_NSIG_WORDS) {
+	case 4: seta.sig[7] = (oldset->sig[3] >> 32);
+		seta.sig[6] = oldset->sig[3];
+	case 3: seta.sig[5] = (oldset->sig[2] >> 32);
+		seta.sig[4] = oldset->sig[2];
+	case 2: seta.sig[3] = (oldset->sig[1] >> 32);
+		seta.sig[2] = oldset->sig[1];
+	case 1: seta.sig[1] = (oldset->sig[0] >> 32);
+		seta.sig[0] = oldset->sig[0];
+	}
+	err |= __copy_to_user(&sf->mask, &seta, sizeof(compat_sigset_t));
+
+	err |= copy_in_user((u32 __user *)sf,
+			    (u32 __user *)(regs->u_regs[UREG_FP]),
+			    sizeof(struct reg_window32));
+	if (err)
+		goto sigsegv;
+	
+	/* 3. signal handler back-trampoline and parameters */
+	regs->u_regs[UREG_FP] = (unsigned long) sf;
+	regs->u_regs[UREG_I0] = signr;
+	regs->u_regs[UREG_I1] = (unsigned long) &sf->info;
+	regs->u_regs[UREG_I2] = (unsigned long) &sf->regs;
+
+	/* 4. signal handler */
+	regs->tpc = (unsigned long) ka->sa.sa_handler;
+	regs->tnpc = (regs->tpc + 4);
+	if (test_thread_flag(TIF_32BIT)) {
+		regs->tpc &= 0xffffffff;
+		regs->tnpc &= 0xffffffff;
+	}
+
+	/* 5. return to kernel instructions */
+	if (ka->ka_restorer)
+		regs->u_regs[UREG_I7] = (unsigned long)ka->ka_restorer;
+	else {
+		/* Flush instruction space. */
+		unsigned long address = ((unsigned long)&(sf->insns[0]));
+		pgd_t *pgdp = pgd_offset(current->mm, address);
+		pud_t *pudp = pud_                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           

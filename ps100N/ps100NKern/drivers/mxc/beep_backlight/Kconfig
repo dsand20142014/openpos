@@ -1,0 +1,13 @@
+#
+# i.MX PWM Beep and Keyboard backlight driver.
+#
+
+menu "i.MX PWM Beep and Keyboard backlight support"
+
+config IMX_BEEP_BACKLIGHT
+	tristate "i.MX BEEP BACKLIGHT"
+	default y
+	help
+	   This selects the Freescale i.MX PWM Beep and Keyboard backlight driver.
+
+endmenu

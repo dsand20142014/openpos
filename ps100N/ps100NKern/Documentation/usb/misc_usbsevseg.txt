@@ -1,0 +1,54 @@
+ig2  */
+	0x10,			/* NumSCSItarget */
+
+	NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT,
+	NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT,
+	NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT,
+	NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT,
+
+	/* SCSI channel 1 and target Structure  */
+	7,			/* SCSIid       */
+	NCC1_DEFAULT,		/* SCSIconfig1  */
+	0,			/* SCSIconfig2  */
+	0x10,			/* NumSCSItarget */
+
+	NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT,
+	NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT,
+	NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT,
+	NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT, NTC_DEFAULT,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0};			/*      - CheckSum -            */
+
+
+static u8 initio_rate_tbl[8] =	/* fast 20      */
+{
+				/* nanosecond devide by 4 */
+	12,			/* 50ns,  20M   */
+	18,			/* 75ns,  13.3M */
+	25,			/* 100ns, 10M   */
+	31,			/* 125ns, 8M    */
+	37,			/* 150ns, 6.6M  */
+	43,			/* 175ns, 5.7M  */
+	50,			/* 200ns, 5M    */
+	62			/* 250ns, 4M    */
+};
+
+static void initio_do_pause(unsigned amount)
+{
+	/* Pause for amount jiffies */
+	unsigned long the_time = jiffies + amount;
+
+	while (time_before_eq(jiffies, the_time))
+		cpu_relax();
+}
+
+/*-- forward reference --*/
+
+/******************************************************************
+ Input: instruction for  Serial E2PROM
+
+ EX: se2_rd(0 call se2_instr() to send address and read command
+
+	 StartBit  OP_Code   Address                Data
+	 --------- --------  ------------------     -------
+	 1         

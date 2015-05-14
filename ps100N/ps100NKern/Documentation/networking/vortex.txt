@@ -1,0 +1,438 @@
+		/* Just in case output was resumed because of a change
+		   in Digi-flow */
+		spin_lock_irqsave(&epca_lock, flags);
+		if (ch->statusflags & RXSTOPPED) {
+			globalwinon(ch);
+			fepcmd(ch, RESUMERX, 0, 0, 0, 0);
+			ch->statusflags &= ~RXSTOPPED;
+			memoff(ch);
+		}
+		spin_unlock_irqrestore(&epca_lock, flags);
+	}
+}
+
+static int pc_send_break(struct tty_struct *tty, int msec)
+{
+	struct channel *ch = tty->driver_data;
+	unsigned long flags;
+
+	if (msec == -1)
+		msec = 0xFFFF;
+	else if (msec > 0xFFFE)
+		msec = 0xFFFE;
+	else if (msec < 1)
+		msec = 1;
+
+	spin_lock_irqsave(&epca_lock, flags);
+	globalwinon(ch);
+	/*
+	 * Maybe I should send an infinite break here, schedule() for msec
+	 * amount of time, and then stop the break. This way, the user can't
+	 * screw up the FEP by causing digi_send_break() to be called (i.e. via
+	 * an ioctl()) more than once in msec amount of time.
+	 * Try this for now...
+	 */
+	fepcmd(ch, SENDBREAK, msec, 0, 10, 0);
+	memoff(ch);
+	spin_unlock_irqrestore(&epca_lock, flags);
+	return 0;
+}
+
+/* Caller MUST hold the lock */
+static void setup_empty_event(struct tty_struct *tty, struct channel *ch)
+{
+	struct board_chan __iomem *bc = ch->brdchan;
+
+	globalwinon(ch);
+	ch->statusflags |= EMPTYWAIT;
+	/*
+	 * When set the iempty flag request a event to be generated when the
+	 * transmit buffer is empty (If there is no BREAK in progress).
+	 */
+	writeb(1, &bc->iempty);
+	memoff(ch);
+}
+
+#ifndef MODULE
+static void __init epca_setup(char *str, int *ints)
+{
+	struct board_info board;
+	int               index, loop, last;
+	char              *temp, *t2;
+	unsigned          len;
+
+	/*
+	 * If this routine looks a little strange it is because it is only
+	 * called if a LILO append command is given to boot the kernel with
+	 * parameters. In this way, we can provide the user a method of
+	 * changing his board configuration without rebuilding the kernel.
+	 */
+	if (!liloconfig)
+		liloconfig = 1;
+
+	memset(&board, 0, sizeof(board));
+
+	/* Assume the data is int first, later we can change it */
+	/* I think that array position 0 of ints holds the number of args */
+	for (last = 0, index = 1; index <= ints[0]; index++)
+		switch (index) { /* Begin parse switch */
+		case 1:
+			board.status = ints[index];
+			/*
+			 * We check for 2 (As opposed to 1; because 2 is a flag
+			 * instructing the driver to ignore epcaconfig.) For
+			 * this reason we check for 2.
+			 */
+			if (board.status == 2) {
+			/* Begin ignore epcaconfig as well as lilo cmd line */
+				nbdevs = 0;
+				num_cards = 0;
+				return;
+			} /* End ignore epcaconfig as well as lilo cmd line */
+
+			if (board.status > 2) {
+				printk(KERN_ERR "epca_setup: Invalid board status 0x%x\n",
+						board.status);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_BOARD_STATUS;
+				return;
+			}
+			last = index;
+			break;
+		case 2:
+			board.type = ints[index];
+			if (board.type >= PCIXEM)  {
+				printk(KERN_ERR "epca_setup: Invalid board type 0x%x\n", board.type);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_BOARD_TYPE;
+				return;
+			}
+			last = index;
+			break;
+		case 3:
+			board.altpin = ints[index];
+			if (board.altpin > 1) {
+				printk(KERN_ERR "epca_setup: Invalid board altpin 0x%x\n", board.altpin);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_ALTPIN;
+				return;
+			}
+			last = index;
+			break;
+
+		case 4:
+			board.numports = ints[index];
+			if (board.numports < 2 || board.numports > 256) {
+				printk(KERN_ERR "epca_setup: Invalid board numports 0x%x\n", board.numports);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_NUM_PORTS;
+				return;
+			}
+			nbdevs += board.numports;
+			last = index;
+			break;
+
+		case 5:
+			board.port = ints[index];
+			if (ints[index] <= 0) {
+				printk(KERN_ERR "epca_setup: Invalid io port 0x%x\n", (unsigned int)board.port);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_PORT_BASE;
+				return;
+			}
+			last = index;
+			break;
+
+		case 6:
+			board.membase = ints[index];
+			if (ints[index] <= 0) {
+				printk(KERN_ERR "epca_setup: Invalid memory base 0x%x\n",
+					(unsigned int)board.membase);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_MEM_BASE;
+				return;
+			}
+			last = index;
+			break;
+
+		default:
+			printk(KERN_ERR "<Error> - epca_setup: Too many integer parms\n");
+			return;
+
+		} /* End parse switch */
+
+	while (str && *str)  { /* Begin while there is a string arg */
+		/* find the next comma or terminator */
+		temp = str;
+		/* While string is not null, and a comma hasn't been found */
+		while (*temp && (*temp != ','))
+			temp++;
+		if (!*temp)
+			temp = NULL;
+		else
+			*temp++ = 0;
+		/* Set index to the number of args + 1 */
+		index = last + 1;
+
+		switch (index) {
+		case 1:
+			len = strlen(str);
+			if (strncmp("Disable", str, len) == 0)
+				board.status = 0;
+			else if (strncmp("Enable", str, len) == 0)
+				board.status = 1;
+			else {
+				printk(KERN_ERR "epca_setup: Invalid status %s\n", str);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_BOARD_STATUS;
+				return;
+			}
+			last = index;
+			break;
+
+		case 2:
+			for (loop = 0; loop < EPCA_NUM_TYPES; loop++)
+				if (strcmp(board_desc[loop], str) == 0)
+					break;
+			/*
+			 * If the index incremented above refers to a
+			 * legitamate board type set it here.
+			 */
+			if (index < EPCA_NUM_TYPES)
+				board.type = loop;
+			else {
+				printk(KERN_ERR "epca_setup: Invalid board type: %s\n", str);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_BOARD_TYPE;
+				return;
+			}
+			last = index;
+			break;
+
+		case 3:
+			len = strlen(str);
+			if (strncmp("Disable", str, len) == 0)
+				board.altpin = 0;
+			else if (strncmp("Enable", str, len) == 0)
+				board.altpin = 1;
+			else {
+				printk(KERN_ERR "epca_setup: Invalid altpin %s\n", str);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_ALTPIN;
+				return;
+			}
+			last = index;
+			break;
+
+		case 4:
+			t2 = str;
+			while (isdigit(*t2))
+				t2++;
+
+			if (*t2) {
+				printk(KERN_ERR "epca_setup: Invalid port count %s\n", str);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_NUM_PORTS;
+				return;
+			}
+
+			/*
+			 * There is not a man page for simple_strtoul but the
+			 * code can be found in vsprintf.c. The first argument
+			 * is the string to translate (To an unsigned long
+			 * obviously), the second argument can be the address
+			 * of any character variable or a NULL. If a variable
+			 * is given, the end pointer of the string will be
+			 * stored in that variable; if a NULL is given the end
+			 * pointer will not be returned. The last argument is
+			 * the base to use. If a 0 is indicated, the routine
+			 * will attempt to determine the proper base by looking
+			 * at the values prefix (A '0' for octal, a 'x' for
+			 * hex, etc ... If a value is given it will use that
+			 * value as the base.
+			 */
+			board.numports = simple_strtoul(str, NULL, 0);
+			nbdevs += board.numports;
+			last = index;
+			break;
+
+		case 5:
+			t2 = str;
+			while (isxdigit(*t2))
+				t2++;
+
+			if (*t2) {
+				printk(KERN_ERR "epca_setup: Invalid i/o address %s\n", str);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_PORT_BASE;
+				return;
+			}
+
+			board.port = simple_strtoul(str, NULL, 16);
+			last = index;
+			break;
+
+		case 6:
+			t2 = str;
+			while (isxdigit(*t2))
+				t2++;
+
+			if (*t2) {
+				printk(KERN_ERR "epca_setup: Invalid memory base %s\n", str);
+				invalid_lilo_config = 1;
+				setup_error_code |= INVALID_MEM_BASE;
+				return;
+			}
+			board.membase = simple_strtoul(str, NULL, 16);
+			last = index;
+			break;
+		default:
+			printk(KERN_ERR "epca: Too many string parms\n");
+			return;
+		}
+		str = temp;
+	} /* End while there is a string arg */
+
+	if (last < 6) {
+		printk(KERN_ERR "epca: Insufficient parms specified\n");
+		return;
+	}
+
+	/* I should REALLY validate the stuff here */
+	/* Copies our local copy of board into boards */
+	memcpy((void *)&boards[num_cards], (void *)&board, sizeof(board));
+	/* Does this get called once per lilo arg are what ? */
+	printk(KERN_INFO "PC/Xx: Added board %i, %s %i ports at 0x%4.4X base 0x%6.6X\n",
+		num_cards, board_desc[board.type],
+		board.numports, (int)board.port, (unsigned int) board.membase);
+	num_cards++;
+}
+
+static int __init epca_real_setup(char *str)
+{
+	int ints[11];
+
+	epca_setup(get_options(str, 11, ints), ints);
+	return 1;
+}
+
+__setup("digiepca", epca_real_setup);
+#endif
+
+enum epic_board_types {
+	brd_xr = 0,
+	brd_xem,
+	brd_cx,
+	brd_xrj,
+};
+
+/* indexed directly by epic_board_types enum */
+static struct {
+	unsigned char board_type;
+	unsigned bar_idx;		/* PCI base address region */
+} epca_info_tbl[] = {
+	{ PCIXR, 0, },
+	{ PCIXEM, 0, },
+	{ PCICX, 0, },
+	{ PCIXRJ, 2, },
+};
+
+static int __devinit epca_init_one(struct pci_dev *pdev,
+				 const struct pci_device_id *ent)
+{
+	static int board_num = -1;
+	int board_idx, info_idx = ent->driver_data;
+	unsigned long addr;
+
+	if (pci_enable_device(pdev))
+		return -EIO;
+
+	board_num++;
+	board_idx = board_num + num_cards;
+	if (board_idx >= MAXBOARDS)
+		goto err_out;
+
+	addr = pci_resource_start(pdev, epca_info_tbl[info_idx].bar_idx);
+	if (!addr) {
+		printk(KERN_ERR PFX "PCI region #%d not available (size 0)\n",
+			epca_info_tbl[info_idx].bar_idx);
+		goto err_out;
+	}
+
+	boards[board_idx].status = ENABLED;
+	boards[board_idx].type = epca_info_tbl[info_idx].board_type;
+	boards[board_idx].numports = 0x0;
+	boards[board_idx].port = addr + PCI_IO_OFFSET;
+	boards[board_idx].membase = addr;
+
+	if (!request_mem_region(addr + PCI_IO_OFFSET, 0x200000, "epca")) {
+		printk(KERN_ERR PFX "resource 0x%x @ 0x%lx unavailable\n",
+			0x200000, addr + PCI_IO_OFFSET);
+		goto err_out;
+	}
+
+	boards[board_idx].re_map_port = ioremap_nocache(addr + PCI_IO_OFFSET,
+								0x200000);
+	if (!boards[board_idx].re_map_port) {
+		printk(KERN_ERR PFX "cannot map 0x%x @ 0x%lx\n",
+			0x200000, addr + PCI_IO_OFFSET);
+		goto err_out_free_pciio;
+	}
+
+	if (!request_mem_region(addr, 0x200000, "epca")) {
+		printk(KERN_ERR PFX "resource 0x%x @ 0x%lx unavailable\n",
+			0x200000, addr);
+		goto err_out_free_iounmap;
+	}
+
+	boards[board_idx].re_map_membase = ioremap_nocache(addr, 0x200000);
+	if (!boards[board_idx].re_map_membase) {
+		printk(KERN_ERR PFX "cannot map 0x%x @ 0x%lx\n",
+			0x200000, addr + PCI_IO_OFFSET);
+		goto err_out_free_memregion;
+	}
+
+	/*
+	 * I don't know what the below does, but the hardware guys say its
+	 * required on everything except PLX (In this case XRJ).
+	 */
+	if (info_idx != brd_xrj) {
+		pci_write_config_byte(pdev, 0x40, 0);
+		pci_write_config_byte(pdev, 0x46, 0);
+	}
+
+	return 0;
+
+err_out_free_memregion:
+	release_mem_region(addr, 0x200000);
+err_out_free_iounmap:
+	iounmap(boards[board_idx].re_map_port);
+err_out_free_pciio:
+	release_mem_region(addr + PCI_IO_OFFSET, 0x200000);
+err_out:
+	return -ENODEV;
+}
+
+
+static struct pci_device_id epca_pci_tbl[] = {
+	{ PCI_VENDOR_DIGI, PCI_DEVICE_XR, PCI_ANY_ID, PCI_ANY_ID, 0, 0, brd_xr },
+	{ PCI_VENDOR_DIGI, PCI_DEVICE_XEM, PCI_ANY_ID, PCI_ANY_ID, 0, 0, brd_xem },
+	{ PCI_VENDOR_DIGI, PCI_DEVICE_CX, PCI_ANY_ID, PCI_ANY_ID, 0, 0, brd_cx },
+	{ PCI_VENDOR_DIGI, PCI_DEVICE_XRJ, PCI_ANY_ID, PCI_ANY_ID, 0, 0, brd_xrj },
+	{ 0, }
+};
+
+MODULE_DEVICE_TABLE(pci, epca_pci_tbl);
+
+static int __init init_PCI(void)
+{
+	memset(&epca_driver, 0, sizeof(epca_driver));
+	epca_driver.name = "epca";
+	epca_driver.id_table = epca_pci_tbl;
+	epca_driver.probe = epca_init_one;
+
+	return pci_register_driver(&epca_driver);
+}
+
+MODULE_LICENSE("GPL");
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              INDX( 	                 (   ê   Ë       –                    H     X H     H     ‚3„<é–>Wñj@é–>Wñj@é–Æ#ñj@é–                        t m p               H     X H     H     ‚3„<é–¿…ghñ£ŒB=7„<é–†uL‡>é–                        t m p               X H     H     ‚3„<é–¿…ghñ£ŒB=7„<é–†uL‡>é–                        t m p               H     X H     H     ‚3„<é–¿…ghñ£ŒB=7„<é–†uL‡>é–                        t m p               X H     H     ‚3„<é–¿…ghñ£ŒB=7„<é †uL‡>é–                        t m p               H     X H     H     ‚3„<é–¿…ghñ£ŒB=7„<é–†uL‡>é–                        t m p                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                

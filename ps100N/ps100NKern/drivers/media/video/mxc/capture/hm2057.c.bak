@@ -1,0 +1,2054 @@
+/*
+ * Copyright 2005-2009 Freescale Semiconductor, Inc. All Rights Reserved.
+ */
+
+/*
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+
+/*!
+ * @file ov2640.c
+ *
+ * @brief ov2640 camera driver functions
+ *
+ * @ingroup Camera
+ */
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/slab.h>
+#include <linux/ctype.h>
+#include <linux/types.h>
+#include <linux/delay.h>
+#include <linux/device.h>
+#include <linux/i2c.h>
+#include <linux/regulator/consumer.h>
+
+#include <mach/hardware.h>
+#include <media/v4l2-int-device.h>
+#include "mxc_v4l2_capture.h"
+
+#define MIN_FPS 5
+#define MAX_FPS 30
+#define DEFAULT_FPS 30
+
+#define OV2640_XCLK_MIN 6000000
+#define OV2640_XCLK_MAX 27000000
+
+static unsigned int hw2057_hw_read(struct i2c_client *client1,	     unsigned int reg);
+/*
+enum ov2640_mode {
+	ov2640_mode_1600_1120,
+	ov2640_mode_800_600
+};
+*/
+
+struct reg_value {
+	u16 reg;
+	u16 value;
+	int delay_ms;
+};
+
+static struct reg_value ov2640_setting_1600_1120[] = {
+//1600-1200
+{0x0022,0x00,0}, //Reset
+{0x0004,0x10,0},
+{0x0006,0x00,0}, //mirror  
+{0x000D,0x00,0},
+{0x000E,0x00,0},
+{0x000F,0x00,0},
+{0x0011,0x02,0},//
+{0x0012,0x1C,0},//
+{0x0013,0x01,0},//
+{0x0015,0x02,0},//
+{0x0016,0x80,0},//
+{0x0018,0x00,0},
+{0x001D,0x40,0},
+{0x0020,0x08,0},// HV polarity
+{0x0025,0x00,0},//
+{0x0026,0x87,0},//
+{0x0027,0x30,0},// color format
+{0x0040,0x20,0},
+{0x0053,0x0A,0},
+{0x0044,0x06,0},
+{0x0046,0xD8,0},
+{0x004A,0x0A,0},
+{0x004B,0x72,0},
+{0x0075,0x01,0},
+{0x002A,0x2F,0},//
+{0x0070,0x5F,0},//
+{0x0071,0xFF,0},//
+{0x0072,0x55,0},//
+{0x0073,0x50,0},//
+{0x0080,0xC8,0},
+{0x0082,0xA2,0},
+{0x0083,0xF0,0},
+{0x0085,0x12,0},
+{0x0086,0x02,0},
+{0x0087,0x80,0},
+{0x0088,0x6C,0},
+{0x0089,0x2E,0},
+{0x008A,0x7D,0},
+{0x008D,0x20,0},
+{0x0090,0x00,0},
+{0x0091,0x10,0},
+{0x0092,0x11,0},
+{0x0093,0x12,0},
+{0x0094,0x16,0},
+{0x0095,0x08,0},
+{0x0096,0x00,0},
+{0x0097,0x10,0},
+{0x0098,0x11,0},
+{0x0099,0x12,0},
+{0x009A,0x06,0},
+{0x009B,0x34,0},
+{0x00A0,0x00,0},
+{0x00A1,0x04,0},
+{0x011F,0x88,0},//
+{0x0120,0x37,0},
+{0x0121,0x83,0},
+{0x0122,0x7B,0},
+{0x0123,0xC2,0},
+{0x0124,0xDE,0},
+{0x0125,0xDF,0},//
+{0x0126,0x70,0},//
+{0x0128,0x1F,0},
+{0x0132,0x10,0},
+{0x0131,0xBC,0},
+{0x0140,0x14,0},
+{0x0141,0x0A,0},
+{0x0142,0x14,0},
+{0x0143,0x0A,0},
+{0x0144,0x04,0},
+{0x0145,0x00,0},
+{0x0146,0x20,0},
+{0x0147,0x0A,0},
+{0x0148,0x10,0},
+{0x0149,0x0C,0},
+{0x014A,0x80,0},
+{0x014B,0x80,0},
+{0x014C,0x2E,0},
+{0x014D,0x2E,0},
+{0x014E,0x05,0},
+{0x014F,0x05,0},
+{0x0150,0x0D,0},
+{0x0155,0x00,0},
+{0x0156,0x10,0},
+{0x0157,0x0A,0},
+{0x0158,0x0A,0},
+{0x0159,0x0A,0},
+{0x015A,0x05,0},
+{0x015B,0x05,0},
+{0x015C,0x05,0},
+{0x015D,0x05,0},
+{0x015E,0x08,0},
+{0x015F,0xFF,0},
+{0x0160,0x50,0},
+{0x0161,0x20,0},
+{0x0162,0x14,0},
+{0x0163,0x0A,0},
+{0x0164,0x10,0},
+{0x0165,0x0A,0},
+{0x0166,0x0A,0},
+{0x018C,0x24,0},
+{0x018D,0x04,0},
+{0x018E,0x00,0},
+{0x018F,0x11,0},
+{0x0190,0x80,0},
+{0x0191,0x47,0},
+{0x0192,0x48,0},
+{0x0193,0x64,0},
+{0x0194,0x32,0},
+{0x0195,0xc8,0},
+{0x0196,0x96,0},
+{0x0197,0x64,0},
+{0x0198,0x32,0},
+{0x0199,0x14,0},
+{0x019A,0x20,0},
+{0x019B,0x14,0},
+{0x01B0,0x55,0},
+{0x01B1,0x0C,0},
+{0x01B2,0x0A,0},
+{0x01B3,0x10,0},
+{0x01B4,0x0E,0},
+{0x01BA,0x10,0},
+{0x01BB,0x04,0},
+{0x01D8,0x40,0},
+{0x01DE,0x60,0},
+{0x01E4,0x10,0},
+{0x01E5,0x10,0},
+{0x01F2,0x0C,0},
+{0x01F3,0x14,0},
+{0x01F8,0x04,0},
+{0x01F9,0x0C,0},
+{0x01FE,0x02,0},
+{0x01FF,0x04,0},
+{0x0220,0x00,0},
+{0x0221,0xB0,0},
+{0x0222,0x00,0},
+{0x0223,0x80,0},
+{0x0224,0x8E,0},
+{0x0225,0x00,0},
+{0x0226,0x88,0},
+{0x022A,0x88,0},
+{0x022B,0x00,0},
+{0x022C,0x88,0},
+{0x022D,0x13,0},
+{0x022E,0x0B,0},
+{0x022F,0x13,0},
+{0x0230,0x0B,0},
+{0x0233,0x13,0},
+{0x0234,0x0B,0},
+{0x0235,0x28,0},
+{0x0236,0x03,0},
+{0x0237,0x28,0},
+{0x0238,0x03,0},
+{0x023B,0x28,0},
+{0x023C,0x03,0},
+{0x023D,0x5C,0},
+{0x023E,0x02,0},
+{0x023F,0x5C,0},
+{0x0240,0x02,0},
+{0x0243,0x5C,0},
+{0x0244,0x02,0},
+{0x0251,0x0E,0},
+{0x0252,0x00,0},
+{0x0280,0x0A,0},
+{0x0282,0x14,0},
+{0x0284,0x2A,0},
+{0x0286,0x50,0},
+{0x0288,0x60,0},
+{0x028A,0x6D,0},
+{0x028C,0x79,0},
+{0x028E,0x82,0},
+{0x0290,0x8A,0},
+{0x0292,0x91,0},
+{0x0294,0x9C,0},
+{0x0296,0xA7,0},
+{0x0298,0xBA,0},
+{0x029A,0xCD,0},
+{0x029C,0xE0,0},
+{0x029E,0x2D,0},
+{0x02A0,0x06,0},
+{0x02E0,0x04,0},
+{0x02C0,0x8F,0},
+{0x02C1,0x01,0},
+{0x02C2,0x8F,0},
+{0x02C3,0x07,0},
+{0x02C4,0xE3,0},
+{0x02C5,0x07,0},
+{0x02C6,0xC1,0},
+{0x02C7,0x07,0},
+{0x02C8,0x70,0},
+{0x02C9,0x01,0},
+{0x02CA,0xD0,0},
+{0x02CB,0x07,0},
+{0x02CC,0xF7,0},
+{0x02CD,0x07,0},
+{0x02CE,0x5A,0},
+{0x02CF,0x07,0},
+{0x02D0,0xB0,0},
+{0x02D1,0x01,0},
+{0x0302,0x00,0},
+{0x0303,0x00,0},
+{0x0304,0x00,0},
+{0x02F0,0x80,0},
+{0x02F1,0x07,0},
+{0x02F2,0x8E,0},
+{0x02F3,0x00,0},
+{0x02F4,0xF2,0},
+{0x02F5,0x07,0},
+{0x02F6,0xCC,0},
+{0x02F7,0x07,0},
+{0x02F8,0x16,0},
+{0x02F9,0x00,0},
+{0x02FA,0x1E,0},
+{0x02FB,0x00,0},
+{0x02FC,0x9D,0},
+{0x02FD,0x07,0},
+{0x02FE,0xA6,0},
+{0x02FF,0x07,0},
+{0x0300,0xBD,0},
+{0x0301,0x00,0},
+{0x0305,0x00,0},
+{0x0306,0x00,0},
+{0x0307,0x00,0},
+{0x032D,0x00,0},
+{0x032E,0x01,0},
+{0x032F,0x00,0},
+{0x0330,0x01,0},
+{0x0331,0x00,0},
+{0x0332,0x01,0},
+{0x0333,0x82,0},
+{0x0334,0x00,0},
+{0x0335,0x84,0},
+{0x0336,0x00,0},
+{0x0337,0x01,0},
+{0x0338,0x00,0},
+{0x0339,0x01,0},
+{0x033A,0x00,0},
+{0x033B,0x01,0},
+{0x033E,0x04,0},
+{0x033F,0x86,0},
+{0x0340,0x30,0},
+{0x0341,0x44,0},
+{0x0342,0x4A,0},
+{0x0343,0x42,0},
+{0x0344,0x74,0},
+{0x0345,0x4F,0},
+{0x0346,0x67,0},
+{0x0347,0x5C,0},
+{0x0348,0x59,0},
+{0x0349,0x67,0},
+{0x034A,0x4D,0},
+{0x034B,0x6E,0},
+{0x034C,0x44,0},
+{0x0350,0x80,0},
+{0x0351,0x80,0},
+{0x0352,0x18,0},
+{0x0353,0x18,0},
+{0x0354,0x6E,0},
+{0x0355,0x4A,0},
+{0x0356,0x73,0},
+{0x0357,0xC0,0},
+{0x0358,0x06,0},
+{0x035A,0x06,0},
+{0x035B,0xA0,0},
+{0x035C,0x73,0},
+{0x035D,0x50,0},
+{0x035E,0xC0,0},
+{0x035F,0xA0,0},
+{0x0360,0x02,0},
+{0x0361,0x18,0},
+{0x0362,0x80,0},
+{0x0363,0x6C,0},
+{0x0364,0x00,0},
+{0x0365,0xF0,0},
+{0x0366,0x20,0},
+{0x0367,0x0C,0},
+{0x0369,0x00,0},
+{0x036A,0x10,0},
+{0x036B,0x10,0},
+{0x036E,0x20,0},
+{0x036F,0x00,0},
+{0x0370,0x10,0},
+{0x0371,0x18,0},
+{0x0372,0x0C,0},
+{0x0373,0x38,0},
+{0x0374,0x3A,0},
+{0x0375,0x13,0},
+{0x0376,0x22,0},
+{0x0380,0xFF,0},
+{0x0381,0x4A,0},
+{0x0382,0x36,0},
+{0x038A,0x40,0},
+{0x038B,0x08,0},
+{0x038C,0xC1,0},
+{0x038E,0x40,0},
+{0x038F,0x09,0},//
+{0x0390,0x18,0},//
+{0x0391,0x05,0},
+{0x0393,0x80,0},
+{0x0395,0x21,0},
+{0x0398,0x02,0},
+{0x0399,0x84,0},
+{0x039A,0x03,0},
+{0x039B,0x25,0},
+{0x039C,0x03,0},
+{0x039D,0xC6,0},
+{0x039E,0x05,0},
+{0x039F,0x08,0},
+{0x03A0,0x06,0},
+{0x03A1,0x4A,0},
+{0x03A2,0x07,0},
+{0x03A3,0x8C,0},
+{0x03A4,0x0A,0},
+{0x03A5,0x10,0},
+{0x03A6,0x0C,0},
+{0x03A7,0x0E,0},
+{0x03A8,0x10,0},
+{0x03A9,0x18,0},
+{0x03AA,0x20,0},
+{0x03AB,0x28,0},
+{0x03AC,0x1E,0},
+{0x03AD,0x1A,0},
+{0x03AE,0x13,0},
+{0x03AF,0x0C,0},
+{0x03B0,0x0B,0},
+{0x03B1,0x09,0},
+{0x03B3,0x10,0},
+{0x03B4,0x00,0},
+{0x03B5,0x10,0},
+{0x03B6,0x00,0},
+{0x03B7,0xEA,0},
+{0x03B8,0x00,0},
+{0x03B9,0x3A,0},
+{0x03BA,0x01,0},
+{0x03BB,0x9F,0},
+{0x03BC,0xCF,0},
+{0x03BD,0xE7,0},
+{0x03BE,0xF3,0},
+{0x03BF,0x01,0},
+{0x03D0,0xF8,0},
+{0x03E0,0x04,0},
+{0x03E1,0x01,0},
+{0x03E2,0x04,0},
+{0x03E4,0x10,0},
+{0x03E5,0x12,0},
+{0x03E6,0x00,0},
+{0x03E8,0x21,0},
+{0x03E9,0x23,0},
+{0x03EA,0x01,0},
+{0x03EC,0x21,0},
+{0x03ED,0x23,0},
+{0x03EE,0x01,0},
+{0x03F0,0x20,0},
+{0x03F1,0x22,0},
+{0x03F2,0x00,0},
+{0x0420,0x84,0},
+{0x0421,0x00,0},
+{0x0422,0x00,0},
+{0x0423,0x83,0},
+{0x0430,0x08,0},
+{0x0431,0x28,0},
+{0x0432,0x10,0},
+{0x0433,0x08,0},
+{0x0435,0x0C,0},
+{0x0450,0xFF,0},
+{0x0451,0xE8,0},
+{0x0452,0xC4,0},
+{0x0453,0x88,0},
+{0x0454,0x00,0},
+{0x0458,0x98,0},
+{0x0459,0x03,0},
+{0x045A,0x00,0},
+{0x045B,0x30,0},
+{0x045C,0x00,0},
+{0x045D,0x70,0},
+{0x0466,0x14,0},
+{0x047A,0x00,0},
+{0x047B,0x00,0},
+{0x0480,0x58,0},
+{0x0481,0x06,0},
+{0x0482,0x0C,0},
+{0x04B0,0x50,0},
+{0x04B6,0x30,0},
+{0x04B9,0x10,0},
+{0x04B3,0x10,0},
+{0x04B1,0x8E,0},
+{0x04B4,0x20,0},
+{0x0540,0x00,0},
+{0x0541,0x9D,0},
+{0x0542,0x00,0},
+{0x0543,0xBC,0},
+{0x0580,0x01,0},
+{0x0581,0x0F,0},
+{0x0582,0x04,0},
+{0x0594,0x00,0},
+{0x0595,0x04,0},
+{0x05A9,0x03,0},
+{0x05AA,0x40,0},
+{0x05AB,0x80,0},
+{0x05AC,0x0A,0},
+{0x05AD,0x10,0},
+{0x05AE,0x0C,0},
+{0x05AF,0x0C,0},
+{0x05B0,0x03,0},
+{0x05B1,0x03,0},
+{0x05B2,0x1C,0},
+{0x05B3,0x02,0},
+{0x05B4,0x00,0},
+{0x05B5,0x0C,0},
+{0x05B8,0x80,0},
+{0x05B9,0x32,0},
+{0x05BA,0x00,0},
+{0x05BB,0x80,0},
+{0x05BC,0x03,0},
+{0x05BD,0x00,0},
+{0x05BF,0x05,0},
+{0x05C0,0x10,0},
+{0x05C3,0x00,0},
+{0x05C4,0x0C,0},
+{0x05C5,0x20,0},
+{0x05C7,0x01,0},
+{0x05C8,0x14,0},
+{0x05C9,0x54,0},
+{0x05CA,0x14,0},
+{0x05CB,0xE0,0},
+{0x05CC,0x20,0},
+{0x05CD,0x00,0},
+{0x05CE,0x08,0},
+{0x05CF,0x60,0},
+{0x05D0,0x10,0},
+{0x05D1,0x05,0},
+{0x05D2,0x03,0},
+{0x05D4,0x00,0},
+{0x05D5,0x05,0},
+{0x05D6,0x05,0},
+{0x05D7,0x05,0},
+{0x05D8,0x08,0},
+{0x05DC,0x0C,0},
+{0x05D9,0x00,0},
+{0x05DB,0x00,0},
+{0x05DD,0x0F,0},
+{0x05DE,0x00,0},
+{0x05DF,0x0A,0},
+{0x05E0,0xA0,0}, //scaler
+{0x05E1,0x00,0},
+{0x05E2,0xA0,0},
+{0x05E3,0x00,0},
+{0x05E4,0x0A,0},//windows
+{0x05E5,0x00,0},
+{0x05E6,0x94,0},
+{0x05E7,0x06,0},
+{0x05E8,0x0A,0},
+{0x05E9,0x00,0},
+{0x05EA,0xB9,0},
+{0x05EB,0x04,0},
+{0x0660,0x04,0},
+{0x0661,0x16,0},
+{0x0662,0x04,0},
+{0x0663,0x28,0},
+{0x0664,0x04,0},
+{0x0665,0x18,0},
+{0x0666,0x04,0},
+{0x0667,0x21,0},
+{0x0668,0x04,0},
+{0x0669,0x0C,0},
+{0x066A,0x04,0},
+{0x066B,0x25,0},
+{0x066C,0x00,0},
+{0x066D,0x12,0},
+{0x066E,0x00,0},
+{0x066F,0x80,0},
+{0x0670,0x00,0},
+{0x0671,0x0A,0},
+{0x0672,0x04,0},
+{0x0673,0x1D,0},
+{0x0674,0x04,0},
+{0x0675,0x1D,0},
+{0x0676,0x00,0},
+{0x0677,0x7E,0},
+{0x0678,0x01,0},
+{0x0679,0x47,0},
+{0x067A,0x00,0},
+{0x067B,0x73,0},
+{0x067C,0x04,0},
+{0x067D,0x14,0},
+{0x067E,0x04,0},
+{0x067F,0x28,0},
+{0x0680,0x00,0},
+{0x0681,0x22,0},
+{0x0682,0x00,0},
+{0x0683,0xA5,0},
+{0x0684,0x00,0},
+{0x0685,0x1E,0},
+{0x0686,0x04,0},
+{0x0687,0x1D,0},
+{0x0688,0x04,0},
+{0x0689,0x19,0},
+{0x068A,0x04,0},
+{0x068B,0x21,0},
+{0x068C,0x04,0},
+{0x068D,0x0A,0},
+{0x068E,0x04,0},
+{0x068F,0x25,0},
+{0x0690,0x04,0},
+{0x0691,0x15,0},
+{0x0698,0x20,0},
+{0x0699,0x20,0},
+{0x069A,0x01,0},
+{0x069C,0x22,0},
+{0x069D,0x10,0},
+{0x069E,0x10,0},
+{0x069F,0x08,0},
+
+{0x0000,0x01,0},
+{0x0100,0x01,0},
+{0x0101,0x01,0},
+{0x0005,0x01,0}
+};
+
+static struct reg_value ov2640_setting_800_600[] = {
+//VGA+QVGA
+{0x0022,0x00,0}, //Reset
+{0x0004,0x10,0},
+{0x0006,0x00,0}, //mirror  
+{0x000D,0x00,0},
+{0x000E,0x00,0},
+{0x000F,0x00,0},
+{0x0011,0x02,0},//
+{0x0012,0x1C,0},//
+{0x0013,0x01,0},//
+{0x0015,0x02,0},//
+{0x0016,0x80,0},//
+{0x0018,0x00,0},
+{0x001D,0x40,0},
+{0x0020,0x08,0},// HV polarity
+{0x0025,0x00,0},//
+{0x0026,0x87,0},//
+{0x0027,0x30,0},// color format
+{0x0040,0x20,0},
+{0x0053,0x0A,0},
+{0x0044,0x06,0},
+{0x0046,0xD8,0},
+{0x004A,0x0A,0},
+{0x004B,0x72,0},
+{0x0075,0x01,0},
+{0x002A,0x2F,0},//
+{0x0070,0x5F,0},//
+{0x0071,0xFF,0},//
+{0x0072,0x55,0},//
+{0x0073,0x50,0},//
+{0x0080,0xC8,0},
+{0x0082,0xA2,0},
+{0x0083,0xF0,0},
+{0x0085,0x12,0},
+{0x0086,0x02,0},
+{0x0087,0x80,0},
+{0x0088,0x6C,0},
+{0x0089,0x2E,0},
+{0x008A,0x7D,0},
+{0x008D,0x20,0},
+{0x0090,0x00,0},
+{0x0091,0x10,0},
+{0x0092,0x11,0},
+{0x0093,0x12,0},
+{0x0094,0x16,0},
+{0x0095,0x08,0},
+{0x0096,0x00,0},
+{0x0097,0x10,0},
+{0x0098,0x11,0},
+{0x0099,0x12,0},
+{0x009A,0x06,0},
+{0x009B,0x34,0},
+{0x00A0,0x00,0},
+{0x00A1,0x04,0},
+{0x011F,0x80,0},//
+{0x0120,0x37,0},
+{0x0121,0x83,0},
+{0x0122,0x7B,0},
+{0x0123,0xC2,0},
+{0x0124,0xDE,0},
+{0x0125,0xFF,0},//
+{0x0126,0x70,0},//
+{0x0128,0x1F,0},
+{0x0132,0x10,0},
+{0x0131,0xBC,0},
+{0x0140,0x14,0},
+{0x0141,0x0A,0},
+{0x0142,0x14,0},
+{0x0143,0x0A,0},
+{0x0144,0x04,0},
+{0x0145,0x00,0},
+{0x0146,0x20,0},
+{0x0147,0x0A,0},
+{0x0148,0x10,0},
+{0x0149,0x0C,0},
+{0x014A,0x80,0},
+{0x014B,0x80,0},
+{0x014C,0x2E,0},
+{0x014D,0x2E,0},
+{0x014E,0x05,0},
+{0x014F,0x05,0},
+{0x0150,0x0D,0},
+{0x0155,0x00,0},
+{0x0156,0x10,0},
+{0x0157,0x0A,0},
+{0x0158,0x0A,0},
+{0x0159,0x0A,0},
+{0x015A,0x05,0},
+{0x015B,0x05,0},
+{0x015C,0x05,0},
+{0x015D,0x05,0},
+{0x015E,0x08,0},
+{0x015F,0xFF,0},
+{0x0160,0x50,0},
+{0x0161,0x20,0},
+{0x0162,0x14,0},
+{0x0163,0x0A,0},
+{0x0164,0x10,0},
+{0x0165,0x0A,0},
+{0x0166,0x0A,0},
+{0x018C,0x24,0},
+{0x018D,0x04,0},
+{0x018E,0x00,0},
+{0x018F,0x11,0},
+{0x0190,0x80,0},
+{0x0191,0x47,0},
+{0x0192,0x48,0},
+{0x0193,0x64,0},
+{0x0194,0x32,0},
+{0x0195,0xc8,0},
+{0x0196,0x96,0},
+{0x0197,0x64,0},
+{0x0198,0x32,0},
+{0x0199,0x14,0},
+{0x019A,0x20,0},
+{0x019B,0x14,0},
+{0x01B0,0x55,0},
+{0x01B1,0x0C,0},
+{0x01B2,0x0A,0},
+{0x01B3,0x10,0},
+{0x01B4,0x0E,0},
+{0x01BA,0x10,0},
+{0x01BB,0x04,0},
+{0x01D8,0x40,0},
+{0x01DE,0x60,0},
+{0x01E4,0x10,0},
+{0x01E5,0x10,0},
+{0x01F2,0x0C,0},
+{0x01F3,0x14,0},
+{0x01F8,0x04,0},
+{0x01F9,0x0C,0},
+{0x01FE,0x02,0},
+{0x01FF,0x04,0},
+{0x0220,0x00,0},
+{0x0221,0xB0,0},
+{0x0222,0x00,0},
+{0x0223,0x80,0},
+{0x0224,0x8E,0},
+{0x0225,0x00,0},
+{0x0226,0x88,0},
+{0x022A,0x88,0},
+{0x022B,0x00,0},
+{0x022C,0x88,0},
+{0x022D,0x13,0},
+{0x022E,0x0B,0},
+{0x022F,0x13,0},
+{0x0230,0x0B,0},
+{0x0233,0x13,0},
+{0x0234,0x0B,0},
+{0x0235,0x28,0},
+{0x0236,0x03,0},
+{0x0237,0x28,0},
+{0x0238,0x03,0},
+{0x023B,0x28,0},
+{0x023C,0x03,0},
+{0x023D,0x5C,0},
+{0x023E,0x02,0},
+{0x023F,0x5C,0},
+{0x0240,0x02,0},
+{0x0243,0x5C,0},
+{0x0244,0x02,0},
+{0x0251,0x0E,0},
+{0x0252,0x00,0},
+{0x0280,0x0A,0},
+{0x0282,0x14,0},
+{0x0284,0x2A,0},
+{0x0286,0x50,0},
+{0x0288,0x60,0},
+{0x028A,0x6D,0},
+{0x028C,0x79,0},
+{0x028E,0x82,0},
+{0x0290,0x8A,0},
+{0x0292,0x91,0},
+{0x0294,0x9C,0},
+{0x0296,0xA7,0},
+{0x0298,0xBA,0},
+{0x029A,0xCD,0},
+{0x029C,0xE0,0},
+{0x029E,0x2D,0},
+{0x02A0,0x06,0},
+{0x02E0,0x04,0},
+{0x02C0,0x8F,0},
+{0x02C1,0x01,0},
+{0x02C2,0x8F,0},
+{0x02C3,0x07,0},
+{0x02C4,0xE3,0},
+{0x02C5,0x07,0},
+{0x02C6,0xC1,0},
+{0x02C7,0x07,0},
+{0x02C8,0x70,0},
+{0x02C9,0x01,0},
+{0x02CA,0xD0,0},
+{0x02CB,0x07,0},
+{0x02CC,0xF7,0},
+{0x02CD,0x07,0},
+{0x02CE,0x5A,0},
+{0x02CF,0x07,0},
+{0x02D0,0xB0,0},
+{0x02D1,0x01,0},
+{0x0302,0x00,0},
+{0x0303,0x00,0},
+{0x0304,0x00,0},
+{0x02F0,0x80,0},
+{0x02F1,0x07,0},
+{0x02F2,0x8E,0},
+{0x02F3,0x00,0},
+{0x02F4,0xF2,0},
+{0x02F5,0x07,0},
+{0x02F6,0xCC,0},
+{0x02F7,0x07,0},
+{0x02F8,0x16,0},
+{0x02F9,0x00,0},
+{0x02FA,0x1E,0},
+{0x02FB,0x00,0},
+{0x02FC,0x9D,0},
+{0x02FD,0x07,0},
+{0x02FE,0xA6,0},
+{0x02FF,0x07,0},
+{0x0300,0xBD,0},
+{0x0301,0x00,0},
+{0x0305,0x00,0},
+{0x0306,0x00,0},
+{0x0307,0x00,0},
+{0x032D,0x00,0},
+{0x032E,0x01,0},
+{0x032F,0x00,0},
+{0x0330,0x01,0},
+{0x0331,0x00,0},
+{0x0332,0x01,0},
+{0x0333,0x82,0},
+{0x0334,0x00,0},
+{0x0335,0x84,0},
+{0x0336,0x00,0},
+{0x0337,0x01,0},
+{0x0338,0x00,0},
+{0x0339,0x01,0},
+{0x033A,0x00,0},
+{0x033B,0x01,0},
+{0x033E,0x04,0},
+{0x033F,0x86,0},
+{0x0340,0x30,0},
+{0x0341,0x44,0},
+{0x0342,0x4A,0},
+{0x0343,0x42,0},
+{0x0344,0x74,0},
+{0x0345,0x4F,0},
+{0x0346,0x67,0},
+{0x0347,0x5C,0},
+{0x0348,0x59,0},
+{0x0349,0x67,0},
+{0x034A,0x4D,0},
+{0x034B,0x6E,0},
+{0x034C,0x44,0},
+{0x0350,0x80,0},
+{0x0351,0x80,0},
+{0x0352,0x18,0},
+{0x0353,0x18,0},
+{0x0354,0x6E,0},
+{0x0355,0x4A,0},
+{0x0356,0x73,0},
+{0x0357,0xC0,0},
+{0x0358,0x06,0},
+{0x035A,0x06,0},
+{0x035B,0xA0,0},
+{0x035C,0x73,0},
+{0x035D,0x50,0},
+{0x035E,0xC0,0},
+{0x035F,0xA0,0},
+{0x0360,0x02,0},
+{0x0361,0x18,0},
+{0x0362,0x80,0},
+{0x0363,0x6C,0},
+{0x0364,0x00,0},
+{0x0365,0xF0,0},
+{0x0366,0x20,0},
+{0x0367,0x0C,0},
+{0x0369,0x00,0},
+{0x036A,0x10,0},
+{0x036B,0x10,0},
+{0x036E,0x20,0},
+{0x036F,0x00,0},
+{0x0370,0x10,0},
+{0x0371,0x18,0},
+{0x0372,0x0C,0},
+{0x0373,0x38,0},
+{0x0374,0x3A,0},
+{0x0375,0x13,0},
+{0x0376,0x22,0},
+{0x0380,0xFF,0},
+{0x0381,0x4A,0},
+{0x0382,0x36,0},
+{0x038A,0x40,0},
+{0x038B,0x08,0},
+{0x038C,0xC1,0},
+{0x038E,0x40,0},
+{0x038F,0x05,0},//
+{0x0390,0x18,0},//
+{0x0391,0x05,0},
+{0x0393,0x80,0},
+{0x0395,0x21,0},
+{0x0398,0x02,0},
+{0x0399,0x84,0},
+{0x039A,0x03,0},
+{0x039B,0x25,0},
+{0x039C,0x03,0},
+{0x039D,0xC6,0},
+{0x039E,0x05,0},
+{0x039F,0x08,0},
+{0x03A0,0x06,0},
+{0x03A1,0x4A,0},
+{0x03A2,0x07,0},
+{0x03A3,0x8C,0},
+{0x03A4,0x0A,0},
+{0x03A5,0x10,0},
+{0x03A6,0x0C,0},
+{0x03A7,0x0E,0},
+{0x03A8,0x10,0},
+{0x03A9,0x18,0},
+{0x03AA,0x20,0},
+{0x03AB,0x28,0},
+{0x03AC,0x1E,0},
+{0x03AD,0x1A,0},
+{0x03AE,0x13,0},
+{0x03AF,0x0C,0},
+{0x03B0,0x0B,0},
+{0x03B1,0x09,0},
+{0x03B3,0x10,0},
+{0x03B4,0x00,0},
+{0x03B5,0x10,0},
+{0x03B6,0x00,0},
+{0x03B7,0xEA,0},
+{0x03B8,0x00,0},
+{0x03B9,0x3A,0},
+{0x03BA,0x01,0},
+{0x03BB,0x9F,0},
+{0x03BC,0xCF,0},
+{0x03BD,0xE7,0},
+{0x03BE,0xF3,0},
+{0x03BF,0x01,0},
+{0x03D0,0xF8,0},
+{0x03E0,0x04,0},
+{0x03E1,0x01,0},
+{0x03E2,0x04,0},
+{0x03E4,0x10,0},
+{0x03E5,0x12,0},
+{0x03E6,0x00,0},
+{0x03E8,0x21,0},
+{0x03E9,0x23,0},
+{0x03EA,0x01,0},
+{0x03EC,0x21,0},
+{0x03ED,0x23,0},
+{0x03EE,0x01,0},
+{0x03F0,0x20,0},
+{0x03F1,0x22,0},
+{0x03F2,0x00,0},
+{0x0420,0x84,0},
+{0x0421,0x00,0},
+{0x0422,0x00,0},
+{0x0423,0x83,0},
+{0x0430,0x08,0},
+{0x0431,0x28,0},
+{0x0432,0x10,0},
+{0x0433,0x08,0},
+{0x0435,0x0C,0},
+{0x0450,0xFF,0},
+{0x0451,0xE8,0},
+{0x0452,0xC4,0},
+{0x0453,0x88,0},
+{0x0454,0x00,0},
+{0x0458,0x98,0},
+{0x0459,0x03,0},
+{0x045A,0x00,0},
+{0x045B,0x30,0},
+{0x045C,0x00,0},
+{0x045D,0x70,0},
+{0x0466,0x14,0},
+{0x047A,0x00,0},
+{0x047B,0x00,0},
+{0x0480,0x58,0},
+{0x0481,0x06,0},
+{0x0482,0x0C,0},
+{0x04B0,0x50,0},
+{0x04B6,0x30,0},
+{0x04B9,0x10,0},
+{0x04B3,0x10,0},
+{0x04B1,0x8E,0},
+{0x04B4,0x20,0},
+{0x0540,0x00,0},
+{0x0541,0x9D,0},
+{0x0542,0x00,0},
+{0x0543,0xBC,0},
+{0x0580,0x01,0},
+{0x0581,0x0F,0},
+{0x0582,0x04,0},
+{0x0594,0x00,0},
+{0x0595,0x04,0},
+{0x05A9,0x03,0},
+{0x05AA,0x40,0},
+{0x05AB,0x80,0},
+{0x05AC,0x0A,0},
+{0x05AD,0x10,0},
+{0x05AE,0x0C,0},
+{0x05AF,0x0C,0},
+{0x05B0,0x03,0},
+{0x05B1,0x03,0},
+{0x05B2,0x1C,0},
+{0x05B3,0x02,0},
+{0x05B4,0x00,0},
+{0x05B5,0x0C,0},
+{0x05B8,0x80,0},
+{0x05B9,0x32,0},
+{0x05BA,0x00,0},
+{0x05BB,0x80,0},
+{0x05BC,0x03,0},
+{0x05BD,0x00,0},
+{0x05BF,0x05,0},
+{0x05C0,0x10,0},
+{0x05C3,0x00,0},
+{0x05C4,0x0C,0},
+{0x05C5,0x20,0},
+{0x05C7,0x01,0},
+{0x05C8,0x14,0},
+{0x05C9,0x54,0},
+{0x05CA,0x14,0},
+{0x05CB,0xE0,0},
+{0x05CC,0x20,0},
+{0x05CD,0x00,0},
+{0x05CE,0x08,0},
+{0x05CF,0x60,0},
+{0x05D0,0x10,0},
+{0x05D1,0x05,0},
+{0x05D2,0x03,0},
+{0x05D4,0x00,0},
+{0x05D5,0x05,0},
+{0x05D6,0x05,0},
+{0x05D7,0x05,0},
+{0x05D8,0x08,0},
+{0x05DC,0x0C,0},
+{0x05D9,0x00,0},
+{0x05DB,0x00,0},
+{0x05DD,0x0F,0},
+{0x05DE,0x00,0},
+{0x05DF,0x0A,0},
+#if 0  //VGA
+{0x05E0,0xA0,0}, //scaler
+{0x05E1,0x00,0},
+{0x05E2,0xA0,0},
+{0x05E3,0x00,0},
+{0x05E4,0x04,0},//windows
+{0x05E5,0x00,0},
+{0x05E6,0x38,0},
+{0x05E7,0x02,0},
+{0x05E8,0x06,0},
+{0x05E9,0x00,0},
+{0x05EA,0xE5,0},
+{0x05EB,0x01,0},
+#else  //QVGA
+{0x05E0,0x40,0}, //scaler
+{0x05E1,0x01,0},
+{0x05E2,0x40,0},
+{0x05E3,0x01,0},
+{0x05E4,0x02,0},//windows
+{0x05E5,0x00,0},
+{0x05E6,0x41,0},
+{0x05E7,0x01,0},
+{0x05E8,0x03,0},
+{0x05E9,0x00,0},
+{0x05EA,0xF2,0},
+{0x05EB,0x00,0},
+#endif
+{0x0660,0x04,0},
+{0x0661,0x16,0},
+{0x0662,0x04,0},
+{0x0663,0x28,0},
+{0x0664,0x04,0},
+{0x0665,0x18,0},
+{0x0666,0x04,0},
+{0x0667,0x21,0},
+{0x0668,0x04,0},
+{0x0669,0x0C,0},
+{0x066A,0x04,0},
+{0x066B,0x25,0},
+{0x066C,0x00,0},
+{0x066D,0x12,0},
+{0x066E,0x00,0},
+{0x066F,0x80,0},
+{0x0670,0x00,0},
+{0x0671,0x0A,0},
+{0x0672,0x04,0},
+{0x0673,0x1D,0},
+{0x0674,0x04,0},
+{0x0675,0x1D,0},
+{0x0676,0x00,0},
+{0x0677,0x7E,0},
+{0x0678,0x01,0},
+{0x0679,0x47,0},
+{0x067A,0x00,0},
+{0x067B,0x73,0},
+{0x067C,0x04,0},
+{0x067D,0x14,0},
+{0x067E,0x04,0},
+{0x067F,0x28,0},
+{0x0680,0x00,0},
+{0x0681,0x22,0},
+{0x0682,0x00,0},
+{0x0683,0xA5,0},
+{0x0684,0x00,0},
+{0x0685,0x1E,0},
+{0x0686,0x04,0},
+{0x0687,0x1D,0},
+{0x0688,0x04,0},
+{0x0689,0x19,0},
+{0x068A,0x04,0},
+{0x068B,0x21,0},
+{0x068C,0x04,0},
+{0x068D,0x0A,0},
+{0x068E,0x04,0},
+{0x068F,0x25,0},
+{0x0690,0x04,0},
+{0x0691,0x15,0},
+{0x0698,0x20,0},
+{0x0699,0x20,0},
+{0x069A,0x01,0},
+{0x069C,0x22,0},
+{0x069D,0x10,0},
+{0x069E,0x10,0},
+{0x069F,0x08,0},
+{0x0000,0x01,0},
+{0x0100,0x01,0},
+{0x0101,0x01,0},
+{0x0005,0x01,0}
+};
+
+/*!
+ * Maintains the information on the current state of the sesor.
+ */
+struct sensor {
+	const struct ov2640_platform_data *platform_data;
+	struct v4l2_int_device *v4l2_int_device;
+	struct i2c_client *i2c_client;
+	struct v4l2_pix_format pix;
+	struct v4l2_captureparm streamcap;
+	bool on;
+
+	/* control settings */
+	int brightness;
+	int hue;
+	int contrast;
+	int saturation;
+	int red;
+	int green;
+	int blue;
+	int ae_mode;
+
+	u32 csi;
+	u32 mclk;
+
+} ov2640_data;
+
+static struct regulator *io_regulator;
+static struct regulator *core_regulator;
+static struct regulator *analog_regulator;
+static struct regulator *gpo_regulator;
+
+extern void gpio_sensor_active(void);
+extern void gpio_sensor_inactive(void);
+
+/* list of image formats supported by this sensor */
+/*
+const static struct v4l2_fmtdesc ov2640_formats[] = {
+	{
+		.description = "YUYV (YUV 4:2:2), packed",
+		.pixelformat = V4L2_PIX_FMT_UYVY,
+	},
+};
+ */
+
+static int ov2640_init_mode(struct sensor *s)
+{
+	pr_alert("camera: %s\n",__func__);
+	int ret = -1;
+	struct reg_value *setting;
+	int i, num;
+
+	pr_debug("In ov2640:ov2640_init_mode capturemode is %d\n",
+		s->streamcap.capturemode);
+
+	if (s->streamcap.capturemode & V4L2_MODE_HIGHQUALITY) {
+		s->pix.width = 1600;
+		s->pix.height = 1200;
+		setting = ov2640_setting_1600_1120;
+		num = ARRAY_SIZE(ov2640_setting_1600_1120);
+	} else {
+		s->pix.width = 320;
+		s->pix.height = 240;
+		setting = ov2640_setting_800_600;
+		num = ARRAY_SIZE(ov2640_setting_800_600);
+	}
+	
+	/*******************/
+	u32 tgt_xclk;   /* target xclk */
+                
+        pr_debug("In ov2640:ioctl_dev_init\n");
+        
+        gpio_sensor_active();
+	
+        ov2640_data.on = true;
+
+        tgt_xclk = ov2640_data.mclk;
+        tgt_xclk = min(tgt_xclk, (u32)OV2640_XCLK_MAX);
+        tgt_xclk = max(tgt_xclk, (u32)OV2640_XCLK_MIN);
+        ov2640_data.mclk = tgt_xclk;
+        
+        pr_alert("   Setting mclk to %d MHz\n",
+                tgt_xclk / 1000000);
+        set_mclk_rate(&ov2640_data.mclk);
+
+
+	hw2057_hw_read(ov2640_data.i2c_client, 0x0001);
+	hw2057_hw_read(ov2640_data.i2c_client, 0x0002);
+	
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x038F, 0x0004) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0005, 0x0001) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0000, 0x0001) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0100, 0x0001) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0101, 0x0001) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	
+	hw2057_hw_read(ov2640_data.i2c_client, 0x038F);
+	hw2057_hw_read(ov2640_data.i2c_client, 0x0005);
+	/***********************/
+#if 1
+
+	for (i = 0; i < num; i++) {
+		ret = i2c_smbus_write_word_data(s->i2c_client,
+						setting[i].reg,
+						setting[i].value);
+		if (ret < 0) {
+			pr_err("write reg error: reg=%x, val=%x\n",
+			       setting[i].reg, setting[i].value);
+			return ret;
+		}
+		if (setting[i].delay_ms > 0)
+			msleep(setting[i].delay_ms);
+	}
+
+#endif
+
+	return ret;
+}
+
+/* At present only support change to 15fps(only for SVGA mode) */
+static int ov2640_set_fps(struct sensor *s, int fps)
+{
+	pr_alert("camera: %s\n",__func__);
+	int ret = 0;
+
+#if 1
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x038F, 0x04) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0390, 0x00) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0000, 0x01) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0100, 0x01) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+	if (i2c_smbus_write_word_data(s->i2c_client, 0x0101, 0x01) < 0) {
+		pr_err("change camera to 15fps failed\n");
+		ret = -EPERM;
+	}
+#endif
+
+	return ret;
+}
+
+static int ov2640_set_format(struct sensor *s, int format)
+{
+	pr_alert("camera: %s\n",__func__);
+	int ret = 0;
+#if 1
+	if (format == V4L2_PIX_FMT_RGB565) {
+		/* set RGB565 format */
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0027, 0x40) < 0)
+			ret = -EPERM;
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0000, 0x01) < 0) {
+			ret = -EPERM;
+		}
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0100, 0x01) < 0) {
+			ret = -EPERM;
+		}
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0101, 0x01) < 0) {
+			ret = -EPERM;
+		}
+	} else if (format == V4L2_PIX_FMT_YUV420) {
+		/* set YUV420 format */
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0027, 0x30) < 0)
+			ret = -EPERM;
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0000, 0x01) < 0) {
+			ret = -EPERM;
+		}
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0100, 0x01) < 0) {
+			ret = -EPERM;
+		}
+		if (i2c_smbus_write_word_data(s->i2c_client, 0x0101, 0x01) < 0) {
+			ret = -EPERM;
+		}
+	} else {
+		pr_debug("format not supported\n");
+	}
+#endif
+	return ret;
+}
+
+/* --------------- IOCTL functions from v4l2_int_ioctl_desc --------------- */
+
+/*!
+ * ioctl_g_ifparm - V4L2 sensor interface handler for vidioc_int_g_ifparm_num
+ * s: pointer to standard V4L2 device structure
+ * p: pointer to standard V4L2 vidioc_int_g_ifparm_num ioctl structure
+ *
+ * Gets slave interface parameters.
+ * Calculates the required xclk value to support the requested
+ * clock parameters in p.  This value is returned in the p
+ * parameter.
+ *
+ * vidioc_int_g_ifparm returns platform-specific information about the
+ * interface settings used by the sensor.
+ *
+ * Given the image capture format in pix, the nominal frame period in
+ * timeperframe, calculate the required xclk frequency.
+ *
+ * Called on open.
+ */
+static int ioctl_g_ifparm(struct v4l2_int_device *s, struct v4l2_ifparm *p)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640:ioctl_g_ifparm\n");
+
+	if (s == NULL) {
+		pr_err("   ERROR!! no slave device set!\n");
+		return -1;
+	}
+
+	memset(p, 0, sizeof(*p));
+	p->u.bt656.clock_curr = ov2640_data.mclk;
+	p->if_type = V4L2_IF_TYPE_BT656;
+	p->u.bt656.mode = V4L2_IF_TYPE_BT656_MODE_NOBT_8BIT;
+	p->u.bt656.clock_min = OV2640_XCLK_MIN;
+	p->u.bt656.clock_max = OV2640_XCLK_MAX;
+
+	return 0;
+}
+
+/*!
+ * Sets the camera power.
+ *
+ * s  pointer to the camera device
+ * on if 1, power is to be turned on.  0 means power is to be turned off
+ *
+ * ioctl_s_power - V4L2 sensor interface handler for vidioc_int_s_power_num
+ * @s: pointer to standard V4L2 device structure
+ * @on: power state to which device is to be set
+ *
+ * Sets devices power state to requrested state, if possible.
+ * This is called on open, close, suspend and resume.
+ */
+static int ioctl_s_power(struct v4l2_int_device *s, int on)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+
+	pr_debug("In ov2640:ioctl_s_power\n");
+
+	if (on && !sensor->on) {
+		gpio_sensor_active();
+		if (io_regulator)
+			if (regulator_enable(io_regulator) != 0)
+				return -EIO;
+		if (core_regulator)
+			if (regulator_enable(core_regulator) != 0)
+				return -EIO;
+		if (gpo_regulator)
+			if (regulator_enable(gpo_regulator) != 0)
+				return -EIO;
+		if (analog_regulator)
+			if (regulator_enable(analog_regulator) != 0)
+				return -EIO;
+	} else if (!on && sensor->on) {
+		if (analog_regulator)
+			regulator_disable(analog_regulator);
+		if (core_regulator)
+			regulator_disable(core_regulator);
+		if (io_regulator)
+			regulator_disable(io_regulator);
+		if (gpo_regulator)
+			regulator_disable(gpo_regulator);
+		gpio_sensor_inactive();
+	}
+
+	sensor->on = on;
+
+	return 0;
+}
+
+/*!
+ * ioctl_g_parm - V4L2 sensor interface handler for VIDIOC_G_PARM ioctl
+ * @s: pointer to standard V4L2 device structure
+ * @a: pointer to standard V4L2 VIDIOC_G_PARM ioctl structure
+ *
+ * Returns the sensor's video CAPTURE parameters.
+ */
+static int ioctl_g_parm(struct v4l2_int_device *s, struct v4l2_streamparm *a)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+	struct v4l2_captureparm *cparm = &a->parm.capture;
+	int ret = 0;
+
+	pr_debug("In ov2640:ioctl_g_parm\n");
+
+	switch (a->type) {
+	/* This is the only case currently handled. */
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
+		pr_debug("   type is V4L2_BUF_TYPE_VIDEO_CAPTURE\n");
+		memset(a, 0, sizeof(*a));
+		a->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		cparm->capability = sensor->streamcap.capability;
+		cparm->timeperframe = sensor->streamcap.timeperframe;
+		cparm->capturemode = sensor->streamcap.capturemode;
+		ret = 0;
+		break;
+
+	/* These are all the possible cases. */
+	case V4L2_BUF_TYPE_VIDEO_OUTPUT:
+	case V4L2_BUF_TYPE_VIDEO_OVERLAY:
+	case V4L2_BUF_TYPE_VBI_CAPTURE:
+	case V4L2_BUF_TYPE_VBI_OUTPUT:
+	case V4L2_BUF_TYPE_SLICED_VBI_CAPTURE:
+	case V4L2_BUF_TYPE_SLICED_VBI_OUTPUT:
+		pr_err("   type is not V4L2_BUF_TYPE_VIDEO_CAPTURE " \
+			"but %d\n", a->type);
+		ret = -EINVAL;
+		break;
+
+	default:
+		pr_err("   type is unknown - %d\n", a->type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/*!
+ * ioctl_s_parm - V4L2 sensor interface handler for VIDIOC_S_PARM ioctl
+ * @s: pointer to standard V4L2 device structure
+ * @a: pointer to standard V4L2 VIDIOC_S_PARM ioctl structure
+ *
+ * Configures the sensor to use the input parameters, if possible.  If
+ * not possible, reverts to the old parameters and returns the
+ * appropriate error code.
+ */
+static int ioctl_s_parm(struct v4l2_int_device *s, struct v4l2_streamparm *a)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+	struct v4l2_fract *timeperframe = &a->parm.capture.timeperframe;
+	u32 tgt_fps;	/* target frames per secound */
+	int ret = 0;
+
+	pr_debug("In ov2640:ioctl_s_parm\n");
+
+	switch (a->type) {
+	/* This is the only case currently handled. */
+	case V4L2_BUF_TYPE_VIDEO_CAPTURE:
+		pr_debug("   type is V4L2_BUF_TYPE_VIDEO_CAPTURE\n");
+
+		/* Check that the new frame rate is allowed. */
+		if ((timeperframe->numerator == 0)
+		    || (timeperframe->denominator == 0)) {
+			timeperframe->denominator = DEFAULT_FPS;
+			timeperframe->numerator = 1;
+		}
+		tgt_fps = timeperframe->denominator
+			  / timeperframe->numerator;
+
+		if (tgt_fps > MAX_FPS) {
+			timeperframe->denominator = MAX_FPS;
+			timeperframe->numerator = 1;
+		} else if (tgt_fps < MIN_FPS) {
+			timeperframe->denominator = MIN_FPS;
+			timeperframe->numerator = 1;
+		}
+		sensor->streamcap.timeperframe = *timeperframe;
+		sensor->streamcap.capturemode =
+				(u32)a->parm.capture.capturemode;
+
+		ret = ov2640_init_mode(sensor);
+		if (tgt_fps == 15)
+			ov2640_set_fps(sensor, tgt_fps);
+		break;
+
+	/* These are all the possible cases. */
+	case V4L2_BUF_TYPE_VIDEO_OUTPUT:
+	case V4L2_BUF_TYPE_VIDEO_OVERLAY:
+	case V4L2_BUF_TYPE_VBI_CAPTURE:
+	case V4L2_BUF_TYPE_VBI_OUTPUT:
+	case V4L2_BUF_TYPE_SLICED_VBI_CAPTURE:
+	case V4L2_BUF_TYPE_SLICED_VBI_OUTPUT:
+		pr_err("   type is not V4L2_BUF_TYPE_VIDEO_CAPTURE " \
+			"but %d\n", a->type);
+		ret = -EINVAL;
+		break;
+
+	default:
+		pr_err("   type is unknown - %d\n", a->type);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/*!
+ * ioctl_s_fmt_cap - V4L2 sensor interface handler for ioctl_s_fmt_cap
+ * 		     set camera output format and resolution format
+ *
+ * @s: pointer to standard V4L2 device structure
+ * @arg: pointer to parameter, according this to set camera
+ *
+ * Returns 0 if set succeed, else return -1
+ */
+static int ioctl_s_fmt_cap(struct v4l2_int_device *s, struct v4l2_format *f)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+	u32 format = f->fmt.pix.pixelformat;
+	int size = 0, ret = 0;
+
+	size = f->fmt.pix.width * f->fmt.pix.height;
+	switch (format) {
+	case V4L2_PIX_FMT_RGB565:
+		if (size > 640 * 480)
+			sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
+		else
+			sensor->streamcap.capturemode = 0;
+		ret = ov2640_init_mode(sensor);
+
+		ret = ov2640_set_format(sensor, V4L2_PIX_FMT_RGB565);
+		break;
+	case V4L2_PIX_FMT_UYVY:
+		if (size > 640 * 480)
+			sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
+		else
+			sensor->streamcap.capturemode = 0;
+		ret = ov2640_init_mode(sensor);
+		break;
+	case V4L2_PIX_FMT_YUV420:
+		if (size > 640 * 480)
+			sensor->streamcap.capturemode = V4L2_MODE_HIGHQUALITY;
+		else
+			sensor->streamcap.capturemode = 0;
+		ret = ov2640_init_mode(sensor);
+
+		/* YUYV: width * 2, YY: width */
+		ret = ov2640_set_format(sensor, V4L2_PIX_FMT_YUV420);
+		break;
+	default:
+		pr_debug("case not supported\n");
+		break;
+	}
+
+	return ret;
+}
+
+/*!
+ * ioctl_g_fmt_cap - V4L2 sensor interface handler for ioctl_g_fmt_cap
+ * @s: pointer to standard V4L2 device structure
+ * @f: pointer to standard V4L2 v4l2_format structure
+ *
+ * Returns the sensor's current pixel format in the v4l2_format
+ * parameter.
+ */
+static int ioctl_g_fmt_cap(struct v4l2_int_device *s, struct v4l2_format *f)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+
+	pr_debug("In ov2640:ioctl_g_fmt_cap.\n");
+
+	f->fmt.pix = sensor->pix;
+
+	return 0;
+}
+
+/*!
+ * ioctl_g_ctrl - V4L2 sensor interface handler for VIDIOC_G_CTRL ioctl
+ * @s: pointer to standard V4L2 device structure
+ * @vc: standard V4L2 VIDIOC_G_CTRL ioctl structure
+ *
+ * If the requested control is supported, returns the control's current
+ * value from the video_control[] array.  Otherwise, returns -EINVAL
+ * if the control is not supported.
+ */
+static int ioctl_g_ctrl(struct v4l2_int_device *s, struct v4l2_control *vc)
+{
+	pr_alert("camera: %s\n",__func__);
+	int ret = 0;
+
+	pr_debug("In ov2640:ioctl_g_ctrl\n");
+
+	switch (vc->id) {
+	case V4L2_CID_BRIGHTNESS:
+		vc->value = ov2640_data.brightness;
+		break;
+	case V4L2_CID_HUE:
+		vc->value = ov2640_data.hue;
+		break;
+	case V4L2_CID_CONTRAST:
+		vc->value = ov2640_data.contrast;
+		break;
+	case V4L2_CID_SATURATION:
+		vc->value = ov2640_data.saturation;
+		break;
+	case V4L2_CID_RED_BALANCE:
+		vc->value = ov2640_data.red;
+		break;
+	case V4L2_CID_BLUE_BALANCE:
+		vc->value = ov2640_data.blue;
+		break;
+	case V4L2_CID_EXPOSURE:
+		vc->value = ov2640_data.ae_mode;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
+/*!
+ * ioctl_s_ctrl - V4L2 sensor interface handler for VIDIOC_S_CTRL ioctl
+ * @s: pointer to standard V4L2 device structure
+ * @vc: standard V4L2 VIDIOC_S_CTRL ioctl structure
+ *
+ * If the requested control is supported, sets the control's current
+ * value in HW (and updates the video_control[] array).  Otherwise,
+ * returns -EINVAL if the control is not supported.
+ */
+static int ioctl_s_ctrl(struct v4l2_int_device *s, struct v4l2_control *vc)
+{
+	pr_alert("camera: %s\n",__func__);
+	int retval = 0;
+
+	pr_debug("In ov2640:ioctl_s_ctrl %d\n", vc->id);
+
+	switch (vc->id) {
+	case V4L2_CID_BRIGHTNESS:
+		pr_debug("   V4L2_CID_BRIGHTNESS\n");
+		break;
+	case V4L2_CID_CONTRAST:
+		pr_debug("   V4L2_CID_CONTRAST\n");
+		break;
+	case V4L2_CID_SATURATION:
+		pr_debug("   V4L2_CID_SATURATION\n");
+		break;
+	case V4L2_CID_HUE:
+		pr_debug("   V4L2_CID_HUE\n");
+		break;
+	case V4L2_CID_AUTO_WHITE_BALANCE:
+		pr_debug(
+			"   V4L2_CID_AUTO_WHITE_BALANCE\n");
+		break;
+	case V4L2_CID_DO_WHITE_BALANCE:
+		pr_debug(
+			"   V4L2_CID_DO_WHITE_BALANCE\n");
+		break;
+	case V4L2_CID_RED_BALANCE:
+		pr_debug("   V4L2_CID_RED_BALANCE\n");
+		break;
+	case V4L2_CID_BLUE_BALANCE:
+		pr_debug("   V4L2_CID_BLUE_BALANCE\n");
+		break;
+	case V4L2_CID_GAMMA:
+		pr_debug("   V4L2_CID_GAMMA\n");
+		break;
+	case V4L2_CID_EXPOSURE:
+		pr_debug("   V4L2_CID_EXPOSURE\n");
+		break;
+	case V4L2_CID_AUTOGAIN:
+		pr_debug("   V4L2_CID_AUTOGAIN\n");
+		break;
+	case V4L2_CID_GAIN:
+		pr_debug("   V4L2_CID_GAIN\n");
+		break;
+	case V4L2_CID_HFLIP:
+		pr_debug("   V4L2_CID_HFLIP\n");
+		break;
+	case V4L2_CID_VFLIP:
+		pr_debug("   V4L2_CID_VFLIP\n");
+		break;
+	default:
+		pr_debug("   Default case\n");
+		retval = -EPERM;
+		break;
+	}
+
+	return retval;
+}
+
+/*!
+ * ioctl_init - V4L2 sensor interface handler for VIDIOC_INT_INIT
+ * @s: pointer to standard V4L2 device structure
+ */
+static int ioctl_init(struct v4l2_int_device *s)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640:ioctl_init\n");
+
+	return 0;
+}
+
+/*!
+ * ioctl_dev_init - V4L2 sensor interface handler for vidioc_int_dev_init_num
+ * @s: pointer to standard V4L2 device structure
+ *
+ * Initialise the device when slave attaches to the master.
+ */
+static int ioctl_dev_init(struct v4l2_int_device *s)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct sensor *sensor = s->priv;
+	u32 tgt_xclk;	/* target xclk */
+
+	pr_debug("In ov2640:ioctl_dev_init\n");
+
+	gpio_sensor_active();
+	ov2640_data.on = true;
+
+	tgt_xclk = ov2640_data.mclk;
+	tgt_xclk = min(tgt_xclk, (u32)OV2640_XCLK_MAX);
+	tgt_xclk = max(tgt_xclk, (u32)OV2640_XCLK_MIN);
+	ov2640_data.mclk = tgt_xclk;
+
+	pr_alert("   Setting mclk to %d MHz\n",
+		tgt_xclk / 1000000);
+	set_mclk_rate(&ov2640_data.mclk);
+	return ov2640_init_mode(sensor);
+}
+
+/*!
+ * ioctl_dev_exit - V4L2 sensor interface handler for vidioc_int_dev_exit_num
+ * @s: pointer to standard V4L2 device structure
+ *
+ * Delinitialise the device when slave detaches to the master.
+ */
+static int ioctl_dev_exit(struct v4l2_int_device *s)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640:ioctl_dev_exit\n");
+
+	gpio_sensor_inactive();
+
+	return 0;
+}
+
+/*!
+ * This structure defines all the ioctls for this module and links them to the
+ * enumeration.
+ */
+static struct v4l2_int_ioctl_desc ov2640_ioctl_desc[] = {
+	{vidioc_int_dev_init_num, (v4l2_int_ioctl_func *)ioctl_dev_init},
+	{vidioc_int_dev_exit_num, (v4l2_int_ioctl_func*)ioctl_dev_exit},
+	{vidioc_int_s_power_num, (v4l2_int_ioctl_func *)ioctl_s_power},
+	{vidioc_int_g_ifparm_num, (v4l2_int_ioctl_func *)ioctl_g_ifparm},
+/*	{vidioc_int_g_needs_reset_num,
+				(v4l2_int_ioctl_func *)ioctl_g_needs_reset}, */
+/*	{vidioc_int_reset_num, (v4l2_int_ioctl_func *)ioctl_reset}, */
+	{vidioc_int_init_num, (v4l2_int_ioctl_func *)ioctl_init},
+/*	{vidioc_int_enum_fmt_cap_num,
+				(v4l2_int_ioctl_func *)ioctl_enum_fmt_cap}, */
+/*	{vidioc_int_try_fmt_cap_num,
+				(v4l2_int_ioctl_func *)ioctl_try_fmt_cap}, */
+	{vidioc_int_g_fmt_cap_num, (v4l2_int_ioctl_func *)ioctl_g_fmt_cap},
+	{vidioc_int_s_fmt_cap_num, (v4l2_int_ioctl_func*)ioctl_s_fmt_cap},
+	{vidioc_int_g_parm_num, (v4l2_int_ioctl_func *)ioctl_g_parm},
+	{vidioc_int_s_parm_num, (v4l2_int_ioctl_func *)ioctl_s_parm},
+/*	{vidioc_int_queryctrl_num, (v4l2_int_ioctl_func *)ioctl_queryctrl}, */
+	{vidioc_int_g_ctrl_num, (v4l2_int_ioctl_func *)ioctl_g_ctrl},
+	{vidioc_int_s_ctrl_num, (v4l2_int_ioctl_func *)ioctl_s_ctrl},
+};
+
+static struct v4l2_int_slave ov2640_slave = {
+	.ioctls = ov2640_ioctl_desc,
+	.num_ioctls = ARRAY_SIZE(ov2640_ioctl_desc),
+};
+
+static struct v4l2_int_device ov2640_int_device = {
+	.module = THIS_MODULE,
+	.name = "ov2640",
+	.type = v4l2_int_type_slave,
+	.u = {
+		.slave = &ov2640_slave,
+		},
+};
+
+
+static unsigned int hw2057_hw_read(struct i2c_client *client1,	     unsigned int reg)
+{
+	pr_alert("camera: %s\n",__func__);
+	struct i2c_client *client = client1;
+	int i2c_ret;
+	u16 value;
+	u8 buf0[2], buf1[2];
+	u16 addr = client->addr;
+	u16 flags = client->flags;
+	struct i2c_msg msg[2] = {
+		{addr, flags, 2, buf0},
+		{addr, flags | I2C_M_RD, 2, buf1},
+	};
+
+	buf0[0] = (reg & 0xff00) >> 8;
+	buf0[1] = reg & 0xff;
+	i2c_ret = i2c_transfer(client->adapter, msg, 2);
+	if (i2c_ret < 0) {
+		printk("%s: read reg error : Reg 0x%02x\n", __func__, reg);
+		return 0;
+	}
+
+	value = buf1[0] << 8 | buf1[1];
+
+	printk("\r\nr r:%04x,v:%04x\r\n", reg, value);
+	return value;
+}
+
+/*!
+ * ov2640 I2C attach function
+ * Function set in i2c_driver struct.
+ * Called by insmod ov2640_camera.ko.
+ *
+ * @param client            struct i2c_client*
+ * @return  Error code indicating success or failure
+ */
+static int ov2640_probe(struct i2c_client *client,
+			const struct i2c_device_id *id)
+{
+	pr_alert("camera: %s\n",__func__);
+	int retval;
+	struct mxc_camera_platform_data *plat_data = client->dev.platform_data;
+
+	pr_debug("In ov2640_probe (RH_BT565)\n");
+
+	printk("\r\nIn client addr:0x%x\r\n", client->addr);
+
+
+	/* Set initial values for the sensor struct. */
+	memset(&ov2640_data, 0, sizeof(ov2640_data));
+	ov2640_data.i2c_client = client;
+	ov2640_data.mclk = 24000000;
+	ov2640_data.mclk = plat_data->mclk;
+	ov2640_data.pix.pixelformat = V4L2_PIX_FMT_UYVY;
+	ov2640_data.pix.width = 800;
+	ov2640_data.pix.height = 600;
+	ov2640_data.streamcap.capability = V4L2_MODE_HIGHQUALITY
+					   | V4L2_CAP_TIMEPERFRAME;
+	ov2640_data.streamcap.capturemode = 0;
+	ov2640_data.streamcap.timeperframe.denominator = DEFAULT_FPS;
+	ov2640_data.streamcap.timeperframe.numerator = 1;
+
+	//set_mclk_rate(&ov2640_data.mclk);
+
+	if (plat_data->io_regulator) {
+		io_regulator =
+		    regulator_get(&client->dev, plat_data->io_regulator);
+		if (!IS_ERR(io_regulator)) {
+			regulator_set_voltage(io_regulator, 2800000, 2800000);
+			if (regulator_enable(io_regulator) != 0) {
+				pr_err("%s:io set voltage error\n", __func__);
+				goto err1;
+			} else {
+				dev_dbg(&client->dev,
+					"%s:io set voltage ok\n", __func__);
+			}
+		} else
+			io_regulator = NULL;
+	}
+
+	if (plat_data->core_regulator) {
+		core_regulator =
+		    regulator_get(&client->dev, plat_data->core_regulator);
+		if (!IS_ERR(core_regulator)) {
+			regulator_set_voltage(core_regulator,
+					 1300000, 1300000);
+			if (regulator_enable(core_regulator) != 0) {
+				pr_err("%s:core set voltage error\n", __func__);
+				goto err2;
+			} else {
+				dev_dbg(&client->dev,
+					"%s:core set voltage ok\n", __func__);
+			}
+		} else
+			core_regulator = NULL;
+	}
+
+	if (plat_data->analog_regulator) {
+		analog_regulator =
+		    regulator_get(&client->dev, plat_data->analog_regulator);
+		if (!IS_ERR(analog_regulator)) {
+			regulator_set_voltage(analog_regulator, 2000000, 2000000);
+			if (regulator_enable(analog_regulator) != 0) {
+				pr_err("%s:analog set voltage error\n",
+					 __func__);
+				goto err3;
+			} else {
+				dev_dbg(&client->dev,
+					"%s:analog set voltage ok\n", __func__);
+			}
+		} else
+			analog_regulator = NULL;
+	}
+
+	if (plat_data->gpo_regulator) {
+		gpo_regulator =
+		    regulator_get(&client->dev, plat_data->gpo_regulator);
+		if (!IS_ERR(gpo_regulator)) {
+			if (regulator_enable(gpo_regulator) != 0) {
+				pr_err("%s:gpo3 set voltage error\n", __func__);
+				goto err4;
+			} else {
+				dev_dbg(&client->dev,
+					"%s:gpo3 set voltage ok\n", __func__);
+			}
+		} else
+			gpo_regulator = NULL;
+	}
+
+	/* This function attaches this structure to the /dev/video0 device.
+	 * The pointer in priv points to the ov2640_data structure here.*/
+	ov2640_int_device.priv = &ov2640_data;
+	
+	retval = v4l2_int_device_register(&ov2640_int_device);
+
+	return retval;
+err4:
+	if (analog_regulator) {
+		regulator_disable(analog_regulator);
+		regulator_put(analog_regulator);
+	}
+err3:
+	if (core_regulator) {
+		regulator_disable(core_regulator);
+		regulator_put(core_regulator);
+	}
+err2:
+	if (io_regulator) {
+		regulator_disable(io_regulator);
+		regulator_put(io_regulator);
+	}
+err1:
+	return -1;
+}
+
+/*!
+ * ov2640 I2C detach function
+ * Called on rmmod ov2640_camera.ko
+ *
+ * @param client            struct i2c_client*
+ * @return  Error code indicating success or failure
+ */
+static int ov2640_remove(struct i2c_client *client)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640_remove\n");
+
+	v4l2_int_device_unregister(&ov2640_int_device);
+
+	if (gpo_regulator) {
+		regulator_disable(gpo_regulator);
+		regulator_put(gpo_regulator);
+	}
+
+	if (analog_regulator) {
+		regulator_disable(analog_regulator);
+		regulator_put(analog_regulator);
+	}
+
+	if (core_regulator) {
+		regulator_disable(core_regulator);
+		regulator_put(core_regulator);
+	}
+
+	if (io_regulator) {
+		regulator_disable(io_regulator);
+		regulator_put(io_regulator);
+	}
+
+	return 0;
+}
+
+static const struct i2c_device_id ov2640_id[] = {
+	{"ov2640", 0},
+	{},
+};
+
+MODULE_DEVICE_TABLE(i2c, ov2640_id);
+
+static struct i2c_driver ov2640_i2c_driver = {
+	.driver = {
+		   .owner = THIS_MODULE,
+		   .name = "ov2640",
+		  },
+	.probe = ov2640_probe,
+	.remove = ov2640_remove,
+	.id_table = ov2640_id,
+/* To add power management add .suspend and .resume functions */
+};
+
+/*!
+ * ov2640 init function
+ * Called by insmod ov2640_camera.ko.
+ *
+ * @return  Error code indicating success or failure
+ */
+static __init int ov2640_init(void)
+{
+	pr_alert("camera: %s\n",__func__);
+	u8 err;
+
+	err = i2c_add_driver(&ov2640_i2c_driver);
+	if (err != 0)
+		pr_err("%s:driver registration failed, error=%d \n",
+			__func__, err);
+
+	return err;
+}
+
+/*!
+ * OV2640 cleanup function
+ * Called on rmmod ov2640_camera.ko
+ *
+ * @return  Error code indicating success or failure
+ */
+static void __exit ov2640_clean(void)
+{
+	pr_alert("camera: %s\n",__func__);
+	pr_debug("In ov2640_clean\n");
+	i2c_del_driver(&ov2640_i2c_driver);
+}
+
+module_init(ov2640_init);
+module_exit(ov2640_clean);
+
+MODULE_AUTHOR("Freescale Semiconductor, Inc.");
+MODULE_DESCRIPTION("OV2640 Camera Driver");
+MODULE_LICENSE("GPL");
+

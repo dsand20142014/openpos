@@ -1,0 +1,370 @@
+tion fills the FIFO with the (eventual) pending packets
+ * and runs or wakes up the DMA prg if necessary.
+ *
+ * The function MUST be called with the d->lock held.
+ */
+static void dma_trm_flush(struct ti_ohci *ohci, struct dma_trm_ctx *d)
+{
+	struct hpsb_packet *packet, *ptmp;
+	int idx = d->prg_ind;
+	int z = 0;
+
+	/* insert the packets into the dma fifo */
+	list_for_each_entry_safe(packet, ptmp, &d->pending_list, driver_list) {
+		if (!d->free_prgs)
+			break;
+
+		/* For the first packet only */
+		if (!z)
+			z = (packet->data_size) ? 3 : 2;
+
+		/* Insert the packet */
+		list_del_init(&packet->driver_list);
+		insert_packet(ohci, d, packet);
+	}
+
+	/* Nothing must have been done, either no free_prgs or no packets */
+	if (z == 0)
+		return;
+
+	/* Is the context running ? (should be unless it is
+	   the first packet to be sent in this context) */
+	if (!(reg_read(ohci, d->ctrlSet) & 0x8000)) {
+		u32 nodeId = reg_read(ohci, OHCI1394_NodeID);
+
+		DBGMSG("Starting transmit DMA ctx=%d",d->ctx);
+		reg_write(ohci, d->cmdPtr, d->prg_bus[idx] | z);
+
+		/* Check that the node id is valid, and not 63 */
+		if (!(nodeId & 0x80000000) || (nodeId & 0x3f) == 63)
+			PRINT(KERN_ERR, "Running dma failed because Node ID is not valid");
+		else
+			reg_write(ohci, d->ctrlSet, 0x8000);
+	} else {
+		/* Wake up the dma context if necessary */
+		if (!(reg_read(ohci, d->ctrlSet) & 0x400))
+			DBGMSG("Waking transmit DMA ctx=%d",d->ctx);
+
+		/* do this always, to avoid race condition */
+		reg_write(ohci, d->ctrlSet, 0x1000);
+	}
+
+	return;
+}
+
+/* Transmission of an async or iso packet */
+static int ohci_transmit(struct hpsb_host *host, struct hpsb_packet *packet)
+{
+	struct ti_ohci *ohci = host->hostdata;
+	struct dma_trm_ctx *d;
+	unsigned long flags;
+
+	if (packet->data_size > ohci->max_packet_size) {
+		PRINT(KERN_ERR,
+		      "Transmit packet size %Zd is too big",
+		      packet->data_size);
+		return -EOVERFLOW;
+	}
+
+	if (packet->type == hpsb_raw)
+		d = &ohci->at_req_context;
+	else if ((packet->tcode & 0x02) && (packet->tcode != TCODE_ISO_DATA))
+		d = &ohci->at_resp_context;
+	else
+		d = &ohci->at_req_context;
+
+	spin_lock_irqsave(&d->lock,flags);
+
+	list_add_tail(&packet->driver_list, &d->pending_list);
+
+	dma_trm_flush(ohci, d);
+
+	spin_unlock_irqrestore(&d->lock,flags);
+
+	return 0;
+}
+
+static int ohci_devctl(struct hpsb_host *host, enum devctl_cmd cmd, int arg)
+{
+	struct ti_ohci *ohci = host->hostdata;
+	int retval = 0, phy_reg;
+
+	switch (cmd) {
+	case RESET_BUS:
+		switch (arg) {
+		case SHORT_RESET:
+			phy_reg = get_phy_reg(ohci, 5);
+			phy_reg |= 0x40;
+			set_phy_reg(ohci, 5, phy_reg); /* set ISBR */
+			break;
+		case LONG_RESET:
+			phy_reg = get_phy_reg(ohci, 1);
+			phy_reg |= 0x40;
+			set_phy_reg(ohci, 1, phy_reg); /* set IBR */
+			break;
+		case SHORT_RESET_NO_FORCE_ROOT:
+			phy_reg = get_phy_reg(ohci, 1);
+			if (phy_reg & 0x80) {
+				phy_reg &= ~0x80;
+				set_phy_reg(ohci, 1, phy_reg); /* clear RHB */
+			}
+
+			phy_reg = get_phy_reg(ohci, 5);
+			phy_reg |= 0x40;
+			set_phy_reg(ohci, 5, phy_reg); /* set ISBR */
+			break;
+		case LONG_RESET_NO_FORCE_ROOT:
+			phy_reg = get_phy_reg(ohci, 1);
+			phy_reg &= ~0x80;
+			phy_reg |= 0x40;
+			set_phy_reg(ohci, 1, phy_reg); /* clear RHB, set IBR */
+			break;
+		case SHORT_RESET_FORCE_ROOT:
+			phy_reg = get_phy_reg(ohci, 1);
+			if (!(phy_reg & 0x80)) {
+				phy_reg |= 0x80;
+				set_phy_reg(ohci, 1, phy_reg); /* set RHB */
+			}
+
+			phy_reg = get_phy_reg(ohci, 5);
+			phy_reg |= 0x40;
+			set_phy_reg(ohci, 5, phy_reg); /* set ISBR */
+			break;
+		case LONG_RESET_FORCE_ROOT:
+			phy_reg = get_phy_reg(ohci, 1);
+			phy_reg |= 0xc0;
+			set_phy_reg(ohci, 1, phy_reg); /* set RHB and IBR */
+			break;
+		default:
+			retval = -1;
+		}
+		break;
+
+	case GET_CYCLE_COUNTER:
+		retval = reg_read(ohci, OHCI1394_IsochronousCycleTimer);
+		break;
+
+	case SET_CYCLE_COUNTER:
+		reg_write(ohci, OHCI1394_IsochronousCycleTimer, arg);
+		break;
+
+	case SET_BUS_ID:
+		PRINT(KERN_ERR, "devctl command SET_BUS_ID err");
+		break;
+
+	case ACT_CYCLE_MASTER:
+		if (arg) {
+			/* check if we are root and other nodes are present */
+			u32 nodeId = reg_read(ohci, OHCI1394_NodeID);
+			if ((nodeId & (1<<30)) && (nodeId & 0x3f)) {
+				/*
+				 * enable cycleTimer, cycleMaster
+				 */
+				DBGMSG("Cycle master enabled");
+				reg_write(ohci, OHCI1394_LinkControlSet,
+					  OHCI1394_LinkControl_CycleTimerEnable |
+					  OHCI1394_LinkControl_CycleMaster);
+			}
+		} else {
+			/* disable cycleTimer, cycleMaster, cycleSource */
+			reg_write(ohci, OHCI1394_LinkControlClear,
+				  OHCI1394_LinkControl_CycleTimerEnable |
+				  OHCI1394_LinkControl_CycleMaster |
+				  OHCI1394_LinkControl_CycleSource);
+		}
+		break;
+
+	case CANCEL_REQUESTS:
+		DBGMSG("Cancel request received");
+		dma_trm_reset(&ohci->at_req_context);
+		dma_trm_reset(&ohci->at_resp_context);
+		break;
+
+	default:
+		PRINT_G(KERN_ERR, "ohci_devctl cmd %d not implemented yet",
+			cmd);
+		break;
+	}
+	return retval;
+}
+
+/***********************************
+ * rawiso ISO reception            *
+ ***********************************/
+
+/*
+  We use either buffer-fill or packet-per-buffer DMA mode. The DMA
+  buffer is split into "blocks" (regions described by one DMA
+  descriptor). Each block must be one page or less in size, and
+  must not cross a page boundary.
+
+  There is one little wrinkle with buffer-fill mode: a packet that
+  starts in the final block may wrap around into the first block. But
+  the user API expects all packets to be contiguous. Our solution is
+  to keep the very last page of the DMA buffer in reserve - if a
+  packet spans the gap, we copy its tail into this page.
+*/
+
+struct ohci_iso_recv {
+	struct ti_ohci *ohci;
+
+	struct ohci1394_iso_tasklet task;
+	int task_active;
+
+	enum { BUFFER_FILL_MODE = 0,
+	       PACKET_PER_BUFFER_MODE = 1 } dma_mode;
+
+	/* memory and PCI mapping for the DMA descriptors */
+	struct dma_prog_region prog;
+	struct dma_cmd *block; /* = (struct dma_cmd*) prog.virt */
+
+	/* how many DMA blocks fit in the buffer */
+	unsigned int nblocks;
+
+	/* stride of DMA blocks */
+	unsigned int buf_stride;
+
+	/* number of blocks to batch between interrupts */
+	int block_irq_interval;
+
+	/* block that DMA will finish next */
+	int block_dma;
+
+	/* (buffer-fill only) block that the reader will release next */
+	int block_reader;
+
+	/* (buffer-fill only) bytes of buffer the reader has released,
+	   less than one block */
+	int released_bytes;
+
+	/* (buffer-fill only) buffer offset at which the next packet will appear */
+	int dma_offset;
+
+	/* OHCI DMA context control registers */
+	u32 ContextControlSet;
+	u32 ContextControlClear;
+	u32 CommandPtr;
+	u32 ContextMatch;
+};
+
+static void ohci_iso_recv_task(unsigned long data);
+static void ohci_iso_recv_stop(struct hpsb_iso *iso);
+static void ohci_iso_recv_shutdown(struct hpsb_iso *iso);
+static int  ohci_iso_recv_start(struct hpsb_iso *iso, int cycle, int tag_mask, int sync);
+static void ohci_iso_recv_program(struct hpsb_iso *iso);
+
+static int ohci_iso_recv_init(struct hpsb_iso *iso)
+{
+	struct ti_ohci *ohci = iso->host->hostdata;
+	struct ohci_iso_recv *recv;
+	int ctx;
+	int ret = -ENOMEM;
+
+	recv = kmalloc(sizeof(*recv), GFP_KERNEL);
+	if (!recv)
+		return -ENOMEM;
+
+	iso->hostdata = recv;
+	recv->ohci = ohci;
+	recv->task_active = 0;
+	dma_prog_region_init(&recv->prog);
+	recv->block = NULL;
+
+	/* use buffer-fill mode, unless irq_interval is 1
+	   (note: multichannel requires buffer-fill) */
+
+	if (((iso->irq_interval == 1 && iso->dma_mode == HPSB_ISO_DMA_OLD_ABI) ||
+	     iso->dma_mode == HPSB_ISO_DMA_PACKET_PER_BUFFER) && iso->channel != -1) {
+		recv->dma_mode = PACKET_PER_BUFFER_MODE;
+	} else {
+		recv->dma_mode = BUFFER_FILL_MODE;
+	}
+
+	/* set nblocks, buf_stride, block_irq_interval */
+
+	if (recv->dma_mode == BUFFER_FILL_MODE) {
+		recv->buf_stride = PAGE_SIZE;
+
+		/* one block per page of data in the DMA buffer, minus the final guard page */
+		recv->nblocks = iso->buf_size/PAGE_SIZE - 1;
+		if (recv->nblocks < 3) {
+			DBGMSG("ohci_iso_recv_init: DMA buffer too small");
+			goto err;
+		}
+
+		/* iso->irq_interval is in packets - translate that to blocks */
+		if (iso->irq_interval == 1)
+			recv->block_irq_interval = 1;
+		else
+			recv->block_irq_interval = iso->irq_interval *
+							((recv->nblocks+1)/iso->buf_packets);
+		if (recv->block_irq_int(cpu_clk)) {
++		printk(KERN_DEBUG "%s: failed to get cpu_clk\n", __func__);
++		return PTR_ERR(cpu_clk);
++	}
+ 	printk(KERN_INFO "PM driver module loaded\n");
+ 
+ 	return 0;
+diff --git a/arch/arm/plat-mxc/cpufreq.c b/arch/arm/plat-mxc/cpufreq.c
+index 485be93..312cb65 100644
+--- a/arch/arm/plat-mxc/cpufreq.c
++++ b/arch/arm/plat-mxc/cpufreq.c
+@@ -62,7 +62,7 @@ extern int low_freq_bus_used(void);
+ extern struct cpu_wp *(*get_cpu_wp)(int *wp);
+ #endif
+ 
+-static int set_cpu_freq(int freq)
++int set_cpu_freq(int freq)
+ {
+ 	int ret = 0;
+ 	int org_cpu_rate;
+@@ -70,7 +70,6 @@ static int set_cpu_freq(int freq)
+ 	int i;
+ 
+ 	org_cpu_rate = clk_get_rate(cpu_clk);
+-
+ 	if (org_cpu_rate == freq)
+ 		return ret;
+ 
+@@ -154,10 +153,7 @@ static int mxc_set_target(struct cpufreq_policy *policy,
+ 	int low_freq_bus_ready = 0;
+ 	int ret = 0;
+ 
+-	if (cpufreq_suspended)
+-		return 0;
+-
+-	if (dvfs_core_is_active) {
++	if (dvfs_core_is_active || cpufreq_suspended) {
+ 		target_freq = clk_get_rate(cpu_clk) / 1000;
+ 		freq_Hz = calc_frequency_khz(target_freq, relation) * 1000;
+ 		if (freq_Hz == arm_lpm_clk)
+@@ -281,25 +277,11 @@ static int __init mxc_cpufreq_driver_init(struct cpufreq_policy *policy)
+ static int mxc_cpufreq_suspend(struct cpufreq_policy *policy,
+ 				     pm_message_t state)
+ {
+-	struct cpufreq_freqs freqs;
+-	int ret = 0;
+-	cpufreq_suspended = 1;
+-
+-	freqs.old = clk_get_rate(cpu_clk) / 1000;
+-	freqs.new = arm_normal_clk / 1000;
+-	freqs.cpu = 0;
+-	freqs.flags = 0;
+-
+-	if (clk_get_rate(cpu_clk) != arm_normal_clk) {
+-		set_high_bus_freq(1);
+-		ret = set_cpu_freq(arm_normal_clk);
+-	}
+-	return ret;
++	return 0;
+ }
+ 
+ static int mxc_cpufreq_resume(struct cpufreq_policy *policy)
+ {
+-	cpufreq_suspended = 0;
+ 	return 0;
+ }
+ 
+-- 
+1.5.4.4
+

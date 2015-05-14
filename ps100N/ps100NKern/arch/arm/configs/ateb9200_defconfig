@@ -1,0 +1,511 @@
+OUT_MGMT_RESET_FLAG) == BULKOUT_MGMT_RESET_FLAG))
+		{	// For Mgmt Bulk-Out failed, ignore it now.
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+		else
+		{
+
+			// Always call Bulk routine, even reset bulk.
+			// The protectioon of rest bulk should be in BulkOut routine
+			if (pAd->MgmtRing.TxSwFreeIdx < MGMT_RING_SIZE /* pMLMEContext->bWaitingBulkOut == TRUE */)
+			{
+				RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_MLME);
+			}
+				RTUSBKickBulkOut(pAd);
+			}
+		}
+
+}
+
+
+static void rt2870_hcca_dma_done_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER		pAd;
+	PHT_TX_CONTEXT		pHTTXContext;
+	UCHAR				BulkOutPipeId = 4;
+	purbb_t				pUrb;
+
+#ifndef RT30xx
+	DBGPRINT_RAW(RT_DEBUG_ERROR, ("--->hcca_dma_done_tasklet\n"));
+#endif
+
+	pUrb			= (purbb_t)data;
+	pHTTXContext	= (PHT_TX_CONTEXT)pUrb->context;
+	pAd				= pHTTXContext->pAd;
+
+	rt2870_dataout_complete_tasklet((unsigned long)pUrb);
+
+	if ((RTMP_TEST_FLAG(pAd, (fRTMP_ADAPTER_RESET_IN_PROGRESS |
+								fRTMP_ADAPTER_HALT_IN_PROGRESS |
+								fRTMP_ADAPTER_NIC_NOT_EXIST))))
+	{
+		// do nothing and return directly.
+	}
+	else
+	{
+		if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET))
+		{
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+		else
+		{	pHTTXContext = &pAd->TxContext[BulkOutPipeId];
+			if ((pAd->TxSwQueue[BulkOutPipeId].Number > 0) &&
+				/*((pHTTXContext->CurWritePosition > (pHTTXContext->NextBulkOutPosition + 0x6000)) || (pHTTXContext->NextBulkOutPosition > pHTTXContext->CurWritePosition + 0x6000)) && */
+				(pAd->DeQueueRunning[BulkOutPipeId] == FALSE) &&
+				(pHTTXContext->bCurWriting == FALSE))
+			{
+				RTMPDeQueuePacket(pAd, FALSE, BulkOutPipeId, MAX_TX_PROCESS);
+			}
+
+#ifndef RT30xx
+			RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_DATA_NORMAL);
+#endif
+#ifdef RT30xx
+			RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_DATA_NORMAL<<4);
+#endif
+			RTUSBKickBulkOut(pAd);
+		}
+	}
+
+#ifndef RT30xx
+	DBGPRINT_RAW(RT_DEBUG_ERROR, ("<---hcca_dma_done_tasklet\n"));
+#endif
+		return;
+}
+
+
+static void rt2870_ac3_dma_done_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER		pAd;
+	PHT_TX_CONTEXT		pHTTXContext;
+	UCHAR				BulkOutPipeId = 3;
+	purbb_t				pUrb;
+
+
+	pUrb			= (purbb_t)data;
+	pHTTXContext	= (PHT_TX_CONTEXT)pUrb->context;
+	pAd				= pHTTXContext->pAd;
+
+	rt2870_dataout_complete_tasklet((unsigned long)pUrb);
+
+	if ((RTMP_TEST_FLAG(pAd, (fRTMP_ADAPTER_RESET_IN_PROGRESS |
+								fRTMP_ADAPTER_HALT_IN_PROGRESS |
+								fRTMP_ADAPTER_NIC_NOT_EXIST))))
+	{
+		// do nothing and return directly.
+	}
+	else
+	{
+		if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET))
+		{
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+		else
+		{	pHTTXContext = &pAd->TxContext[BulkOutPipeId];
+			if ((pAd->TxSwQueue[BulkOutPipeId].Number > 0) &&
+				/*((pHTTXContext->CurWritePosition > (pHTTXContext->NextBulkOutPosition + 0x6000)) || (pHTTXContext->NextBulkOutPosition > pHTTXContext->CurWritePosition + 0x6000)) && */
+				(pAd->DeQueueRunning[BulkOutPipeId] == FALSE) &&
+				(pHTTXContext->bCurWriting == FALSE))
+			{
+				RTMPDeQueuePacket(pAd, FALSE, BulkOutPipeId, MAX_TX_PROCESS);
+			}
+
+			RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_DATA_NORMAL<<3);
+			RTUSBKickBulkOut(pAd);
+		}
+	}
+
+
+		return;
+}
+
+
+static void rt2870_ac2_dma_done_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER		pAd;
+	PHT_TX_CONTEXT		pHTTXContext;
+	UCHAR				BulkOutPipeId = 2;
+	purbb_t				pUrb;
+
+
+	pUrb			= (purbb_t)data;
+	pHTTXContext	= (PHT_TX_CONTEXT)pUrb->context;
+	pAd				= pHTTXContext->pAd;
+
+	rt2870_dataout_complete_tasklet((unsigned long)pUrb);
+
+	if ((RTMP_TEST_FLAG(pAd, (fRTMP_ADAPTER_RESET_IN_PROGRESS |
+								fRTMP_ADAPTER_HALT_IN_PROGRESS |
+								fRTMP_ADAPTER_NIC_NOT_EXIST))))
+	{
+		// do nothing and return directly.
+	}
+	else
+	{
+		if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET))
+		{
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+		else
+		{	pHTTXContext = &pAd->TxContext[BulkOutPipeId];
+			if ((pAd->TxSwQueue[BulkOutPipeId].Number > 0) &&
+				/*((pHTTXContext->CurWritePosition > (pHTTXContext->NextBulkOutPosition + 0x6000)) || (pHTTXContext->NextBulkOutPosition > pHTTXContext->CurWritePosition + 0x6000)) && */
+				(pAd->DeQueueRunning[BulkOutPipeId] == FALSE) &&
+				(pHTTXContext->bCurWriting == FALSE))
+			{
+				RTMPDeQueuePacket(pAd, FALSE, BulkOutPipeId, MAX_TX_PROCESS);
+			}
+
+			RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_DATA_NORMAL<<2);
+			RTUSBKickBulkOut(pAd);
+		}
+	}
+
+		return;
+}
+
+
+static void rt2870_ac1_dma_done_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER		pAd;
+	PHT_TX_CONTEXT		pHTTXContext;
+	UCHAR				BulkOutPipeId = 1;
+	purbb_t				pUrb;
+
+
+	pUrb			= (purbb_t)data;
+	pHTTXContext	= (PHT_TX_CONTEXT)pUrb->context;
+	pAd				= pHTTXContext->pAd;
+
+	rt2870_dataout_complete_tasklet((unsigned long)pUrb);
+
+	if ((RTMP_TEST_FLAG(pAd, (fRTMP_ADAPTER_RESET_IN_PROGRESS |
+								fRTMP_ADAPTER_HALT_IN_PROGRESS |
+								fRTMP_ADAPTER_NIC_NOT_EXIST))))
+	{
+		// do nothing and return directly.
+	}
+	else
+	{
+		if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET))
+		{
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+		else
+		{	pHTTXContext = &pAd->TxContext[BulkOutPipeId];
+			if ((pAd->TxSwQueue[BulkOutPipeId].Number > 0) &&
+				/*((pHTTXContext->CurWritePosition > (pHTTXContext->NextBulkOutPosition + 0x6000)) || (pHTTXContext->NextBulkOutPosition > pHTTXContext->CurWritePosition + 0x6000)) && */
+				(pAd->DeQueueRunning[BulkOutPipeId] == FALSE) &&
+				(pHTTXContext->bCurWriting == FALSE))
+			{
+				RTMPDeQueuePacket(pAd, FALSE, BulkOutPipeId, MAX_TX_PROCESS);
+			}
+
+			RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_DATA_NORMAL<<1);
+			RTUSBKickBulkOut(pAd);
+		}
+	}
+
+
+	return;
+}
+
+
+static void rt2870_ac0_dma_done_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER		pAd;
+	PHT_TX_CONTEXT		pHTTXContext;
+	UCHAR				BulkOutPipeId = 0;
+	purbb_t				pUrb;
+
+
+	pUrb			= (purbb_t)data;
+	pHTTXContext	= (PHT_TX_CONTEXT)pUrb->context;
+	pAd				= pHTTXContext->pAd;
+
+	rt2870_dataout_complete_tasklet((unsigned long)pUrb);
+
+	if ((RTMP_TEST_FLAG(pAd, (fRTMP_ADAPTER_RESET_IN_PROGRESS |
+								fRTMP_ADAPTER_HALT_IN_PROGRESS |
+								fRTMP_ADAPTER_NIC_NOT_EXIST))))
+	{
+		// do nothing and return directly.
+	}
+	else
+	{
+		if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET))
+		{
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+		else
+		{	pHTTXContext = &pAd->TxContext[BulkOutPipeId];
+			if ((pAd->TxSwQueue[BulkOutPipeId].Number > 0) &&
+				/*  ((pHTTXContext->CurWritePosition > (pHTTXContext->NextBulkOutPosition + 0x6000)) || (pHTTXContext->NextBulkOutPosition > pHTTXContext->CurWritePosition + 0x6000)) && */
+				(pAd->DeQueueRunning[BulkOutPipeId] == FALSE) &&
+				(pHTTXContext->bCurWriting == FALSE))
+			{
+				RTMPDeQueuePacket(pAd, FALSE, BulkOutPipeId, MAX_TX_PROCESS);
+			}
+
+			RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_DATA_NORMAL);
+			RTUSBKickBulkOut(pAd);
+		}
+	}
+
+
+	return;
+
+}
+
+
+static void rt2870_null_frame_complete_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER	pAd;
+	PTX_CONTEXT		pNullContext;
+	purbb_t			pUrb;
+	NTSTATUS		Status;
+	unsigned long	irqFlag;
+
+
+	pUrb			= (purbb_t)data;
+	pNullContext	= (PTX_CONTEXT)pUrb->context;
+	pAd 			= pNullContext->pAd;
+	Status 			= pUrb->status;
+
+	// Reset Null frame context flags
+	RTMP_IRQ_LOCK(&pAd->BulkOutLock[0], irqFlag);
+	pNullContext->IRPPending 	= FALSE;
+	pNullContext->InUse 		= FALSE;
+	pAd->BulkOutPending[0] = FALSE;
+	pAd->watchDogTxPendingCnt[0] = 0;
+
+	if (Status == USB_ST_NOERROR)
+	{
+		RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[0], irqFlag);
+
+		RTMPDeQueuePacket(pAd, FALSE, NUM_OF_TX_RING, MAX_TX_PROCESS);
+	}
+	else	// STATUS_OTHER
+	{
+		if ((!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RESET_IN_PROGRESS)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET)))
+		{
+			DBGPRINT_RAW(RT_DEBUG_ERROR, ("Bulk Out Null Frame Failed, ReasonCode=%d!\n", Status));
+			RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET);
+			pAd->bulkResetPipeid = (MGMTPIPEIDX | BULKOUT_MGMT_RESET_FLAG);
+			RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[0], irqFlag);
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+		else
+		{
+			RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[0], irqFlag);
+		}
+	}
+
+	// Always call Bulk routine, even reset bulk.
+	// The protectioon of rest bulk should be in BulkOut routine
+	RTUSBKickBulkOut(pAd);
+
+}
+
+
+static void rt2870_rts_frame_complete_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER	pAd;
+	PTX_CONTEXT		pRTSContext;
+	purbb_t			pUrb;
+	NTSTATUS		Status;
+	unsigned long	irqFlag;
+
+
+	pUrb		= (purbb_t)data;
+	pRTSContext	= (PTX_CONTEXT)pUrb->context;
+	pAd			= pRTSContext->pAd;
+	Status		= pUrb->status;
+
+	// Reset RTS frame context flags
+	RTMP_IRQ_LOCK(&pAd->BulkOutLock[0], irqFlag);
+	pRTSContext->IRPPending = FALSE;
+	pRTSContext->InUse		= FALSE;
+
+	if (Status == USB_ST_NOERROR)
+	{
+		RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[0], irqFlag);
+		RTMPDeQueuePacket(pAd, FALSE, NUM_OF_TX_RING, MAX_TX_PROCESS);
+	}
+	else	// STATUS_OTHER
+	{
+		if ((!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RESET_IN_PROGRESS)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET)))
+		{
+			DBGPRINT_RAW(RT_DEBUG_ERROR, ("Bulk Out RTS Frame Failed\n"));
+			RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET);
+			pAd->bulkResetPipeid = (MGMTPIPEIDX | BULKOUT_MGMT_RESET_FLAG);
+			RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[0], irqFlag);
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+		else
+		{
+			RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[0], irqFlag);
+		}
+	}
+
+	RTMP_SEM_LOCK(&pAd->BulkOutLock[pRTSContext->BulkOutPipeId]);
+	pAd->BulkOutPending[pRTSContext->BulkOutPipeId] = FALSE;
+	RTMP_SEM_UNLOCK(&pAd->BulkOutLock[pRTSContext->BulkOutPipeId]);
+
+	// Always call Bulk routine, even reset bulk.
+	// The protectioon of rest bulk should be in BulkOut routine
+	RTUSBKickBulkOut(pAd);
+
+}
+
+
+static void rt2870_pspoll_frame_complete_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER	pAd;
+	PTX_CONTEXT		pPsPollContext;
+	purbb_t			pUrb;
+	NTSTATUS		Status;
+
+
+	pUrb			= (purbb_t)data;
+	pPsPollContext	= (PTX_CONTEXT)pUrb->context;
+	pAd				= pPsPollContext->pAd;
+	Status			= pUrb->status;
+
+	// Reset PsPoll context flags
+	pPsPollContext->IRPPending	= FALSE;
+	pPsPollContext->InUse		= FALSE;
+	pAd->watchDogTxPendingCnt[0] = 0;
+
+	if (Status == USB_ST_NOERROR)
+	{
+		RTMPDeQueuePacket(pAd, FALSE, NUM_OF_TX_RING, MAX_TX_PROCESS);
+	}
+	else // STATUS_OTHER
+	{
+		if ((!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RESET_IN_PROGRESS)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_HALT_IN_PROGRESS)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_NIC_NOT_EXIST)) &&
+			(!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET)))
+		{
+			DBGPRINT_RAW(RT_DEBUG_ERROR, ("Bulk Out PSPoll Failed\n"));
+			RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET);
+			pAd->bulkResetPipeid = (MGMTPIPEIDX | BULKOUT_MGMT_RESET_FLAG);
+			RTUSBEnqueueInternalCmd(pAd, CMDTHREAD_RESET_BULK_OUT, NULL, 0);
+		}
+	}
+
+	RTMP_SEM_LOCK(&pAd->BulkOutLock[0]);
+	pAd->BulkOutPending[0] = FALSE;
+	RTMP_SEM_UNLOCK(&pAd->BulkOutLock[0]);
+
+	// Always call Bulk routine, even reset bulk.
+	// The protectioon of rest bulk should be in BulkOut routine
+	RTUSBKickBulkOut(pAd);
+
+}
+
+
+static void rt2870_dataout_complete_tasklet(unsigned long data)
+{
+	PRTMP_ADAPTER		pAd;
+	purbb_t				pUrb;
+	POS_COOKIE			pObj;
+	PHT_TX_CONTEXT		pHTTXContext;
+	UCHAR				BulkOutPipeId;
+	NTSTATUS			Status;
+	unsigned long		IrqFlags;
+
+
+	pUrb			= (purbb_t)data;
+	pHTTXContext	= (PHT_TX_CONTEXT)pUrb->context;
+	pAd				= pHTTXContext->pAd;
+	pObj 			= (POS_COOKIE) pAd->OS_Cookie;
+	Status			= pUrb->status;
+
+	// Store BulkOut PipeId
+	BulkOutPipeId = pHTTXContext->BulkOutPipeId;
+	pAd->BulkOutDataOneSecCount++;
+
+	//DBGPRINT(RT_DEBUG_LOUD, ("Done-B(%d):I=0x%lx, CWPos=%ld, NBPos=%ld, ENBPos=%ld, bCopy=%d!\n", BulkOutPipeId, in_interrupt(), pHTTXContext->CurWritePosition,
+	//		pHTTXContext->NextBulkOutPosition, pHTTXContext->ENextBulkOutPosition, pHTTXContext->bCopySavePad));
+
+	RTMP_IRQ_LOCK(&pAd->BulkOutLock[BulkOutPipeId], IrqFlags);
+	pAd->BulkOutPending[BulkOutPipeId] = FALSE;
+	pHTTXContext->IRPPending = FALSE;
+	pAd->watchDogTxPendingCnt[BulkOutPipeId] = 0;
+
+	if (Status == USB_ST_NOERROR)
+	{
+		pAd->BulkOutComplete++;
+
+		RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[BulkOutPipeId], IrqFlags);
+
+		pAd->Counters8023.GoodTransmits++;
+		//RTMP_IRQ_LOCK(&pAd->TxContextQueueLock[BulkOutPipeId], IrqFlags);
+		FREE_HTTX_RING(pAd, BulkOutPipeId, pHTTXContext);
+		//RTMP_IRQ_UNLOCK(&pAd->TxContextQueueLock[BulkOutPipeId], IrqFlags);
+
+
+	}
+	else	// STATUS_OTHER
+	{
+		PUCHAR	pBuf;
+
+		pAd->BulkOutCompleteOther++;
+
+		pBuf = &pHTTXContext->TransferBuffer->field.WirelessPacket[pHTTXContext->NextBulkOutPosition];
+
+		if (!RTMP_TEST_FLAG(pAd, (fRTMP_ADAPTER_RESET_IN_PROGRESS |
+									fRTMP_ADAPTER_HALT_IN_PROGRESS |
+									fRTMP_ADAPTER_NIC_NOT_EXIST |
+									fRTMP_ADAPTER_BULKOUT_RESET)))
+		{
+			RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_BULKOUT_RESET);
+			pAd->bulkResetPipeid = BulkOutPipeId;
+			pAd->bulkResetReq[BulkOutPipeId] = pAd->BulkOutReq;
+		}
+		RTMP_IRQ_UNLOCK(&pAd->BulkOutLock[BulkOutPipeId], IrqFlags);
+
+		DBGPRINT_RAW(RT_DEBUG_ERROR, ("BulkOutDataPacket failed: ReasonCode=%d!\n", Status));
+		DBGPRINT_RAW(RT_DEBUG_ERROR, ("\t>>BulkOut Req=0x%lx, Complete=0x%lx, Other=0x%lx\n", pAd->BulkOutReq, pAd->BulkOutComplete, pAd->BulkOutCompleteOther));
+		DBGPRINT_RAW(RT_DEBUG_ERROR, ("\t>>BulkOut Header:%x %x %x %x %x %x %x %x\n", pBuf[0], pBuf[1], pBuf[2], pBuf[3], pBuf[4], pBuf[5], pBuf[6], pBuf[7]));
+		//DBGPRINT_RAW(RT_DEBUG_ERROR, (">>BulkOutCompleteCancel=0x%x, BulkOutCompleteOther=0x%x\n", pAd->BulkOutCompleteCancel, pAd->BulkOutCompleteOther));
+
+	}
+
+	//
+	// bInUse = TRUE, means some process are filling TX data, after that must turn on bWaitingBulkOut
+	// bWaitingBulkOut = TRUE, means the TX data are waiting for bulk out.
+	//
+	//RTMP_IRQ_LOCK(&pAd->TxContextQueueLock[BulkOutPipeId], IrqFlags);
+	if ((pHTTXContext->ENextBulkOutPosition != pHTTXContext->CurWritePosition) &&
+		(pHTTXContext->ENextBulkOutPosition != (pHTTXContext->CurWritePosition+8)) &&
+		!RTUSB_TEST_BULK_FLAG(pAd, (fRTUSB_BULK_OUT_DATA_FRAG << BulkOutPipeId)))
+	{
+		// Indicate There is data avaliable
+		RTUSB_SET_BULK_FLAG(pAd, (fRTUSB_BULK_OUT_DATA_NORMAL << BulkOutPipeId));
+	}
+	//RTMP_IRQ_UNLOCK(&pAd->TxContextQueueLock[BulkOutPipeId], IrqFlags);
+
+	// Always call Bulk routine, even reset bulk.
+	// The protection of rest bulk should be in BulkOut routine
+	RTUSBKickBulkOut(pAd);
+}
+
+/* End of 2870_rtmp_init.c */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              À„¼  ‹{H‹è‹‹‡ä  H…À„¹  L‹àH‹õH‹û‹I‹Ô‹¿p2  ÿW83íefƒ<%     „ŠýÿÿéŸ  D‹´$”   A‹n0H‹õH‹û‹‹¿H©  ÿW8‹T$<H‹èH‹õ‹>‹¿°  ÿW8‰D$(H…À„u  ‹t$(‹>‹¿Ä  ÿW8‹è…í„\  ¾   ‰t$@‹|$@…ÿupD‹D$ E…ÀufD‹L$$E…ÉtE‹{‹‹‡xÞ  H…À„  ‹{H‹è‹‹‡ä  H…À„  L‹àH‹õH‹û‹I‹Ô‹¿p2  ÿW83íefƒ<%     „°üÿÿéü  ‹´$˜   ‹>‹¿¼  ÿW8‹è…í„¥   D‹´$”   A‹n0H‹õH‹û‹‹¿H©  ÿW8H‹èH‹õ‹>‹¿  ÿW8‹è…ítpD‹T$ E…ÒufD‹\$$E…ÛtE‹{‹‹‡xÞ  H…À„  ‹{H‹è‹‹‡ð  H…À„Œ  L‹àH‹õH‹û‹I‹Ô‹¿p2  ÿW83íefƒ<%     „ïûÿÿér  efƒ<%     ½   „Õûÿÿée  3Àefƒ<%     ‰D$@„—þÿÿéW  3Éefƒ<%     ‰L$ „¦ýÿÿéI  ‹T$$…Ò„º   ‹{‹‹‡xÞ  H…À„5  H‹è¿wƒpH‹óeÿ%à  L‹àI‹ôD‹H‹û‹‹¿ÔH ÿW8‹{‹‹‡Ü  H…À„
+  L‹øI‹ôH‹û‹D‹I‹×‹¿ I ÿW8L‹àI‹ôH‹û‹I‹Õ‹¿üH ‹ÿW8L‹àI‹ôH‹û‹D‹‹¿I ÿW8L‹àH‹õH‹û‹I‹Ô‹¿p2  ÿW83íefƒ<%     „Âúÿÿé£  E3Ûefƒ<%     D‰\$4„ìûÿÿé“  A‹m…í„+  D‹´$”   A‹n0H‹õH‹û‹‹¿ˆ©  ÿW8E‹eE‹}H‹èI‹ÔH‹õA‹Ï‹>‹¿X  ÿW8‹è3Àƒý ¹   EÁ‰D$,‹T$,…Òud‹t$$…ötE‹{‹‹‡xÞ  H…À„  ‹{H‹è‹‹‡è  H…À„  L‹àH‹õH‹û‹I‹Ô‹¿p2  ÿW83íefƒ<%     „Ýùÿÿé  D‹´$”   A‹n0H‹õH‹û‹‹¿ü¨  ÿW8H‹èH‹õ‹>‹¿p  ÿW8H‹èE‹eE3ÿI‹ÔH‹õA‹Ï‹>‹¿´  ÿW8H‹è‹m,‹½¨   ‰|$<efƒ<%     „ûÿÿé  eH‹4%€   D‹D$$eHÇ%€       ‰t$E…À„¾   ‹{‹‹‡xÞ  H…À„m  H‹è¿wƒpH‹óeÿ%à  L‹àI‹ôD‹H‹û‹‹¿ÔH ÿW8‹{‹‹‡Ø  H…À„B  L‹øI‹ôH‹û‹D‹I‹×‹¿ I ÿW8E‹}L‹àI‹ôH‹û‹I‹×‹¿üH ‹ÿW8L‹àI‹ôH‹û‹D‹‹¿I ÿW8L‹àH‹õH‹û‹I‹Ô‹¿p2  ÿW83íefƒ<%     „nøÿÿé×  ‹{‹‹‡xÞ  H…À„Ï  H‹è¿wƒpH‹óeÿ%à  L‹àI‹ôD‹H‹û‹‹¿ÔH ÿW8‹{‹‹‡ìë  H…À„¤  L‹øI‹ôH‹û‹‹I‹×‹¿ I ÿW8L‹àI‹ôH‹û‹I‹Õ‹¿üH D‹ÿW8L‹àI‹ôH‹û‹D‹‹¿I ÿW8L‹àH‹õH‹û‹I‹Ô‹¿\2  ÿW83íé¨÷ÿÿH‹û¾›7  eÿ%(  étöÿÿH‹û¾›7  eÿ%(  éL÷ÿÿH‹û¾u   eÿ%(  éO÷ÿÿeÿ%è  él÷ÿÿH‹û¾›7  eÿ%(  éÜ÷ÿÿH‹û¾x   eÿ%(  éß÷ÿÿeÿ%è  é%÷ÿÿH‹û¾ýb  eÿ%(  éÝøÿÿH‹û¾›7  eÿ%(  é/ùÿÿH‹û¾v   eÿ%(  é2ùÿÿeÿ%è  éÙöÿÿH‹û¾›7  eÿ%(  éÒùÿÿH‹û¾v   eÿ%(  éÕùÿÿeÿ%è  é¢öÿÿH‹û¾›7  eÿ%(  é\úÿÿH‹û¾y   eÿ%(  é_úÿÿeÿ%è  éköÿÿeÿ%è  é^öÿÿeÿ%è  é.ùÿÿeÿ%è  éKøÿÿH‹û¾›7  eÿ%(  é¶úÿÿH‹û¾t   eÿ%(  éáúÿÿeÿ%è  éöÿÿeÿ%è  éG÷ÿÿH‹û¾›7  eÿ%(  éÌûÿÿH‹û¾w   eÿ%(  éÏûÿÿeÿ%è  éÉõÿÿeÿ%è  éh÷ÿÿH‹û¾›7  eÿ%(  é~üÿÿH‹û¾s   eÿ%(  é©üÿÿeÿ%è  é…õÿÿH‹û¾›7  eÿ%(  éýÿÿH‹û¾ø:  eÿ%(  éGýÿÿ        |E< Àv7 ]I À   (ð     d  …„$ àÿÿHì¸   H‰œ$ˆ   H‰¬$   L‰¤$˜   L‰¬$    L‰´$¨   L‰¼$°   L‹ï‰<$‰´$Ä   H‰”$È   H‰Œ$Ð   D‹´$Ä   E‹v0I‹îH‹õI‹ý‹‹¿4©  ÿW8‹è…íuHefƒ<%     …î  H‹œ$ˆ   H‹¬$   L‹¤$˜   L‹¬$    L‹´$¨   L‹¼$°   HÄ¸   ÃD‹´$Ä   E‹v0I‹îH‹õI‹ý‹‹¿ä¨  ÿW8‹è…íu‘D‹´$Ä   E‹v0I‹îH‹õI‹ý‹‹¿©  ÿW8H‹èL‹õE‹v$I‹îL‹õE‹vA‹î…í…*  D‹´$Ä   E‹v0I‹îH‹õI‹ý‹‹¿©  ÿW8H‹èL‹õE‹v$I‹îL‹õE‹vI‹îH…í„é  D‹´$Ä   E‹v0I‹îH‹õI‹ý‹‹¿©  ÿW8H‹èL‹õE‹v$I‹îL‹õE‹vI‹îH‹õI‹ý‹D‹‹¿ÜF ÿW8H‹èI‹ý‹‹¿h©  ÿW8H‰D$pHÅH‰D$PD‹´$Ä   I¼ÿÿÿÿÿÿÿE‹v0I‹îL‹õE‹vI‹îH‹õ‹>‹¿´  ÿW8‰D$H‹t$H¸>S  ‹>‹¿,  ÿW8‹è…í„y  ‹t$H¸?S  ‹>‹¿0  ÿW8‰D$,I‹õ‹V‹’À  H…Ò„/  ‹|$,H…ÿt‹7H;ò…0  ‹D$,L‹pHI‹îI‹ý‹‹¿8©  ÿW8A‹}H‰D$pH‹ÍHÈH‹Ù‹‹‡xÞ  H…À„  H‹èA¿   H‹õI‹ý‹A‹×‹¿l2  ÿW8‹è…í„Á   A‹}‹‹‡xÞ  H…À„Ù  H‹è¿wƒpI‹õeÿ%à  L‹øI‹÷D‹I‹ý‹‹¿ÔH ÿW8A‹}‹‹‡ˆä H…À„­  ‰D$p‹T$pI‹÷I‹ý‹‹‹¿ I ÿW8L‹øM‹÷I‹öI‹ý‹H‹Ó‹¿ðH D‹ÿW8L‹øI‹÷I‹ý‹D‹‹¿I ÿW8L‹øH‹õI‹ý‹I‹×‹¿p2  ÿW8L;ãŽqþÿÿL‹ãéiþÿÿA‹}‹‹‡xÞ  H…À„1  H‹èA¿   H‹õI‹ý‹A‹×‹¿l2  ÿW8‹è…í„Â   A‹}‹‹‡xÞ  H…À„  H‹è¿wƒpI‹õeÿ%à  L‹øI‹÷‹I‹ý‹‹¿ÔH ÿW8A‹}‹‹‡˜ä H…À„Ý  ‰D$p‹T$pI‹÷I‹ýD‹‹‹¿ I ÿW8H‹T$PL‹øM‹÷I‹öI‹ý‹‹¿ðH D‹ÿW8L‹øI‹÷I‹ý‹‹‹¿I ÿW8L‹øH‹õI‹ý‹I‹×‹¿p2  ÿW8A‹}‹‹‡xÞ  H…À„p  H‹èA¿   H‹õI‹ý‹A‹×‹¿l2  ÿW8‹è…í„Á   A‹}‹‹‡xÞ  H…À„G  H‹è¿wƒpI‹õeÿ%à  L‹øI‹÷D‹I‹ý‹‹¿ÔH ÿW8A‹}‹‹‡Œä H…À„  ‰D$p‹T$pI‹÷I‹ýD‹‹‹¿ I ÿW8L‹øM‹÷I‹öI‹ý‹I‹Ô‹¿ðH ‹ÿW8L‹øI‹÷I‹ý‹D‹‹¿I ÿW8L‹øH‹õI‹ý‹I‹×‹¿p2  ÿW8A‹}‹‹‡xÞ  H…À„°  H‹èA¿   H‹õI‹ý‹A‹×‹¿l2  ÿW8‹è…í„Ð   A‹}‹‹‡xÞ  H…À„‡  H‹è¿wƒpI‹õeÿ%à  L‹øI‹÷D‹I‹ý‹‹¿ÔH ÿW8A‹}‹‹‡”ä H…À„[  ‰D$p‹T$pI‹÷I‹ý‹‹‹¿ I ÿW8H‹”$È   L‹øM‹÷H‰T$H‹T$I‹öI‹ý‹‹¿ðH D‹ÿW8L‹øI‹÷I‹ý‹D‹‹¿I ÿW8L‹øH‹õI‹ý‹I‹×‹¿p2  ÿW8A‹}‹‹‡xÞ  H…À„á
+  H‹èA¿   H‹õI‹ý‹A‹×‹¿l2  ÿW8‹è…í„Ï   A‹}‹‹‡xÞ  H…À„¸
+  H‹è¿wƒpI‹õeÿ%à  L‹øI‹÷‹I‹ý‹‹¿ÔH ÿW8A‹}‹‹‡ä H…À„
+  ‰D$p‹T$pI‹÷I‹ýD‹‹‹¿ I ÿW8H‹´$Ð   L‹øM‹÷H‰t$H‹T$I‹öI‹ý‹‹¿ðH D‹ÿW8L‹øI‹÷I‹ý‹‹‹¿I ÿW8L‹øH‹õI‹ý‹I‹×‹¿p2  ÿW8H‹|$PL‹´$È   L‹ÇI;üMOÄM;ÆMOÆL‹´$Ð   M;ÆMOÆL‰D$0I‹ý‹‹¿ü)  ÿW8L‹L$0H‰D$XHÇÅ0u  H0u  H‹èL;Ín  A‹}‹‹‡xÞ  H…À„¯	  H‹èA¿   H‹õI‹ý‹A‹×‹¿l2  ÿW8‹è…í„6  A‹}‹‹‡xÞ  H…À„†	  H‹è¿wƒpI‹õeÿ%à  L‹øI‹÷D‹I‹ý‹‹¿ÔH ÿW8A‹}‹‹‡ ä H…À„Z	  ‰D$p‹T$pI‹÷I‹ýD‹‹‹¿ I ÿW8H‹T$0L‹øM‹÷I‹öI‹ý‹‹¿ðH ‹ÿW8A‹}L‹ø‹‹‡()  H…À„	  ‰D$p‹T$pI‹÷I‹ý‹‹¿ I D‹ÿW8L‹T$XL‹øÇD$p0u  ÇD$t    IÂ0u  L‰T$pH‹T$pI‹÷I‹ý‹‹¿ðH D‹ÿW8L‹øI‹÷I‹ý‹‹‹¿I ÿW8L‹øH‹õI‹ý‹I‹×‹¿p2  ÿW8L‹\$XHÇÅ0u  IÃ0u  L‰\$03É‰L$dD‹´$Ä   3Ò‰T$`E‹vI‹îH…í„¡  D‹´$Ä   E‹vI‹îH‹õI‹ý‹D‹‹¿ÜF ÿW8H‹èH‹D$XH;Ål  A»   D‰\$(H‹L$0H½ÿÿÿÿÿÿÿHºÿÿÿÿÿÿÿH;Ê„$  ¸   ‰D$L‹L$L…É„ò  ‹T$(…Òt1D‹´$Ä   E‹vI‹îH‹õI‹ý‹D‹‹¿ÜF ÿW8H‹t$0H‹èH;õ}A»   D‰\$dD‹´$Ä   E‹v0I‹îH‹õI‹ý‹‹¿t©  ÿW8‹D$d…À„ó  A‹}‹‹‡xÞ  H…À„k  H‹èA¿   H‹õI‹ý‹A‹×‹¿l2  ÿW8‹è…í„ê  A‹}‹‹‡xÞ  H…À„B  H‹è¿wƒpI‹õeÿ%à  L‹øI‹÷D‹I‹ý‹‹¿ÔH ÿW8A‹}‹‹‡°/ H…À„  ‰D$p‹T$pI‹÷I‹ýD‹‹‹¿ I ÿW8H‹T$0L‹øM‹÷I‹öI‹ý‹‹¿ðH ‹ÿW8A‹}L‹ø‹‹‡ˆ(  H…À„Ö  ‰D$p‹T$pI‹÷I‹ý‹‹¿ I D‹ÿW8H‹|$XL‹øM‹÷H‰|$H‹T$I‹öI‹ý‹‹¿ðH D‹ÿW8A‹}L‹ø‹‹‡&  H…À„‹  ‰D$p‹T$pI‹÷I‹ý‹‹¿ I ‹ÿW8L‹D$0L‹øL+D$XÇD$xè  ÇD$|    I‹ÀHºÏ÷Sã¥›Ä H÷êHÁúH‹ÂHÁê?HÐL‹ÂL‰D$pH‹T$pI‹÷I‹ý‹‹¿ðH D‹ÿW8A‹}L‹ø‹‹‡0  H…À„  ‰D$p‹T$pI‹÷I‹ý‹‹¿ I D‹ÿW8L‹øI‹÷I‹ý‹‹‹¿I ÿW8L‹øH‹õI‹ý‹I‹×‹¿p2  ÿW8H‹t$0I‹ý‹‹¿ðF ÿW8D‹Œ$Ä   H‹èL‹õD‰L$E‰qM…öteL‹%x   M‹ÙIÁëGˆD‹´$Ä   E‹v0I‹îH‹õI‹ý‹‹¿|©  ÿW8D‹´$Ä   H‹èA¿   E‹v0I‹Æ‰D$p‹t$pI‹ý‹‹¿x©  ÿW8‰D$pL‹õA‹Ï‰L$H‹Ð‰T$ H‹L$0º   I‹ö‹>D‹D$ ‹¿´  ÿW8éÏòÿÿefƒ<%     …ü  ‹T$`…Ò„³òÿÿ‹´$Ä   3íL‹õ‰t$D‰vD‹´$Ä   E‹v0I‹îH‹õI‹ý‹‹¿|©  ÿW8D‹´$Ä   H‹èE‹v0M‹þI‹÷I‹ý‹‹¿x©  ÿW8L‹øI‹×H‹õ‹>‹¿œ  ÿW8éAòÿÿ‹t$(efƒ<%     ‰t$`„:üÿÿén  3ÿefƒ<%     ‰|$L„Ïûÿÿé`  E3Àefƒ<%     D‰D$(„‡ûÿÿéP  H‹|$XHÇÅ Ým L‹D$0HÇ Ým H‹ïL;ÅŽúúÿÿA‹}‹‹‡xÞ  H…À„#  H‹èA¿   H‹õI‹ý‹A‹×‹¿l2  ÿW8‹è…í„6  A‹}‹‹‡xÞ  H…À„ú  H‹è¿wƒpI‹õeÿ%à  L‹øI‹÷D‹I‹ý‹‹¿ÔH ÿW8A‹}‹‹‡œä H…À„Î  ‰D$p‹T$pI‹÷I‹ýD‹‹‹¿ I ÿW8H‹T$0L‹øM‹÷I‹öI‹ý‹‹¿ðH ‹ÿW8A‹}L‹ø‹‹‡()  H…À„Ž  ‰D$p‹T$pI‹÷I‹ý‹‹¿ I D‹ÿW8L‹L$XL‹øÇD$p0u  ÇD$t    IÁ0u  L‰L$pH‹T$pI‹÷I‹ý‹‹¿ðH D‹ÿW8L‹øI‹÷I‹ý‹‹‹¿I ÿW8L‹øH‹õI‹ý‹I‹×‹¿p2  ÿW8L‹T$XHÇÅ Ým IÂ Ým efƒ<%     L‰T$0„^ùÿÿéì  efƒ<%     ÇD$PÿÿÿÿÇD$Tÿÿÿ„cñÿÿéÔ  eÿ%è  éðÿÿ¿í  eÿ%   H‹Ðé¼ñÿÿH‹úeÿ%  éÀñÿÿI‹ý¾›7  eÿ%(  ééñÿÿI‹ý¾›7  eÿ%(  éòÿÿI‹ý¾y  eÿ%(  é>òÿÿI‹ý¾›7  eÿ%(  éºòÿÿI‹ý¾›7  eÿ%(  éãòÿÿI‹ý¾#y  eÿ%(  éóÿÿI‹ý¾›7  eÿ%(  é{óÿÿI‹ý¾›7  eÿ%(  é¤óÿÿI‹ý¾ y  eÿ%(  éÐóÿÿI‹ý¾›7  eÿ%(  é;ôÿÿI‹ý¾›7  eÿ%(  édôÿÿI‹ý¾"y  eÿ%(  éôÿÿI‹ý¾›7  eÿ%(  é
+õÿÿI‹ý¾›7  eÿ%(  é3õÿÿI‹ý¾!y  eÿ%(  é^õÿÿI‹ý¾›7  eÿ%(  é<öÿÿI‹ý¾›7  eÿ%(  éeöÿÿI‹ý¾%y  eÿ%(  é‘öÿÿI‹ý¾G
+  eÿ%(  éÑöÿÿI‹ý¾›7  eÿ%(  é€øÿÿI‹ý¾›7  eÿ%(  é©øÿÿI‹ý¾é‹  eÿ%(  éÕøÿÿI‹ý¾
+  eÿ%(  éùÿÿI‹ý¾€	  eÿ%(  é`ùÿÿI‹ý¾É  eÿ%(  éÝùÿÿeÿ%è  é÷úÿÿeÿ%è  éº÷ÿÿeÿ%è  é]÷ÿÿeÿ%è  é%÷ÿÿI‹ý¾›7  eÿ%(  éÈûÿÿI‹ý¾›7  eÿ%(  éñûÿÿI‹ý¾$y  eÿ%(  éüÿÿI‹ý¾G
+  eÿ%(  é]üÿÿeÿ%è  é`öÿÿeÿ%è  é}îÿÿ   ¤W< 8Š7 ¬lI    (ð       …„$ àÿÿHìˆ   H‰\$XH‰l$`L‰d$hL‰l$pL‰t$xL‰¼$€   H‹ß‰<$‰´$”   º   ‰T$<‹„$”   3ö‰t$@‹h0‹mH‹õ‹>‹¿°  ÿW8‹è…í„  ‹Œ$”   ‹i$E3öD‰u‹i$‹}‰|$(E3ÀD‰D$4D‹L$(E…ÉtPD‹T$4E…ÒuF‹”$”   ‹j0H‹õH‹û‹3Ò‹¿p©  ÿW8‹´$”   H‹û‹D‹‹¿¸¨  ÿW8‹´$”   ‹n$3À‰E‹L$4…Ét\‹¼$”   D‹G0D‰D$@‹t$@H‹û‹º   ‹¿p©  ÿW8‹´$”   H‹û‹D‹‹¿¸¨  ÿW8D‹Œ$”   E‹Q$D‰T$@A»   E‰Zefƒ<%     …4  H‹\$XH‹l$`L‹d$hL‹l$pL‹t$xL‹¼$€   HÄˆ   ÃH‹û‹‹¿ü)  ÿW8D‹œ$”   H‰D$,A‹k$‹mH…íu=‹„$”   H‹t$,‹h$H‹û‹‹¿ðF ÿW8L‹ðD‰uM…öteH‹%x   H‹ÕHÁêˆ‹´$”   ‹n$‹m…ít!3À‰D$(efƒ<%     ‹È‰L$4„wþÿÿé  ‹¼$”   3Ò‰T$(‹o$‹mH‹õH‹û‹D‹‹¿ÜF ÿW8H‹èH‹û‹‹¿h©  ÿW8L‹D$,H‰D$LHèL;ÅŽ  A»   D‰\$8‹D$8…Àtefƒ<%     ¹   ‰L$4„öýÿÿé  D‹Œ$”   3Ò‰T$4A‹i0‹mH‹õ‹>‹¿´  ÿW8L‹è¸>S  I‹õ‹>‹¿,  ÿW8‹è…í„®ýÿÿ¸?S  I‹õ‹>‹¿0  ÿW8L‹àH‹ó‹V‹’À  H…Ò„¬   I‹üH…ÿt‹7H;ò…®   A‹l$$‹m‹{‹‹‡ø] H…À„¡   L‹ðI‹ÖH‹õ3É‹>‹¿¬  ÿW8D‹øE…ÿ„fÿÿÿefƒ<%     ¾   ‰t$4„ýÿÿëy3ÿefƒ<%     ‰|$8„éþÿÿëneÿ%è  é¿ýÿÿeÿ%è  éäüÿÿeÿ%è  é×üÿÿ¿í  eÿ%   H‹Ðé?ÿÿÿH‹úeÿ%  éBÿÿÿH‹û¾{W  eÿ%(  éJÿÿÿeÿ%è  éüÿÿeÿ%è  élþÿÿ    ƒ[< `Ž7 <pI à   (ð     ¸$  …„$ àÿÿHìØ   H‰œ$¨   H‰¬$°   L‰¤$¸   L‰¬$À   L‰´$È   L‰¼$Ð   H‹ß‰<$‰´$ä   ‹{‹‹‡xÞ  H…À„  L‹èº   ‰”$   I‹õH‹û‹º   ‹¿l2  ÿW8‰D$H…ÀtM‹{‹‹‡xÞ  H…À„×  ‹{L‹è‹‹‡Ìæ H…À„Ô  ‰„$   ‹”$   I‹õH‹û‹‹¿p2  ÿW8‹¬$ä   ‹m0L‹íI‹õH‹û‹‹¿4©  ÿW8D‹èE…í…ª   ‹t$H…ötM‹{‹‹‡xÞ  H…À„  ‹{L‹è‹‹‡Üæ H…À„~  ‰„$   ‹”$   I‹õH‹û‹‹¿p2  ÿW8I¿ÿÿÿÿÿÿÿefƒ<%     …Y  I‹ÇH‹œ$¨   H‹¬$°   L‹¤$¸   L‹¬$À   L‹´$È   L‹¼$Ð   HÄØ   Ã‹¬$ä   ‹m0L‹íI‹õH‹û‹‹¿ä¨  ÿW8D‹èE…ítt‹|$H…ÿtM‹{‹‹‡xÞ  H…À„ç  ‹{L‹è‹‹‡Øæ H…À„ä  ‰„$   ‹”$   I‹õH‹û‹‹¿p2  ÿW8efƒ<%     I¿ÿÿÿÿÿÿÿ„ÿÿÿéº  ‹¬$ä   ‹m0L‹íI‹õH‹û‹‹¿ ©  ÿW8L‹èH‹û‹‹¿,©  ÿW8‰„$   I‹íL‹àI;ìuvD‹D$HE…ÀtM‹{‹‹‡xÞ  H…À„e  ‹{L‹è‹‹‡Ðæ H…À„b  ‰„$   ‹”$   I‹õH‹û‹‹¿p2  ÿW8efƒ<%     I¿ÿÿÿÿÿÿÿ„fþÿÿé8  H‹û‹‹¿ü)  ÿW8H‰D$\I¿ÿÿÿÿÿÿÿ¿¸§„pH‹óeÿ%à  ‰D$t‹t$tH‹û‹D‹‹¿PK ÿW8‹¬$ä   ‹m0L‹íI‹õH‹û‹‹¿„©  ÿW8‰„$   ‹¼$   eÿ%è  D‹\$HE…Û„X  ‹{‹‹‡xÞ  H…À„¥  L‹è¿wƒpH‹óeÿ%à  ‰„$”   ‹´$”   H‹û‹‹‹¿ÔH ÿW8‹{‹‹‡À$ H…À„s  ‰„$˜   ‹´$”   ‹”$˜   H‹û‹‹¿ I D‹ÿW8‰„$”   ‹¬$ä   ‹m0H‹Å‰„$˜   ‹´$˜   H‹û‹‹¿„©  ÿW8‰„$˜   ‹´$˜   ‹>‹¿¬  ÿW8‰„$˜   ‹´$˜   ¸S  ‹>‹¿è   ÿW8‰„$˜   ‹´$”   ‹”$˜   H‹û‹‹¿ìH D‹ÿW8‰„$”   ‹´$”   H‹û‹‹‹¿I ÿW8‰„$”   D‹¤$”   I‹íH‹õH‹û‹I‹Ô‹¿p2  ÿW8‹¬$ä   ‹m0L‹íI‹õH‹û‹‹¿„©  ÿW8L‹èI‹õ‹>‹¿¬  ÿW8L‹è¸S  I‹õ‹>‹¿Ø   ÿW8‰D$p‹¬$ä   ‹m0L‹íI‹õH‹û‹‹¿ü¨  ÿW8L‹è‹{‹‹‡< H…À„  ‰„$”   D‹¤$”   I‹íI‹ÔH‹õ‹>‹¿  ÿW8‰D$0H‹ó‹V‹’°   H…Ò„ä  ‹|$0H…ÿt‹7H;ò…å  H‹û‹‹¿ØB ÿW8‰D$x‹t$p¸>S  ‹>‹¿,  ÿW8D‹èE…í„ý  ‹t$p¸?S  ‹>‹¿0  ÿW8‰D$lH‹ó‹V‹’è  H…Ò„•  ‹|$lH…ÿt‹7H;ò…–  ‹l$l‹mL‹íI‹í‹mD‹í‹t$0A‹í‹Õ‹>‹¿  ÿW8D‹èE…í…V  ‹¬$ä   ‹m0L‹íI‹õH‹û‹‹¿0©  ÿW8L‹è‹l$l‹mH‹Í‰Œ$”   H‹é‹m‹Í‰Œ$”   I‹íD‹áA‹ÔH‹õ‹>‹¿ì  ÿW8‰„$ˆ   ‹”$ˆ   H…ÒuE‹l$l‹mL‹íI‹í‹mD‹íA‹õH‹û‹‹¿ÈF ÿW8L‹è‹l$xM‹åI‹Ô¸S  H‹õ‹>‹¿œ   ÿW8efƒ<%     …²  ‹T$H…Ò„Ÿþÿÿ‹{‹‹‡xÞ  H…À„ž  L‹è¿wƒpH‹óeÿ%à  ‰„$”   ‹´$”   H‹û‹D‹‹¿ÔH 

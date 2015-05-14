@@ -1,0 +1,50 @@
+->fmt->depth >> 3);
+	f->fmt.pix.sizeimage = f->fmt.pix.height * f->fmt.pix.bytesperline;
+	return 0;
+}
+
+static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
+			      struct v4l2_format *f)
+{
+	const struct s2255_fmt *fmt;
+	enum v4l2_field field;
+	int  b_any_field = 0;
+	struct s2255_fh *fh = priv;
+	struct s2255_dev *dev = fh->dev;
+	int is_ntsc;
+
+	is_ntsc =
+	    (dev->vdev[fh->channel]->current_norm & V4L2_STD_NTSC) ? 1 : 0;
+
+	fmt = format_by_fourcc(f->fmt.pix.pixelformat);
+
+	if (fmt == NULL)
+		return -EINVAL;
+
+	field = f->fmt.pix.field;
+	if (field == V4L2_FIELD_ANY)
+		b_any_field = 1;
+
+	dprintk(4, "try format %d \n", is_ntsc);
+	/* supports 3 sizes. see s2255drv.h */
+	dprintk(50, "width test %d, height %d\n",
+		f->fmt.pix.width, f->fmt.pix.height);
+	if (is_ntsc) {
+		/* NTSC */
+		if (f->fmt.pix.height >= NUM_LINES_1CIFS_NTSC * 2) {
+			f->fmt.pix.height = NUM_LINES_1CIFS_NTSC * 2;
+			if (b_any_field) {
+				field = V4L2_FIELD_SEQ_TB;
+			} else if (!((field == V4L2_FIELD_INTERLACED) ||
+				      (field == V4L2_FIELD_SEQ_TB) ||
+				      (field == V4L2_FIELD_INTERLACED_TB))) {
+				dprintk(1, "unsupported field setting\n");
+				return -EINVAL;
+			}
+		} else {
+			f->fmt.pix.height = NUM_LINES_1CIFS_NTSC;
+			if (b_any_field) {
+				field = V4L2_FIELD_TOP;
+			} else if (!((field == V4L2_FIELD_TOP) ||
+				      (field == V4L2_FIELD_BOTTOM))) {
+				dprintk(1, "unsuppor

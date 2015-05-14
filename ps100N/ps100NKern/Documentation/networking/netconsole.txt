@@ -1,0 +1,207 @@
+       (struct fb_info *info, struct i810fb_par *par);
+
+/* PCI */
+static const char *i810_pci_list[] __devinitdata = {
+	"Intel(R) 810 Framebuffer Device"                                 ,
+	"Intel(R) 810-DC100 Framebuffer Device"                           ,
+	"Intel(R) 810E Framebuffer Device"                                ,
+	"Intel(R) 815 (Internal Graphics 100Mhz FSB) Framebuffer Device"  ,
+	"Intel(R) 815 (Internal Graphics only) Framebuffer Device"        ,
+	"Intel(R) 815 (Internal Graphics with AGP) Framebuffer Device"
+};
+
+static struct pci_device_id i810fb_pci_tbl[] = {
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82810_IG1,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0 },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82810_IG3,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 1  },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82810E_IG,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 2 },
+	/* mvo: added i815 PCI-ID */
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82815_100,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 3 },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82815_NOAGP,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 4 },
+	{ PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82815_CGC,
+	  PCI_ANY_ID, PCI_ANY_ID, 0, 0, 5 },
+	{ 0 },
+};
+
+static struct pci_driver i810fb_driver = {
+	.name     =	"i810fb",
+	.id_table =	i810fb_pci_tbl,
+	.probe    =	i810fb_init_pci,
+	.remove   =	__exit_p(i810fb_remove_pci),
+	.suspend  =     i810fb_suspend,
+	.resume   =     i810fb_resume,
+};
+
+static char *mode_option __devinitdata = NULL;
+static int vram       __devinitdata = 4;
+static int bpp        __devinitdata = 8;
+static int mtrr       __devinitdata;
+static int accel      __devinitdata;
+static int hsync1     __devinitdata;
+static int hsync2     __devinitdata;
+static int vsync1     __devinitdata;
+static int vsync2     __devinitdata;
+static int xres       __devinitdata;
+static int yres;
+static int vyres      __devinitdata;
+static int sync       __devinitdata;
+static int extvga     __devinitdata;
+static int dcolor     __devinitdata;
+static int ddc3       __devinitdata = 2;
+
+/*------------------------------------------------------------*/
+
+/**************************************************************
+ *                Hardware Low Level Routines                 *
+ **************************************************************/
+
+/**
+ * i810_screen_off - turns off/on display
+ * @mmio: address of register space
+ * @mode: on or off
+ *
+ * DESCRIPTION:
+ * Blanks/unblanks the display
+ */
+static void i810_screen_off(u8 __iomem *mmio, u8 mode)
+{
+	u32 count = WAIT_COUNT;
+	u8 val;
+
+	i810_writeb(SR_INDEX, mmio, SR01);
+	val = i810_readb(SR_DATA, mmio);
+	val = (mode == OFF) ? val | SCR_OFF :
+		val & ~SCR_OFF;
+
+	while((i810_readw(DISP_SL, mmio) & 0xFFF) && count--);
+	i810_writeb(SR_INDEX, mmio, SR01);
+	i810_writeb(SR_DATA, mmio, val);
+}
+
+/**
+ * i810_dram_off - turns off/on dram refresh
+ * @mmio: address of register space
+ * @mode: on or off
+ *
+ * DESCRIPTION:
+ * Turns off DRAM refresh.  Must be off for only 2 vsyncs
+ * before data becomes corrupt
+ */
+static void i810_dram_off(u8 __iomem *mmio, u8 mode)
+{
+	u8 val;
+
+	val = i810_readb(DRAMCH, mmio);
+	val &= DRAM_OFF;
+	val = (mode == OFF) ? val : val | DRAM_ON;
+	i810_writeb(DRAMCH, mmio, val);
+}
+
+/**
+ * i810_protect_regs - allows rw/ro mode of certain VGA registers
+ * @mmio: address of register space
+ * @mode: protect/unprotect
+ *
+ * DESCRIPTION:
+ * The IBM VGA standard allows protection of certain VGA registers.  
+ * This will  protect or unprotect them. 
+ */
+static void i810_protect_regs(u8 __iomem *mmio, int mode)
+{
+	u8 reg;
+
+	i810_writeb(CR_INDEX_CGA, mmio, CR11);
+	reg = i810_readb(CR_DATA_CGA, mmio);
+	reg = (mode == OFF) ? reg & ~0x80 :
+		reg | 0x80;
+ 		
+	i810_writeb(CR_INDEX_CGA, mmio, CR11);
+	i810_writeb(CR_DATA_CGA, mmio, reg);
+}
+
+/**
+ * i810_load_pll - loads values for the hardware PLL clock
+ * @par: pointer to i810fb_par structure
+ *
+ * DESCRIPTION:
+ * Loads the P, M, and N registers.  
+ */
+static void i810_load_pll(struct i810fb_par *par)
+{
+	u32 tmp1, tmp2;
+	u8 __iomem *mmio = par->mmio_start_virtual;
+	
+	tmp1 = par->regs.M | par->regs.N << 16;
+	tmp2 = i810_readl(DCLK_2D, mmio);
+	tmp2 &= ~MN_MASK;
+	i810_writel(DCLK_2D, mmio, tmp1 | tmp2);
+	
+	tmp1 = par->regs.P;
+	tmp2 = i810_readl(DCLK_0DS, mmio);
+	tmp2 &= ~(P_OR << 16);
+	i810_writel(DCLK_0DS, mmio, (tmp1 << 16) | tmp2);
+
+	i810_writeb(MSR_WRITE, mmio, par->regs.msr | 0xC8 | 1);
+
+}
+
+/**
+ * i810_load_vga - load standard VGA registers
+ * @par: pointer to i810fb_par structure
+ *
+ * DESCRIPTION:
+ * Load values to VGA registers
+ */
+static void i810_load_vga(struct i810fb_par *par)
+{	
+	u8 __iomem *mmio = par->mmio_start_virtual;
+
+	/* interlace */
+	i810_writeb(CR_INDEX_CGA, mmio, CR70);
+	i810_writeb(CR_DATA_CGA, mmio, par->interlace);
+
+	i810_writeb(CR_INDEX_CGA, mmio, CR00);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr00);
+	i810_writeb(CR_INDEX_CGA, mmio, CR01);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr01);
+	i810_writeb(CR_INDEX_CGA, mmio, CR02);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr02);
+	i810_writeb(CR_INDEX_CGA, mmio, CR03);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr03);
+	i810_writeb(CR_INDEX_CGA, mmio, CR04);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr04);
+	i810_writeb(CR_INDEX_CGA, mmio, CR05);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr05);
+	i810_writeb(CR_INDEX_CGA, mmio, CR06);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr06);
+	i810_writeb(CR_INDEX_CGA, mmio, CR09);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr09);
+	i810_writeb(CR_INDEX_CGA, mmio, CR10);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr10);
+	i810_writeb(CR_INDEX_CGA, mmio, CR11);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr11);
+	i810_writeb(CR_INDEX_CGA, mmio, CR12);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr12);
+	i810_writeb(CR_INDEX_CGA, mmio, CR15);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr15);
+	i810_writeb(CR_INDEX_CGA, mmio, CR16);
+	i810_writeb(CR_DATA_CGA, mmio, par->regs.cr16);
+}
+
+/**
+ * i810_load_vgax - load extended VGA registers
+ * @par: pointer to i810fb_par structure
+ *
+ * DESCRIPTION:
+ * Load values to extended VGA registers
+ */
+static void i810_load_vgax(struct i810fb_par *par)
+{
+	u8 __iomem *mmio = par->mmio_start_virtual;
+
+	i810_writeb(CR_INDEX_CGA, mmio, CR30);
+	i810_writeb(CR_DATA_CGA, mmio, p

@@ -1,0 +1,23 @@
+the
+ * sequencer determines that there is a residual in the tranfer, or
+ * there is non-zero status, it will set the SG_STATUS_VALID flag in
+ * sgptr and dma the scb back into host memory.  To sumarize:
+ *
+ * Sequencer:
+ *	o A residual has occurred if SG_FULL_RESID is set in sgptr,
+ *	  or residual_sgptr does not have SG_LIST_NULL set.
+ *
+ *	o We are transfering the last segment if residual_datacnt has
+ *	  the SG_LAST_SEG flag set.
+ *
+ * Host:
+ *	o A residual can only have occurred if a completed scb has the
+ *	  SG_STATUS_VALID flag set.  Inspection of the SCSI status field,
+ *	  the residual_datacnt, and the residual_sgptr field will tell
+ *	  for sure.
+ *
+ *	o residual_sgptr and sgptr refer to the "next" sg entry
+ *	  and so may point beyond the last valid sg entry for the
+ *	  transfer.
+ */ 
+#define SG_PTR_M

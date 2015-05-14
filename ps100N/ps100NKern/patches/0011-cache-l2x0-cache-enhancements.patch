@@ -1,0 +1,210 @@
+_dma_frame + 1) % IVTV_YUV_BUFFERS;
+				atomic_set(&yi->next_dma_frame, next_dma_frame);
+				yi->fields_lapsed = -1;
+				yi->running = 1;
+			}
+		}
+	}
+	if (frame != (itv->last_vsync_field & 1)) {
+		struct ivtv_stream *s = ivtv_get_output_stream(itv);
+
+		itv->last_vsync_field += 1;
+		if (frame == 0) {
+			clear_bit(IVTV_F_I_VALID_DEC_TIMINGS, &itv->i_flags);
+			clear_bit(IVTV_F_I_EV_VSYNC_FIELD, &itv->i_flags);
+		}
+		else {
+			set_bit(IVTV_F_I_EV_VSYNC_FIELD, &itv->i_flags);
+		}
+		if (test_bit(IVTV_F_I_EV_VSYNC_ENABLED, &itv->i_flags)) {
+			set_bit(IVTV_F_I_EV_VSYNC, &itv->i_flags);
+			wake_up(&itv->event_waitq);
+		}
+		wake_up(&itv->vsync_waitq);
+		if (s)
+			wake_up(&s->waitq);
+
+		/* Send VBI to saa7127 */
+		if (frame && (itv->output_mode == OUT_PASSTHROUGH ||
+			test_bit(IVTV_F_I_UPDATE_WSS, &itv->i_flags) ||
+			test_bit(IVTV_F_I_UPDATE_VPS, &itv->i_flags) ||
+			test_bit(IVTV_F_I_UPDATE_CC, &itv->i_flags))) {
+			set_bit(IVTV_F_I_WORK_HANDLER_VBI, &itv->i_flags);
+			set_bit(IVTV_F_I_HAVE_WORK, &itv->i_flags);
+		}
+
+		/* Check if we need to update the yuv registers */
+		if (yi->running && (yi->yuv_forced_update || f->update)) {
+			if (!f->update) {
+				last_dma_frame =
+					(u8)(atomic_read(&yi->next_dma_frame) -
+						 1) % IVTV_YUV_BUFFERS;
+				f = &yi->new_frame_info[last_dma_frame];
+			}
+
+			if (f->src_w) {
+				yi->update_frame = last_dma_frame;
+				f->update = 0;
+				yi->yuv_forced_update = 0;
+				set_bit(IVTV_F_I_WORK_HANDLER_YUV, &itv->i_flags);
+				set_bit(IVTV_F_I_HAVE_WORK, &itv->i_flags);
+			}
+		}
+
+		yi->fields_lapsed++;
+	}
+}
+
+#define IVTV_IRQ_DMA (IVTV_IRQ_DMA_READ | IVTV_IRQ_ENC_DMA_COMPLETE | IVTV_IRQ_DMA_ERR | IVTV_IRQ_ENC_START_CAP | IVTV_IRQ_ENC_VBI_CAP | IVTV_IRQ_DEC_DATA_REQ | IVTV_IRQ_DEC_VBI_RE_INSERT)
+
+irqreturn_t ivtv_irq_handler(int irq, void *dev_id)
+{
+	struct ivtv *itv = (struct ivtv *)dev_id;
+	u32 combo;
+	u32 stat;
+	int i;
+	u8 vsync_force = 0;
+
+	spin_lock(&itv->dma_reg_lock);
+	/* get contents of irq status register */
+	stat = read_reg(IVTV_REG_IRQSTATUS);
+
+	combo = ~itv->irqmask & stat;
+
+	/* Clear out IRQ */
+	if (combo) write_reg(combo, IVTV_REG_IRQSTATUS);
+
+	if (0 == combo) {
+		/* The vsync interrupt is unusual and clears itself. If we
+		 * took too long, we may have missed it. Do some checks
+		 */
+		if (~itv->irqmask & IVTV_IRQ_DEC_VSYNC) {
+			/* vsync is enabled, see if we're in a new field */
+			if ((itv->last_vsync_field & 1) != (read_reg(0x28c0) & 1)) {
+				/* New field, looks like we missed it */
+				IVTV_DEBUG_YUV("VSync interrupt missed %d\n",read_reg(0x28c0)>>16);
+				vsync_force = 1;
+			}
+		}
+
+		if (!vsync_force) {
+			/* No Vsync expected, wasn't for us */
+			spin_unlock(&itv->dma_reg_lock);
+			return IRQ_NONE;
+		}
+	}
+
+	/* Exclude interrupts noted below from the output, otherwise the log is flooded with
+	   these messages */
+	if (combo & ~0xff6d0400)
+		IVTV_DEBUG_HI_IRQ("======= valid IRQ bits: 0x%08x ======\n", combo);
+
+	if (combo & IVTV_IRQ_DEC_DMA_COMPLETE) {
+		IVTV_DEBUG_HI_IRQ("DEC DMA COMPLETE\n");
+	}
+
+	if (combo & IVTV_IRQ_DMA_READ) {
+		ivtv_irq_dma_read(itv);
+	}
+
+	if (combo & IVTV_IRQ_ENC_DMA_COMPLETE) {
+		ivtv_irq_enc_dma_complete(itv);
+	}
+
+	if (combo & IVTV_IRQ_ENC_PIO_COMPLETE) {
+		ivtv_irq_enc_pio_complete(itv);
+	}
+
+	if (combo & IVTV_IRQ_DMA_ERR) {
+		ivtv_irq_dma_err(itv);
+	}
+
+	if (combo & IVTV_IRQ_ENC_START_CAP) {
+		ivtv_irq_enc_start_cap(itv);
+	}
+
+	if (combo & IVTV_IRQ_ENC_VBI_CAP) {
+		ivtv_irq_enc_vbi_cap(itv);
+	}
+
+	if (combo & IVTV_IRQ_DEC_VBI_RE_INSERT) {
+		ivtv_irq_dec_vbi_reinsert(itv);
+	}
+
+	if (combo & IVTV_IRQ_ENC_EOS) {
+		IVTV_DEBUG_IRQ("ENC EOS\n");
+		set_bit(IVTV_F_I_EOS, &itv->i_flags);
+		wake_up(&itv->eos_waitq);
+	}
+
+	if (combo & IVTV_IRQ_DEC_DATA_REQ) {
+		ivtv_irq_dec_data_req(itv);
+	}
+
+	/* Decoder Vertical Sync - We can't rely on 'combo', so check if vsync enabled */
+	if (~itv->irqmask & IVTV_IRQ_DEC_VSYNC) {
+		ivtv_irq_vsync(itv);
+	}
+
+	if (combo & IVTV_IRQ_ENC_VIM_RST) {
+		IVTV_DEBUG_IRQ("VIM RST\n");
+		/*ivtv_vapi(itv, CX2341X_ENC_REFRESH_INPUT, 0); */
+	}
+
+	if (combo & IVTV_IRQ_DEC_AUD_MODE_CHG) {
+		IVTV_DEBUG_INFO("Stereo mode changed\n");
+	}
+
+	if ((combo & AUX_REG);
++                writel(L2_ENABLE_BIT, L2_CTL_REG);
++        } else {
++                writel((readl(L2_AUX_REG)& ~L2_EVTBUS_BIT), L2_AUX_REG);
++        }
++        local_irq_restore(flags);
++}
++EXPORT_SYMBOL(l2x0_evtbus_enable);
++EXPORT_SYMBOL(l2x0_evtbus_disable);
++#endif
+ void __init l2x0_init(void __iomem *base, __u32 aux_val, __u32 aux_mask)
+ {
+ 	__u32 aux;
+@@ -105,6 +163,7 @@ void __init l2x0_init(void __iomem *base, __u32 aux_val, __u32 aux_mask)
+ 	aux = readl(l2x0_base + L2X0_AUX_CTRL);
+ 	aux &= aux_mask;
+ 	aux |= aux_val;
++	l2x0_aux = aux;
+ 	writel(aux, l2x0_base + L2X0_AUX_CTRL);
+ 
+ 	l2x0_inv_all();
+@@ -115,6 +174,28 @@ void __init l2x0_init(void __iomem *base, __u32 aux_val, __u32 aux_mask)
+ 	outer_cache.inv_range = l2x0_inv_range;
+ 	outer_cache.clean_range = l2x0_clean_range;
+ 	outer_cache.flush_range = l2x0_flush_range;
++	outer_cache.flush_all = l2x0_flush_all;
+ 
+ 	printk(KERN_INFO "L2X0 cache controller enabled\n");
+ }
++EXPORT_SYMBOL(outer_cache);
++
++void l2x0_disable(void)
++{
++	if (readl(l2x0_base + L2X0_CTRL)
++	    && !(readl(l2x0_base + L2X0_DEBUG_CTRL) & 0x2)) {
++		l2x0_flush_all();
++		writel(0, l2x0_base + L2X0_CTRL);
++		l2x0_flush_all();
++	}
++}
++
++void l2x0_enable(void)
++{
++	if (!readl(l2x0_base + L2X0_CTRL)) {
++		writel(l2x0_aux, l2x0_base + L2X0_AUX_CTRL);
++		l2x0_inv_all();
++		/* enable L2X0 */
++		writel(1, l2x0_base + L2X0_CTRL);
++	}
++}
+-- 
+1.5.4.4
+

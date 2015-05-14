@@ -1,0 +1,35 @@
+/*-*- linux-c -*-
+ *  linux/drivers/video/i810_regs.h -- Intel 810/815 Register List
+ *
+ *      Copyright (C) 2001 Antonino Daplas<adaplas@pol.net>
+ *      All Rights Reserved      
+ *
+ *
+ *  This file is subject to the terms and conditions of the GNU General Public
+ *  License. See the file COPYING in the main directory of this archive for
+ *  more details.
+ */
+
+
+/*
+ * Intel 810 Chipset Family PRM 15 3.1 
+ * GC Register Memory Address Map 
+ *
+ * Based on:
+ * Intel (R) 810 Chipset Family 
+ * Programmer s Reference Manual 
+ * November 1999 
+ * Revision 1.0 
+ * Order Number: 298026-001 R
+ *
+ * All GC registers are memory-mapped. In addition, the VGA and extended VGA registers 
+ * are I/O mapped. 
+ */
+ 
+#ifndef __I810_REGS_H__
+#define __I810_REGS_H__
+
+/*  Instruction and Interrupt Control Registers (01000h 02FFFh) */
+#define FENCE                 0x02000                
+#define PGTBL_CTL             0x02020 
+#define PGTBL_ER              0x02024

@@ -1,0 +1,106 @@
+_user(&new_line, line, size))
+			return -EFAULT;
+
+		switch (new_line.clock_type)
+		{
+		case CLOCK_EXT:      flags = HDLC_FLAG_RXC_RXCPIN | HDLC_FLAG_TXC_TXCPIN; break;
+		case CLOCK_TXFROMRX: flags = HDLC_FLAG_RXC_RXCPIN | HDLC_FLAG_TXC_RXCPIN; break;
+		case CLOCK_INT:      flags = HDLC_FLAG_RXC_BRG    | HDLC_FLAG_TXC_BRG;    break;
+		case CLOCK_TXINT:    flags = HDLC_FLAG_RXC_RXCPIN | HDLC_FLAG_TXC_BRG;    break;
+		case CLOCK_DEFAULT:  flags = info->params.flags &
+					     (HDLC_FLAG_RXC_RXCPIN | HDLC_FLAG_RXC_DPLL |
+					      HDLC_FLAG_RXC_BRG    | HDLC_FLAG_RXC_TXCPIN |
+					      HDLC_FLAG_TXC_TXCPIN | HDLC_FLAG_TXC_DPLL |
+					      HDLC_FLAG_TXC_BRG    | HDLC_FLAG_TXC_RXCPIN); break;
+		default: return -EINVAL;
+		}
+
+		if (new_line.loopback != 0 && new_line.loopback != 1)
+			return -EINVAL;
+
+		info->params.flags &= ~(HDLC_FLAG_RXC_RXCPIN | HDLC_FLAG_RXC_DPLL |
+					HDLC_FLAG_RXC_BRG    | HDLC_FLAG_RXC_TXCPIN |
+					HDLC_FLAG_TXC_TXCPIN | HDLC_FLAG_TXC_DPLL |
+					HDLC_FLAG_TXC_BRG    | HDLC_FLAG_TXC_RXCPIN);
+		info->params.flags |= flags;
+
+		info->params.loopback = new_line.loopback;
+
+		if (flags & (HDLC_FLAG_RXC_BRG | HDLC_FLAG_TXC_BRG))
+			info->params.clock_speed = new_line.clock_rate;
+		else
+			info->params.clock_speed = 0;
+
+		/* if network interface up, reprogram hardware */
+		if (info->netcount)
+			program_hw(info);
+		return 0;
+
+	default:
+		return hdlc_ioctl(dev, ifr, cmd);
+	}
+}
+
+/**
+ * called by network layer when transmit timeout is detected
+ *
+ * dev  pointer to network device structure
+ */
+static void hdlcdev_tx_timeout(struct net_device *dev)
+{
+	SLMP_INFO *info = dev_to_port(dev);
+	unsigned long flags;
+
+	if (debug_level >= DEBUG_LEVEL_INFO)
+		printk("hdlcdev_tx_timeout(%s)\n",dev->name);
+
+	dev->stats.tx_errors++;
+	dev->stats.tx_aborted_errors++;
+
+	spin_lock_irqsave(&info->lock,flags);
+	tx_stop(info);
+	spin_unlock_irqrestore(&info->lock,flags);
+
+	netif_wake_queue(dev);
+}
+
+/**
+ * called by device driver when transmit completes
+ * reenable network layer transmit if stopped
+ *
+ * info  pointer to device instance information
+ */
+static void hdlcdev_tx_done(SLMP_INFO *info)
+{
+	if (netif_queue_stopped(info->netdev))
+		netif_wake_queue(info->netdev);
+}
+
+/**
+ * called by device driver when frame received
+ * pass frame to network layer
+ *
+ * info  pointer to device instance information
+ * buf   pointer to buffer contianing frame data
+ * size  count of data bytes in buf
+ */
+static void hdlcdev_rx(SLMP_INFO *info, char *buf, int size)
+{
+	struct sk_buff *skb = dev_alloc_skb(size);
+	struct net_device *dev = info->netdev;
+
+	if (debug_level >= DEBUG_LEVEL_INFO)
+		printk("hdlcdev_rx(%s)\n",dev->name);
+
+	if (skb == NULL) {
+		printk(KERN_NOTICE "%s: can't alloc skb, dropping packet\n",
+		       dev->name);
+		dev->stats.rx_dropped++;
+		return;
+	}
+
+	memcpy(skb_put(skb, size), buf, size);
+
+	skb->protocol = hdlc_type_trans(skb, dev);
+
+	dev->st

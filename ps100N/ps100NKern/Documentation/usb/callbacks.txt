@@ -1,0 +1,222 @@
+ata = NULL;
+
+	module_put(cam->sdev->module);
+	kfree(fh);
+
+	return 0;
+}
+
+static struct v4l2_file_operations omap24xxcam_fops = {
+	.ioctl	 = video_ioctl2,
+	.poll	 = omap24xxcam_poll,
+	.mmap	 = omap24xxcam_mmap,
+	.open	 = omap24xxcam_open,
+	.release = omap24xxcam_release,
+};
+
+/*
+ *
+ * Power management.
+ *
+ */
+
+#ifdef CONFIG_PM
+static int omap24xxcam_suspend(struct platform_device *pdev, pm_message_t state)
+{
+	struct omap24xxcam_device *cam = platform_get_drvdata(pdev);
+
+	if (atomic_read(&cam->users) == 0)
+		return 0;
+
+	if (!atomic_read(&cam->reset_disable))
+		omap24xxcam_capture_stop(cam);
+
+	omap24xxcam_sensor_disable(cam);
+	omap24xxcam_poweron_reset(cam);
+
+	return 0;
+}
+
+static int omap24xxcam_resume(struct platform_device *pdev)
+{
+	struct omap24xxcam_device *cam = platform_get_drvdata(pdev);
+
+	if (atomic_read(&cam->users) == 0)
+		return 0;
+
+	omap24xxcam_hwinit(cam);
+	omap24xxcam_sensor_enable(cam);
+
+	if (!atomic_read(&cam->reset_disable))
+		omap24xxcam_capture_cont(cam);
+
+	return 0;
+}
+#endif /* CONFIG_PM */
+
+static const struct v4l2_ioctl_ops omap24xxcam_ioctl_fops = {
+	.vidioc_querycap	= vidioc_querycap,
+	.vidioc_enum_fmt_vid_cap	= vidioc_enum_fmt_vid_cap,
+	.vidioc_g_fmt_vid_cap	= vidioc_g_fmt_vid_cap,
+	.vidioc_s_fmt_vid_cap	= vidioc_s_fmt_vid_cap,
+	.vidioc_try_fmt_vid_cap	= vidioc_try_fmt_vid_cap,
+	.vidioc_reqbufs		= vidioc_reqbufs,
+	.vidioc_querybuf	= vidioc_querybuf,
+	.vidioc_qbuf		= vidioc_qbuf,
+	.vidioc_dqbuf		= vidioc_dqbuf,
+	.vidioc_streamon	= vidioc_streamon,
+	.vidioc_streamoff	= vidioc_streamoff,
+	.vidioc_enum_input	= vidioc_enum_input,
+	.vidioc_g_input		= vidioc_g_input,
+	.vidioc_s_input		= vidioc_s_input,
+	.vidioc_queryctrl	= vidioc_queryctrl,
+	.vidioc_g_ctrl		= vidioc_g_ctrl,
+	.vidioc_s_ctrl		= vidioc_s_ctrl,
+	.vidioc_g_parm		= vidioc_g_parm,
+	.vidioc_s_parm		= vidioc_s_parm,
+};
+
+/*
+ *
+ * Camera device (i.e. /dev/video).
+ *
+ */
+
+static int omap24xxcam_device_register(struct v4l2_int_device *s)
+{
+	struct omap24xxcam_device *cam = s->u.slave->master->priv;
+	struct video_device *vfd;
+	int rval;
+
+	/* We already have a slave. */
+	if (cam->sdev)
+		return -EBUSY;
+
+	cam->sdev = s;
+
+	if (device_create_file(cam->dev, &dev_attr_streaming) != 0) {
+		dev_err(cam->dev, "could not register sysfs entry\n");
+		rval = -EBUSY;
+		goto err;
+	}
+
+	/* initialize the video_device struct */
+	vfd = cam->vfd = video_device_alloc();
+	if (!vfd) {
+		dev_err(cam->dev, "could not allocate video device struct\n");
+		rval = -ENOMEM;
+		goto err;
+	}
+	vfd->release = video_device_release;
+
+	vfd->parent = cam->dev;
+
+	strlcpy(vfd->name, CAM_NAME, sizeof(vfd->name));
+	vfd->fops		 = &omap24xxcam_fops;
+	vfd->minor		 = -1;
+	vfd->ioctl_ops		 = &omap24xxcam_ioctl_fops;
+
+	omap24xxcam_hwinit(cam);
+
+	rval = omap24xxcam_sensor_init(cam);
+	if (rval)
+		goto err;
+
+	if (video_register_device(vfd, VFL_TYPE_GRABBER, video_nr) < 0) {
+		dev_err(cam->dev, "could not register V4L device\n");
+		vfd->minor = -1;
+		rval = -EBUSY;
+		goto err;
+	}
+
+	omap24xxcam_poweron_reset(cam);
+
+	dev_info(cam->dev, "registered device video%d\n", vfd->minor);
+
+	return 0;
+
+err:
+	omap24xxcam_device_unregister(s);
+
+	return rval;
+}
+
+static void omap24xxcam_device_unregister(struct v4l2_int_device *s)
+{
+	struct omap24xxcam_device *cam = s->u.slave->master->priv;
+
+	omap24xxcam_sensor_exit(cam);
+
+	if (cam->vfd) {
+		if (cam->vfd->minor == -1) {
+			/*
+			 * The device was never registered, so release the
+			 * video_device struct directly.
+			 */
+			video_device_release(cam->vfd);
+		} else {
+			/*
+			 * The unregister function will release the
+			 * video_device struct as well as
+			 * unregistering it.
+			 */
+			video_unregister_device(cam->vfd);
+		}
+		cam->vfd = NULL;
+	}
+
+	device_remove_file(cam->dev, &dev_attr_streaming);
+
+	cam->sdev = NULL;
+}
+
+static struct v4l2_int_master omap24xxcam_master = {
+	.attach = omap24xxcam_device_register,
+	.detach = omap24xxcam_device_unregister,
+};
+
+static struct v4l2_int_device omap24xxcam = {
+	.module	= THIS_MODULE,
+	.name	= CAM_NAME,
+	.type	= v4l2_int_type_master,
+	.u	= {
+		.master = &omap24xxcam_master
+	},
+};
+
+/*
+ *
+ * Driver initialisation and deinitialisation.
+ *
+ */
+
+static int __init omap24xxcam_probe(struct platform_device *pdev)
+{
+	struct omap24xxcam_device *cam;
+	struct resource *mem;
+	int irq;
+
+	cam = kzalloc(sizeof(*cam), GFP_KERNEL);
+	if (!cam) {
+		dev_err(&pdev->dev, "could not allocate memory\n");
+		goto err;
+	}
+
+	platform_set_drvdata(pdev, cam);
+
+	cam->dev = &pdev->dev;
+
+	/*
+	 * Impose a lower limit on the amount of memory allocated for
+	 * capture. We require at least enough memory to double-buffer
+	 * QVGA (300KB).
+	 */
+	if (capture_mem < 320 * 240 * 2 * 2)
+		capture_mem = 320 * 240 * 2 * 2;
+	cam->capture_mem = capture_mem;
+
+	/* request the mem region for the camera registers */
+	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!mem) {
+		dev_err(cam->dev, "no mem resource?\n");
+		goto 

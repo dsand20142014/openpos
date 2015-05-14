@@ -1,0 +1,568 @@
+k red and blue pixel swap.
+	 * 1. source data swap
+	 * 2. panel output data swap
+	 */
+	x &= ~(1 << 12);
+	x |= ((fbi->pix_fmt & 1) ^ (fbi->panel_rbswap)) << 12;
+
+	writel(x, fbi->reg_base + LCD_SPU_DMA_CTRL0);
+}
+
+static void set_dma_control1(struct pxa168fb_info *fbi, int sync)
+{
+	u32 x;
+
+	/*
+	 * Configure default bits: vsync triggers DMA, gated clock
+	 * enable, power save enable, configure alpha registers to
+	 * display 100% graphics, and set pixel command.
+	 */
+	x = readl(fbi->reg_base + LCD_SPU_DMA_CTRL1);
+	x |= 0x2032ff81;
+
+	/*
+	 * We trigger DMA on the falling edge of vsync if vsync is
+	 * active low, or on the rising edge if vsync is active high.
+	 */
+	if (!(sync & FB_SYNC_VERT_HIGH_ACT))
+		x |= 0x08000000;
+
+	writel(x, fbi->reg_base + LCD_SPU_DMA_CTRL1);
+}
+
+static void set_graphics_start(struct fb_info *info, int xoffset, int yoffset)
+{
+	struct pxa168fb_info *fbi = info->par;
+	struct fb_var_screeninfo *var = &info->var;
+	int pixel_offset;
+	unsigned long addr;
+
+	pixel_offset = (yoffset * var->xres_virtual) + xoffset;
+
+	addr = fbi->fb_start_dma + (pixel_offset * (var->bits_per_pixel >> 3));
+	writel(addr, fbi->reg_base + LCD_CFG_GRA_START_ADDR0);
+}
+
+static void set_dumb_panel_control(struct fb_info *info)
+{
+	struct pxa168fb_info *fbi = info->par;
+	struct pxa168fb_mach_info *mi = fbi->dev->platform_data;
+	u32 x;
+
+	/*
+	 * Preserve enable flag.
+	 */
+	x = readl(fbi->reg_base + LCD_SPU_DUMB_CTRL) & 0x00000001;
+
+	x |= (fbi->is_blanked ? 0x7 : mi->dumb_mode) << 28;
+	x |= mi->gpio_output_data << 20;
+	x |= mi->gpio_output_mask << 12;
+	x |= mi->panel_rgb_reverse_lanes ? 0x00000080 : 0;
+	x |= mi->invert_composite_blank ? 0x00000040 : 0;
+	x |= (info->var.sync & FB_SYNC_COMP_HIGH_ACT) ? 0x00000020 : 0;
+	x |= mi->invert_pix_val_ena ? 0x00000010 : 0;
+	x |= (info->var.sync & FB_SYNC_VERT_HIGH_ACT) ? 0 : 0x00000008;
+	x |= (info->var.sync & FB_SYNC_HOR_HIGH_ACT) ? 0 : 0x00000004;
+	x |= mi->invert_pixclock ? 0x00000002 : 0;
+
+	writel(x, fbi->reg_base + LCD_SPU_DUMB_CTRL);
+}
+
+static void set_dumb_screen_dimensions(struct fb_info *info)
+{
+	struct pxa168fb_info *fbi = info->par;
+	struct fb_var_screeninfo *v = &info->var;
+	int x;
+	int y;
+
+	x = v->xres + v->right_margin + v->hsync_len + v->left_margin;
+	y = v->yres + v->lower_margin + v->vsync_len + v->upper_margin;
+
+	writel((y << 16) | x, fbi->reg_base + LCD_SPUT_V_H_TOTAL);
+}
+
+static int pxa168fb_set_par(struct fb_info *info)
+{
+	struct pxa168fb_info *fbi = info->par;
+	struct fb_var_screeninfo *var = &info->var;
+	struct fb_videomode mode;
+	u32 x;
+	struct pxa168fb_mach_info *mi;
+
+	mi = fbi->dev->platform_data;
+
+	/*
+	 * Set additional mode info.
+	 */
+	if (fbi->pix_fmt == PIX_FMT_PSEUDOCOLOR)
+		info->fix.visual = FB_VISUAL_PSEUDOCOLOR;
+	else
+		info->fix.visual = FB_VISUAL_TRUECOLOR;
+	info->fix.line_length = var->xres_virtual * var->bits_per_pixel / 8;
+	info->fix.ypanstep = var->yres;
+
+	/*
+	 * Disable panel output while we setup the display.
+	 */
+	x = readl(fbi->reg_base + LCD_SPU_DUMB_CTRL);
+	writel(x & ~1, fbi->reg_base + LCD_SPU_DUMB_CTRL);
+
+	/*
+	 * Configure global panel parameters.
+	 */
+	writel((var->yres << 16) | var->xres,
+		fbi->reg_base + LCD_SPU_V_H_ACTIVE);
+
+	/*
+	 * convet var to video mode
+	 */
+	fb_var_to_videomode(&mode, &info->var);
+
+	/* Calculate clock divisor. */
+	set_clock_divider(fbi, &mode);
+
+	/* Configure dma ctrl regs. */
+	set_dma_control0(fbi);
+	set_dma_control1(fbi, info->var.sync);
+
+	/*
+	 * Configure graphics DMA parameters.
+	 */
+	x = readl(fbi->reg_base + LCD_CFG_GRA_PITCH);
+	x = (x & ~0xFFFF) | ((var->xres_virtual * var->bits_per_pixel) >> 3);
+	writel(x, fbi->reg_base + LCD_CFG_GRA_PITCH);
+	writel((var->yres << 16) | var->xres,
+		fbi->reg_base + LCD_SPU_GRA_HPXL_VLN);
+	writel((var->yres << 16) | var->xres,
+		fbi->reg_base + LCD_SPU_GZM_HPXL_VLN);
+
+	/*
+	 * Configure dumb panel ctrl regs & timings.
+	 */
+	set_dumb_panel_control(info);
+	set_dumb_screen_dimensions(info);
+
+	writel((var->left_margin << 16) | var->right_margin,
+			fbi->reg_base + LCD_SPU_H_PORCH);
+	writel((var->upper_margin << 16) | var->lower_margin,
+			fbi->reg_base + LCD_SPU_V_PORCH);
+
+	/*
+	 * Re-enable panel output.
+	 */
+	x = readl(fbi->reg_base + LCD_SPU_DUMB_CTRL);
+	writel(x | 1, fbi->reg_base + LCD_SPU_DUMB_CTRL);
+
+	return 0;
+}
+
+static unsigned int chan_to_field(unsigned int chan, struct fb_bitfield *bf)
+{
+	return ((chan & 0xffff) >> (16 - bf->length)) << bf->offset;
+}
+
+static u32 to_rgb(u16 red, u16 green, u16 blue)
+{
+	red >>= 8;
+	green >>= 8;
+	blue >>= 8;
+
+	return (red << 16) | (green << 8) | blue;
+}
+
+static int
+pxa168fb_setcolreg(unsigned int regno, unsigned int red, unsigned int green,
+		 unsigned int blue, unsigned int trans, struct fb_info *info)
+{
+	struct pxa168fb_info *fbi = info->par;
+	u32 val;
+
+	if (info->var.grayscale)
+		red = green = blue = (19595 * red + 38470 * green +
+					7471 * blue) >> 16;
+
+	if (info->fix.visual == FB_VISUAL_TRUECOLOR && regno < 16) {
+		val =  chan_to_field(red,   &info->var.red);
+		val |= chan_to_field(green, &info->var.green);
+		val |= chan_to_field(blue , &info->var.blue);
+		fbi->pseudo_palette[regno] = val;
+	}
+
+	if (info->fix.visual == FB_VISUAL_PSEUDOCOLOR && regno < 256) {
+		val = to_rgb(red, green, blue);
+		writel(val, fbi->reg_base + LCD_SPU_SRAM_WRDAT);
+		writel(0x8300 | regno, fbi->reg_base + LCD_SPU_SRAM_CTRL);
+	}
+
+	return 0;
+}
+
+static int pxa168fb_blank(int blank, struct fb_info *info)
+{
+	struct pxa168fb_info *fbi = info->par;
+
+	fbi->is_blanked = (blank == FB_BLANK_UNBLANK) ? 0 : 1;
+	set_dumb_panel_control(info);
+
+	return 0;
+}
+
+static int pxa168fb_pan_display(struct fb_var_screeninfo *var,
+				struct fb_info *info)
+{
+	set_graphics_start(info, var->xoffset, var->yoffset);
+
+	return 0;
+}
+
+static irqreturn_t pxa168fb_handle_irq(int irq, void *dev_id)
+{
+	struct pxa168fb_info *fbi = dev_id;
+	u32 isr = readl(fbi->reg_base + SPU_IRQ_ISR);
+
+	if ((isr & GRA_FRAME_IRQ0_ENA_MASK)) {
+
+		writel(isr & (~GRA_FRAME_IRQ0_ENA_MASK),
+			fbi->reg_base + SPU_IRQ_ISR);
+
+		return IRQ_HANDLED;
+	}
+	return IRQ_NONE;
+}
+
+static struct fb_ops pxa168fb_ops = {
+	.owner		= THIS_MODULE,
+	.fb_check_var	= pxa168fb_check_var,
+	.fb_set_par	= pxa168fb_set_par,
+	.fb_setcolreg	= pxa168fb_setcolreg,
+	.fb_blank	= pxa168fb_blank,
+	.fb_pan_display	= pxa168fb_pan_display,
+	.fb_fillrect	= cfb_fillrect,
+	.fb_copyarea	= cfb_copyarea,
+	.fb_imageblit	= cfb_imageblit,
+};
+
+static int __init pxa168fb_init_mode(struct fb_info *info,
+			      struct pxa168fb_mach_info *mi)
+{
+	struct pxa168fb_info *fbi = info->par;
+	struct fb_var_screeninfo *var = &info->var;
+	int ret = 0;
+	u32 total_w, total_h, refresh;
+	u64 div_result;
+	const struct fb_videomode *m;
+
+	/*
+	 * Set default value
+	 */
+	refresh = DEFAULT_REFRESH;
+
+	/* try to find best video mode. */
+	m = fb_find_best_mode(&info->var, &info->modelist);
+	if (m)
+		fb_videomode_to_var(&info->var, m);
+
+	/* Init settings. */
+	var->xres_virtual = var->xres;
+	var->yres_virtual = info->fix.smem_len /
+		(var->xres_virtual * (var->bits_per_pixel >> 3));
+	dev_dbg(fbi->dev, "pxa168fb: find best mode: res = %dx%d\n",
+				var->xres, var->yres);
+
+	/* correct pixclock. */
+	total_w = var->xres + var->left_margin + var->right_margin +
+		  var->hsync_len;
+	total_h = var->yres + var->upper_margin + var->lower_margin +
+		  var->vsync_len;
+
+	div_result = 1000000000000ll;
+	do_div(div_result, total_w * total_h * refresh);
+	var->pixclock = (u32)div_result;
+
+	return ret;
+}
+
+static int __init pxa168fb_probe(struct platform_device *pdev)
+{
+	struct pxa168fb_mach_info *mi;
+	struct fb_info *info = 0;
+	struct pxa168fb_info *fbi = 0;
+	struct resource *res;
+	struct clk *clk;
+	int irq, ret;
+
+	mi = pdev->dev.platform_data;
+	if (mi == NULL) {
+		dev_err(&pdev->dev, "no platform data defined\n");
+		return -EINVAL;
+	}
+
+	clk = clk_get(&pdev->dev, "LCDCLK");
+	if (IS_ERR(clk)) {
+		dev_err(&pdev->dev, "unable to get LCDCLK");
+		return PTR_ERR(clk);
+	}
+
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (res == NULL) {
+		dev_err(&pdev->dev, "no IO memory defined\n");
+		return -ENOENT;
+	}
+
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0) {
+		dev_err(&pdev->dev, "no IRQ defined\n");
+		return -ENOENT;
+	}
+
+	info = framebuffer_alloc(sizeof(struct pxa168fb_info), &pdev->dev);
+	if (info == NULL) {
+		clk_put(clk);
+		return -ENOME up the
+Wire-Adaptor environment and then suck it into the UWB stack's vision of
+the world [/drivers/uwb/lc-rc.c:uwb_rc_add()/].
+
+    *
+
+      [*] The stack should put a new RC to scan for devices
+      [/uwb_rc_scan()/] so it finds what's available around and tries to
+      connect to them, but this is policy stuff and should be driven
+      from user space. As of now, the operator is expected to do it
+      manually; see the release notes for documentation on the procedure.
+
+When a dongle is disconnected, /drivers/uwb/hwa-rc.c:hwarc_disconnect()/
+takes time of tearing everything down safely (or not...).
+
+
+      On the air: beacons and enumerating the radio neighborhood
+
+So assuming we have devices and we have agreed for a channel to connect
+on (let's say 9), we put the new RC to beacon:
+
+    *
+
+            $ echo 9 0 > /sys/class/uwb_rc/uwb0/beacon
+
+Now it is visible. If there were other devices in the same radio channel
+and beacon group (that's what the zero is for), the dongle's radio
+control interface will send beacon notifications on its
+notification/event endpoint (NEEP). The beacon notifications are part of
+the event stream that is funneled into the API with
+/drivers/uwb/neh.c:uwb_rc_neh_grok()/ and delivered to the UWBD, the UWB
+daemon through a notification list.
+
+UWBD wakes up and scans the event list; finds a beacon and adds it to
+the BEACON CACHE (/uwb_beca/). If he receives a number of beacons from
+the same device, he considers it to be 'onair' and creates a new device
+[/drivers/uwb/lc-dev.c:uwbd_dev_onair()/]. Similarly, when no beacons
+are received in some time, the device is considered gone and wiped out
+[uwbd calls periodically /uwb/beacon.c:uwb_beca_purge()/ that will purge
+the beacon cache of dead devices].
+
+
+      Device lists
+
+All UWB devices are kept in the list of the struct bus_type uwb_bus.
+
+
+      Bandwidth allocation
+
+The UWB stack maintains a local copy of DRP availability through
+processing of incoming *DRP Availability Change* notifications. This
+local copy is currently used to present the current bandwidth
+availability to the user through the sysfs file
+/sys/class/uwb_rc/uwbx/bw_avail. In the future the bandwidth
+availability information will be used by the bandwidth reservation
+routines.
+
+The bandwidth reservation routines are in progress and are thus not
+present in the current release. When completed they will enable a user
+to initiate DRP reservation requests through interaction with sysfs. DRP
+reservation requests from remote UWB devices will also be handled. The
+bandwidth management done by the UWB stack will include callbacks to the
+higher layers will enable the higher layers to use the reservations upon
+completion. [Note: The bandwidth reservation work is in progress and
+subject to change.]
+
+
+    Wireless USB Host Controller drivers
+
+*WARNING* This section needs a lot of work!
+
+As explained above, there are three different types of HCs in the WUSB
+world: HWA-HC, DWA-HC and WHCI-HC.
+
+HWA-HC and DWA-HC share that they are Wire-Adapters (USB or WUSB
+connected controllers), and their transfer management system is almost
+identical. So is their notification delivery system.
+
+HWA-HC and WHCI-HC share that they are both WUSB host controllers, so
+they have to deal with WUSB device life cycle and maintenance, wireless
+root-hub
+
+HWA exposes a Host Controller interface (HWA-HC 0xe0/02/02). This has
+three endpoints (Notifications, Data Transfer In and Data Transfer
+Out--known as NEP, DTI and DTO in the code).
+
+We reserve UWB bandwidth for our Wireless USB Cluster, create a Cluster
+ID and tell the HC to use all that. Then we start it. This means the HC
+starts sending MMCs.
+
+    *
+
+      The MMCs are blocks of data defined somewhere in the WUSB1.0 spec
+      that define a stream in the UWB channel time allocated for sending
+      WUSB IEs (host to device commands/notifications) and Device
+      Notifications (device initiated to host). Each host defines a
+      unique Wireless USB cluster through MMCs. Devices can connect to a
+      single cluster at the time. The IEs are Information Elements, and/*
+ * UWB Multi-interface Controller device management.
+ *
+ * Copyright (C) 2007 Cambridge Silicon Radio Ltd.
+ *
+ * This file is released under the GNU GPL v2.
+ */
+#include <linux/kernel.h>
+#include <linux/uwb/umc.h>
+
+static void umc_device_release(struct device *dev)
+{
+	struct umc_dev *umc = to_umc_dev(dev);
+
+	kfree(umc);
+}
+
+/**
+ * umc_device_create - allocate a child UMC device
+ * @parent: parent of the new UMC device.
+ * @n:      index of the new device.
+ *
+ * The new UMC device will have a bus ID of the parent with '-n'
+ * appended.
+ */
+struct umc_dev *umc_device_create(struct device *parent, int n)
+{
+	struct umc_dev *umc;
+
+	umc = kzalloc(sizeof(struct umc_dev), GFP_KERNEL);
+	if (umc) {
+		dev_set_name(&umc->dev, "%s-%d", dev_name(parent), n);
+		umc->dev.parent  = parent;
+		umc->dev.bus     = &umc_bus_type;
+		umc->dev.release = umc_device_release;
+
+		umc->dev.dma_mask = parent->dma_mask;
+	}
+	return umc;
+}
+EXPORT_SYMBOL_GPL(umc_device_create);
+
+/**
+ * umc_device_register - register a UMC device
+ * @umc: pointer to the UMC device
+ *
+ * The memory resource for the UMC device is acquired and the device
+ * registered with the system.
+ */
+int umc_device_register(struct umc_dev *umc)
+{
+	int err;
+
+	err = request_resource(umc->resource.parent, &umc->resource);
+	if (err < 0) {
+		dev_err(&umc->dev, "can't allocate resource range "
+			"%016Lx to %016Lx: %d\n",
+			(unsigned long long)umc->resource.start,
+			(unsigned long long)umc->resource.end,
+			err);
+		goto error_request_resource;
+	}
+
+	err = device_register(&umc->dev);
+	if (err < 0)
+		goto error_device_register;
+	return 0;
+
+error_device_register:
+	release_resource(&umc->resource);
+error_request_resource:
+	return err;
+}
+EXPORT_SYMBOL_GPL(umc_device_register);
+
+/**
+ * umc_device_unregister - unregister a UMC device
+ * @umc: pointer to the UMC device
+ *
+ * First we unregister the device, make sure the driver can do it's
+ * resource release thing and then we try to release any left over
+ * resources. We take a ref to the device, to make sure it doesn't
+ * dissapear under our feet.
+ */
+void umc_device_unregister(struct umc_dev *umc)
+{
+	struct device *dev;
+	if (!umc)
+		return;
+	dev = get_device(&umc->dev);
+	device_unregister(&umc->dev);
+	release_resource(&umc->resource);
+	put_device(dev);
+}
+EXPORT_SYMBOL_GPL(umc_device_unregister);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         rs and callback
+information. Buried in there is a lot of URBs for executing the segments
+and buffer transfers.
+
+For OUT xfers, there is an array of segments, one URB for each, another
+one of buffer URB. When submitting, we submit URBs for segment request
+1, buffer 1, segment 2, buffer 2...etc. Then we wait on the DTI for xfer
+result data; when all the segments are complete, we call the callback to
+finalize the transfer.
+
+For IN xfers, we only issue URBs for the segments we want to read and
+then wait for the xfer result data.
+
+*URB mapping into xfers*
+
+This is done by hwahc_op_urb_[en|de]queue(). In enqueue() we aim an
+rpipe to the endpoint where we have to transmit, create a transfer
+context (wa_xfer) and submit it. When the xfer is done, our callback is
+called and we assign the status bits and release the xfer resources.
+
+In dequeue() we are basically cancelling/aborting the transfer. We issue
+a xfer abort request to the HC, cancel all the URBs we had submitted
+and not yet done and when all that is done, the xfer callback will be
+called--this will call the URB callback.
+
+
+    Glossary
+
+*DWA* -- Device Wire Adapter
+
+USB host, wired for downstream devices, upstream connects wirelessly
+with Wireless USB.
+
+*EVENT* -- Response to a command on the NEEP
+
+*HWA* -- Host Wire Adapter / USB dongle for UWB and Wireless USB
+
+*NEH* -- Notification/Event Handle
+
+Handle/file descriptor for receiving notifications or events. The WA
+code requires you to get one of this to listen for notifications or
+events on the NEEP.
+
+*NEEP* -- Notification/Event EndPoint
+
+Stuff related to the management of the first endpoint of a HWA USB
+dongle that is used to deliver an stream of events and notifications to
+the host.
+
+*NOTIFICATION* -- Message coming in the NEEP as response to something.
+
+*RC* -- Radio Control
+
+Design-overview.txt-1.8 (last edited 2006-11-04 12:22:24 by
+InakyPerezGonzalez)
+

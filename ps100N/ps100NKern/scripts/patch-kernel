@@ -1,0 +1,435 @@
+options.
+ *
+ * Input:
+ *	ha = adapter block pointer.
+ *	fwopt = pointer for firmware options.
+ *
+ * Returns:
+ *	qla2x00 local function return status code.
+ *
+ * Context:
+ *	Kernel context.
+ */
+int
+qla2x00_get_fw_options(scsi_qla_host_t *vha, uint16_t *fwopts)
+{
+	int rval;
+	mbx_cmd_t mc;
+	mbx_cmd_t *mcp = &mc;
+
+	DEBUG11(printk("%s(%ld): entered.\n", __func__, vha->host_no));
+
+	mcp->mb[0] = MBC_GET_FIRMWARE_OPTION;
+	mcp->out_mb = MBX_0;
+	mcp->in_mb = MBX_3|MBX_2|MBX_1|MBX_0;
+	mcp->tov = MBX_TOV_SECONDS;
+	mcp->flags = 0;
+	rval = qla2x00_mailbox_command(vha, mcp);
+
+	if (rval != QLA_SUCCESS) {
+		/*EMPTY*/
+		DEBUG2_3_11(printk("%s(%ld): failed=%x.\n", __func__,
+		    vha->host_no, rval));
+	} else {
+		fwopts[0] = mcp->mb[0];
+		fwopts[1] = mcp->mb[1];
+		fwopts[2] = mcp->mb[2];
+		fwopts[3] = mcp->mb[3];
+
+		DEBUG11(printk("%s(%ld): done.\n", __func__, vha->host_no));
+	}
+
+	return rval;
+}
+
+
+/*
+ * qla2x00_set_fw_options
+ *	Set firmware options.
+ *
+ * Input:
+ *	ha = adapter block pointer.
+ *	fwopt = pointer for firmware options.
+ *
+ * Returns:
+ *	qla2x00 local function return status code.
+ *
+ * Context:
+ *	Kernel context.
+ */
+int
+qla2x00_set_fw_options(scsi_qla_host_t *vha, uint16_t *fwopts)
+{
+	int rval;
+	mbx_cmd_t mc;
+	mbx_cmd_t *mcp = &mc;
+
+	DEBUG11(printk("%s(%ld): entered.\n", __func__, vha->host_no));
+
+	mcp->mb[0] = MBC_SET_FIRMWARE_OPTION;
+	mcp->mb[1] = fwopts[1];
+	mcp->mb[2] = fwopts[2];
+	mcp->mb[3] = fwopts[3];
+	mcp->out_mb = MBX_3|MBX_2|MBX_1|MBX_0;
+	mcp->in_mb = MBX_0;
+	if (IS_FWI2_CAPABLE(vha->hw)) {
+		mcp->in_mb |= MBX_1;
+	} else {
+		mcp->mb[10] = fwopts[10];
+		mcp->mb[11] = fwopts[11];
+		mcp->mb[12] = 0;	/* Undocumented, but used */
+		mcp->out_mb |= MBX_12|MBX_11|MBX_10;
+	}
+	mcp->tov = MBX_TOV_SECONDS;
+	mcp->flags = 0;
+	rval = qla2x00_mailbox_command(vha, mcp);
+
+	fwopts[0] = mcp->mb[0];
+
+	if (rval != QLA_SUCCESS) {
+		/*EMPTY*/
+		DEBUG2_3_11(printk("%s(%ld): failed=%x (%x/%x).\n", __func__,
+		    vha->host_no, rval, mcp->mb[0], mcp->mb[1]));
+	} else {
+		/*EMPTY*/
+		DEBUG11(printk("%s(%ld): done.\n", __func__, vha->host_no));
+	}
+
+	return rval;
+}
+
+/*
+ * qla2x00_mbx_reg_test
+ *	Mailbox register wrap test.
+ *
+ * Input:
+ *	ha = adapter block pointer.
+ *	TARGET_QUEUE_LOCK must be released.
+ *	ADAPTER_STATE_LOCK must be released.
+ *
+ * Returns:
+ *	qla2x00 local function return status code.
+ *
+ * Context:
+ *	Kernel context.
+ */
+int
+qla2x00_mbx_reg_test(scsi_qla_host_t *vha)
+{
+	int rval;
+	mbx_cmd_t mc;
+	mbx_cmd_t *mcp = &mc;
+
+	DEBUG11(printk("qla2x00_mbx_reg_test(%ld): entered.\n", vha->host_no));
+
+	mcp->mb[0] = MBC_MAILBOX_REGISTER_TEST;
+	mcp->mb[1] = 0xAAAA;
+	mcp->mb[2] = 0x5555;
+	mcp->mb[3] = 0xAA55;
+	mcp->mb[4] = 0x55AA;
+	mcp->mb[5] = 0xA5A5;
+	mcp->mb[6] = 0x5A5A;
+	mcp->mb[7] = 0x2525;
+	mcp->out_mb = MBX_7|MBX_6|MBX_5|MBX_4|MBX_3|MBX_2|MBX_1|MBX_0;
+	mcp->in_mb = MBX_7|MBX_6|MBX_5|MBX_4|MBX_3|MBX_2|MBX_1|MBX_0;
+	mcp->tov = MBX_TOV_SECONDS;
+	mcp->flags = 0;
+	rval = qla2x00_mailbox_command(vha, mcp);
+
+	if (rval == QLA_SUCCESS) {
+		if (mcp->mb[1] != 0xAAAA || mcp->mb[2] != 0x5555 ||
+		    mcp->mb[3] != 0xAA55 || mcp->mb[4] != 0x55AA)
+			rval = QLA_FUNCTION_FAILED;
+		if (mcp->mb[5] != 0xA5A5 || mcp->mb[6] != 0x5A5A ||
+		    mcp->mb[7] != 0x2525)
+			rval = QLA_FUNCTION_FAILED;
+	}
+
+	if (rval != QLA_SUCCESS) {
+		/*EMPTY*/
+		DEBUG2_3_11(printk("qla2x00_mbx_reg_test(%ld): failed=%x.\n",
+		    vha->host_no, rval));
+	} else {
+		/*EMPTY*/
+		DEBUG11(printk("qla2x00_mbx_reg_test(%ld): done.\n",
+		    vha->host_no));
+	}
+
+	return rval;
+}
+
+/*
+ * qla2x00_verify_checksum
+ *	Verify firmware checksum.
+ *
+ * Input:
+ *	ha = adapter block pointer.
+ *	TARGET_QUEUE_LOCK must be released.
+ *	ADAPTER_STATE_LOCK must be released.
+ *
+ * Returns:
+ *	qla2x00 local function return status code.
+ *
+ * Context:
+ *	Kernel context.
+ */
+int
+qla2x00_verify_checksum(scsi_qla_host_t *vha, uint32_t risc_addr)
+{
+	int rval;
+	mbx_cmd_t mc;
+	mbx_cmd_t *mcp = &mc;
+
+	DEBUG11(printk("%s(%ld): entered.\n", __func__, vha->host_no));
+
+	mcp->mb[0] = MBC_VERIFY_CHECKSUM;
+	mcp->out_mb = MBX_0;
+	mcp->in_mb = MBX_0;
+	if (IS_FWI2_CAPABLE(vha->hw)) {
+		mcp->mb[1] = MSW(risc_addr);
+		mcp->mb[2] = LSW(risc_addr);
+		mcp->out_mb |= MBX_2|MBX_1;
+		mcp->in_mb |= MBX_2|MBX_1;
+	} else {
+		mcp->mb[1] = LSW(risc_addr);
+		mcp->out_mb |= MBX_1;
+		mcp->in_mb |= MBX_1;
+	}
+
+	mcp->tov = MBX_TOV_SECONDS;
+	mcp->flags = 0;
+	rval = qla2x00_mailbox_command(vha, mcp);
+
+	if (rval != QLA_SUCCESS) {
+		DEBUG2_3_11(printk("%s(%ld): failed=%x chk sum=%x.\n", __func__,
+		    vha->host_no, rval, IS_FWI2_CAPABLE(vha->hw) ?
+		    (mcp->mb[2] << 16) | mcp->mb[1]: mcp->mb[1]));
+	} else {
+		DEBUG11(printk("%s(%ld): done.\n", __func__, vha->host_no));
+	}
+
+	return rval;
+}
+
+/*
+ * qla2x00_issue_iocb
+ *	Issue IOCB using mailbox command
+ *
+ * Input:
+ *	ha = adapter state pointer.
+ *	buffer = buffer pointer.
+ *	phys_addr = physical address of buffer.
+ *	size = size of buffer.
+ *	TARGET_QUEUE_LOCK must be released.
+ *	ADAPTER_STATE_LOCK must be released.
+ *
+ * Returns:
+ *	qla2x00 local function return status code.
+ *
+ * Context:
+ *	Kernel context.
+ */
+static int
+qla2x00_issue_iocb_timeout(scsi_qla_host_t *vha, void *buffer,
+    dma_addr_t phys_addr, size_t size, uint32_t tov)
+{
+	int		rval;
+	mbx_cmd_t	mc;
+	mbx_cmd_t	*mcp = &mc;
+
+	mcp->mb[0] = MBC_IOCB_COMMAND_A64;
+	mcp->mb[1] = 0;
+	mcp->mb[2] = MSW(phys_addr);
+	mcp->mb[3] = LSW(phys_addr);
+	mcp->mb[6] = MSW(MSD(phys_addr));
+	mcp->mb[7] = LSW(MSD(phys_addr));
+	mcp->out_mb = MBX_7|MBX_6|MBX_3|MBX_2|MBX_1|MBX_0;
+	mcp->in_mb = MBX_2|MBX_0;
+	mcp->tov = tov;
+	mcp->flags = 0;
+	rval = qla2x00_mailbox_command(vha, mcp);
+
+	if (rval != QLA_SUCCESS) {
+		/*EMPTY*/
+		DEBUG(printk("qla2x00_issue_iocb(%ld): failed rval 0x%x\n",
+		    vha->host_no, rval));
+	} else {
+		sts_entry_t *sts_entry = (sts_entry_t *) buffer;
+
+		/* Mask reserved bits. */
+		sts_entry->entry_status &=
+		    IS_FWI2_CAPABLE(vha->hw) ? RF_MASK_24XX : RF_MASK;
+	}
+
+	return rval;
+}
+
+int
+qla2x00_issue_iocb(scsi_qla_host_t *vha, void *buffer, dma_addr_t phys_addr,
+    size_t size)
+{
+	return qla2x00_issue_iocb_timeout(vha, buffer, phys_addr, size,
+	    MBX_TOV_SECONDS);
+}
+
+/*
+ * qla2x00_abort_command
+ *	Abort command aborts a specified IOCB.
+ *
+ * Input:
+ *	ha = adapter block pointer.
+ *	sp = SB structure pointer.
+ *
+ * Returns:
+ *	qla2x00 local function return status code.
+ *
+ * Context:
+ *	Kernel context.
+ */
+int
+qla2x00_abort_command(srb_t *sp)
+{
+	unsigned long   flags = 0;
+	int		rval;
+	uint32_t	handle = 0;
+	mbx_cmd_t	mc;
+	mbx_cmd_t	*mcp = &mc;
+	fc_port_t	*fcport = sp->fcport;
+	scsi_qla_host_t *vha = fcport->vha;
+	struct qla_hw_data *ha = vha->hw;
+	struct req_que *req = vha->req;
+
+	DEBUG11(printk("qla2x00_abort_command(%ld): entered.\n", vha->host_no));
+
+	spin_lock_irqsave(&ha->hardware_lock, flags);
+	for (handle = 1; handle < MAX_OUTSTANDING_COMMANDS; handle++) {
+		if (req->outstanding_cmds[handle] == sp)
+			break;
+	}
+	spin_unlock_irqrestore(&ha->hardware_lock, flags);
+
+	if (handle == MAX_OUTSTANDING_COMMANDS) {
+		/* command not found */
+		return QLA_FUNCTION_FAILED;
+	}
+
+	mcp->mb[0] = MBC_ABORT_COMMAND;
+	if (HAS_EXTENDED_IDS(ha))
+		mcp->mb[1] = fcport->loop_id;
+	else
+		mcp->mb[1] = fcport->loop_id << 8;
+	mcp->mb[2] = (uint16_t)handle;
+	mcp->mb[3] = (uint16_t)(handle >> 16);
+	mcp->mb[6] = (uint16_t)sp->cmd->device->lun;
+	mcp->out_mb = MBX_6|MBX_3|MBX_2|MBX_1|MBX_0;
+	mcp->in_mb = MBX_0;
+	mcp->tov = MBX_TOV_SECONDS;
+	mcp->flags = 0;
+	rval = qla2x00_mailbox_command(vha, mcp);
+
+	if (rval != QLA_SUCCESS) {
+		DEBUG2_3_11(printk("qla2x00_abort_command(%ld): failed=%x.\n",
+		    vha->host_no, rval));
+	} else {
+		DEBUG11(printk("qla2x00_abort_command(%ld): done.\n",
+		    vha->host_no));
+	}
+
+	return rval;
+}
+
+int
+qla2x00_abort_target(struct fc_port *fcport, unsigned int l, int tag)
+{
+	int rval, rval2;
+	mbx_cmd_t  mc;
+	mbx_cmd_t  *mcp = &mc;
+	scsi_qla_host_t *vha;
+	struct req_que *req;
+	struct rsp_que *rsp;
+
+	DEBUG11(printk("%s(%ld): entered.\n", __func__, fcport->vha->host_no));
+
+	l = l;
+	vha = fcport->vha;
+	req = vha->hw->req_q_map[tag];
+	rsp = vha->hw->rsp_q_map[tag];
+	mcp->mb[0] = MBC_ABORT_TARGET;
+	mcp->out_mb = MBX_9|MBX_2|MBX_1|MBX_0;
+	if (HAS_EXTENDED_IDS(vha->hw)) {
+		mcp->mb[1] = fcport->loop_id;
+		mcp->mb[10] = 0;
+		mcp->out_mb |= MBX_10;
+	} else {
+		mcp->mb[1] = fcport->loop_id << 8;
+	}
+	mcp->mb[2] = vha->hw->loop_reset_delay;
+	mcp->mb[9] = vha->vp_idx;
+
+	mcp->in_mb = MBX_0;
+	mcp->tov = MBX_TOV_SECONDS;
+	mcp->flags = 0;
+	rval = qla2x00_mailbox_command(vha, mcp);
+	if (rval != QLA_SUCCESS) {
+		DEBUG2_3_11(printk("%s(%ld): failed=%x.\n", __func__,
+		    vha->host_no, rval));
+	}
+
+	/* Issue marker IOCB. */
+	rval2 = qla2x00_marker(vha, req, rsp, fcport->loop_id, 0,
+							MK_SYNC_ID);
+	if (rval2 != QLA_SUCCESS) {
+		DEBUG2_3_11(printk("%s(%ld): failed to issue Marker IOCB "
+		    "(%x).\n", __func__, vha->host_no, rval2));
+	} else {
+		DEBUG11(printk("%s(%ld): done.\n", __func__, vha->host_no));
+	}
+
+	return rval;
+}
+
+int
+qla2x00_lun_reset(struct fc_port *fcport, unsigned int l, int tag)
+{
+	int rval, rval2;
+	mbx_cmd_t  mc;
+	mbx_cmd_t  *mcp = &mc;
+	scsi_qla_host_t *vha;
+	struct req_que *req;
+	struct rsp_que *rsp;
+
+	DEBUG11(printk("%s(%ld): entered.\n", __func__, fcport->vha->host_no));
+
+	vha = fcport->vha;
+	req = vha->hw->req_q_map[tag];
+	rsp = vha->hw->rsp_q_map[tag];
+	mcp->mb[0] = MBC_LUN_RESET;
+	mcp->out_mb = MBX_9|MBX_3|MBX_2|MBX_1|MBX_0;
+	if (HAS_EXTENDED_IDS(vha->hw))
+		mcp->mb[1] = fcport->loop_id;
+	else
+		mcp->mb[1] = fcport->loop_id << 8;
+	mcp->mb[2] = l;
+	mcp->mb[3] = 0;
+	mcp->mb[9] = vha->vp_idx;
+
+	mcp->in_mb = MBX_0;
+	mcp->tov = MBX_TOV_SECONDS;
+	mcp->flags = 0;
+	rval = qla2x00_mailbox_command(vha, mcp);
+	if (rval != QLA_SUCCESS) {
+		DEBUG2_3_11(printk("%s(%ld): failed=%x.\n", __func__,
+		    vha->host_no, rval));
+	}
+
+	/* Issue marker IOCB. */
+	rval2 = qla2x00_marker(vha, req, rsp, fcport->loop_id, l,
+								MK_SYNC_ID_LUN);
+	if (rval2 != QLA_SUCCESS) {
+		DEBUG2_3_11(printk("%s(%ld): failed to issue Marker IOCB "
+		    "(%x).\n", __func__, vha->host_no, rval2));
+	} else {
+		DEBUG11(printk("%s(%ld): done.\n", __func__, vha->host_no));
+	}
+
+	return 

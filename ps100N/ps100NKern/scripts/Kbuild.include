@@ -1,0 +1,338 @@
+e IOC4_MAX_CHARS	256
+#define IOC4_FIFO_CHARS	255
+
+/* Device name we're using */
+#define DEVICE_NAME_RS232  "ttyIOC"
+#define DEVICE_NAME_RS422  "ttyAIOC"
+#define DEVICE_MAJOR	   204
+#define DEVICE_MINOR_RS232 50
+#define DEVICE_MINOR_RS422 84
+
+
+/* register offsets */
+#define IOC4_SERIAL_OFFSET	0x300
+
+/* flags for next_char_state */
+#define NCS_BREAK	0x1
+#define NCS_PARITY	0x2
+#define NCS_FRAMING	0x4
+#define NCS_OVERRUN	0x8
+
+/* cause we need SOME parameters ... */
+#define MIN_BAUD_SUPPORTED	1200
+#define MAX_BAUD_SUPPORTED	115200
+
+/* protocol types supported */
+#define PROTO_RS232	3
+#define PROTO_RS422	7
+
+/* Notification types */
+#define N_DATA_READY	0x01
+#define N_OUTPUT_LOWAT	0x02
+#define N_BREAK		0x04
+#define N_PARITY_ERROR	0x08
+#define N_FRAMING_ERROR	0x10
+#define N_OVERRUN_ERROR	0x20
+#define N_DDCD		0x40
+#define N_DCTS		0x80
+
+#define N_ALL_INPUT	(N_DATA_READY | N_BREAK |			\
+			 N_PARITY_ERROR | N_FRAMING_ERROR |		\
+			 N_OVERRUN_ERROR | N_DDCD | N_DCTS)
+
+#define N_ALL_OUTPUT	N_OUTPUT_LOWAT
+
+#define N_ALL_ERRORS	(N_PARITY_ERROR | N_FRAMING_ERROR | N_OVERRUN_ERROR)
+
+#define N_ALL		(N_DATA_READY | N_OUTPUT_LOWAT | N_BREAK |	\
+			 N_PARITY_ERROR | N_FRAMING_ERROR |		\
+			 N_OVERRUN_ERROR | N_DDCD | N_DCTS)
+
+#define SER_DIVISOR(_x, clk)		(((clk) + (_x) * 8) / ((_x) * 16))
+#define DIVISOR_TO_BAUD(div, clk)	((clk) / 16 / (div))
+
+/* Some masks */
+#define LCR_MASK_BITS_CHAR	(UART_LCR_WLEN5 | UART_LCR_WLEN6 \
+					| UART_LCR_WLEN7 | UART_LCR_WLEN8)
+#define LCR_MASK_STOP_BITS	(UART_LCR_STOP)
+
+#define PENDING(_p)	(readl(&(_p)->ip_mem->sio_ir.raw) & _p->ip_ienb)
+#define READ_SIO_IR(_p) readl(&(_p)->ip_mem->sio_ir.raw)
+
+/* Default to 4k buffers */
+#ifdef IOC4_1K_BUFFERS
+#define RING_BUF_SIZE 1024
+#define IOC4_BUF_SIZE_BIT 0
+#define PROD_CONS_MASK IOC4_PROD_CONS_PTR_1K
+#else
+#define RING_BUF_SIZE 4096
+#define IOC4_BUF_SIZE_BIT IOC4_SBBR_L_SIZE
+#define PROD_CONS_MASK IOC4_PROD_CONS_PTR_4K
+#endif
+
+#define TOTAL_RING_BUF_SIZE (RING_BUF_SIZE * 4)
+
+/*
+ * This is the entry saved by the driver - one per card
+ */
+
+#define UART_PORT_MIN		0
+#define UART_PORT_RS232		UART_PORT_MIN
+#define UART_PORT_RS422		1
+#define UART_PORT_COUNT		2	/* one for each mode */
+
+struct ioc4_control {
+	int ic_irq;
+	struct {
+		/* uart ports are allocated here - 1 for rs232, 1 for rs422 */
+		struct uart_port icp_uart_port[UART_PORT_COUNT];
+		/* Handy reference material */
+		struct ioc4_port *icp_port;
+	} ic_port[IOC4_NUM_SERIAL_PORTS];
+	struct ioc4_soft *ic_soft;
+};
+
+/*
+ * per-IOC4 data structure
+ */
+#define MAX_IOC4_INTR_ENTS	(8 * sizeof(uint32_t))
+struct ioc4_soft {
+	struct ioc4_misc_regs __iomem *is_ioc4_misc_addr;
+	struct ioc4_serial __iomem *is_ioc4_serial_addr;
+
+	/* Each interrupt type has an entry in the array */
+	struct ioc4_intr_type {
+
+		/*
+		 * Each in-use entry in this array contains at least
+		 * one nonzero bit in sd_bits; no two entries in this
+		 * array have overlapping sd_bits values.
+		 */
+		struct ioc4_intr_info {
+			uint32_t sd_bits;
+			ioc4_intr_func_f *sd_intr;
+			void *sd_info;
+		} is_intr_info[MAX_IOC4_INTR_ENTS];
+
+		/* Number of entries active in the above array */
+		atomic_t is_num_intrs;
+	} is_intr_type[IOC4_NUM_INTR_TYPES];
+
+	/* is_ir_lock must be held while
+	 * modifying sio_ie values, so
+	 * we can be sure that sio_ie is
+	 * not changing when we read it
+	 * along with sio_ir.
+	 */
+	spinlock_t is_ir_lock;	/* SIO_IE[SC] mod lock */
+};
+
+/* Local port info for each IOC4 serial ports */
+struct ioc4_port {
+	struct uart_port *ip_port;	/* current active port ptr */
+	/* Ptrs for all ports */
+	struct uart_port *ip_all_ports[UART_PORT_COUNT];
+	/* Back ptrs for this port */
+	struct ioc4_control *ip_control;
+	struct pci_dev *ip_pdev;
+	struct ioc4_soft *ip_ioc4_soft;
+
+	/* pci mem addresses */
+	struct ioc4_misc_regs __iomem *ip_mem;
+	struct ioc4_serial __iomem *ip_serial;
+	struct ioc4_serialregs __iomem *ip_serial_regs;
+	struct ioc4_uartregs __iomem *ip_uart_regs;
+
+	/* Ring buffer page for this port */
+	dma_addr_t ip_dma_ringbuf;
+	/* vaddr of ring buffer */
+	struct ring_buffer *ip_cpu_ringbuf;
+
+	/* Rings for this port */
+	struct ring *ip_inring;
+	struct ring *ip_outring;
+
+	/* Hook to port specific values */
+	struct hooks *ip_hooks;
+
+	spinlock_t ip_lock;
+
+	/* Various rx/tx parameters */
+	int ip_baud;
+	int ip_tx_lowat;
+	int ip_rx_timeout;
+
+	/* Copy of notification bits */
+	int ip_notify;
+
+	/* Shadow copies of various registers so we don't need to PIO
+	 * read them constantly
+	 */
+	uint32_t ip_ienb;	/* Enabled interrupts */
+	uint32_t ip_sscr;
+	uint32_t ip_tx_prod;
+	uint32_t ip_rx_cons;
+	int ip_pci_bus_speed;
+	unsigned char ip_flags;
+};
+
+/* tx low water mark.  We need to notify the driver whenever tx is getting
+ * close to empty so it can refill the tx buffer and keep things going.
+ * Let's assume that if we interrupt 1 ms before the tx goes idle, we'll
+ * have no trouble getting in more chars in time (I certainly hope so).
+ */
+#define TX_LOWAT_LATENCY      1000
+#define TX_LOWAT_HZ          (1000000 / TX_LOWAT_LATENCY)
+#define TX_LOWAT_CHARS(baud) (baud / 10 / TX_LOWAT_HZ)
+
+/* Flags per port */
+#define INPUT_HIGH	0x01
+#define DCD_ON		0x02
+#define LOWAT_WRITTEN	0x04
+#define READ_ABORTED	0x08
+#define PORT_ACTIVE	0x10
+#define PORT_INACTIVE	0	/* This is the value when "off" */
+
+
+/* Since each port has different register offsets and bitmasks
+ * for everything, we'll store those that we need in tables so we
+ * don't have to be constantly checking the port we are dealing with.
+ */
+struct hooks {
+	uint32_t intr_delta_dcd;
+	uint32_t intr_delta_cts;
+	uint32_t intr_tx_mt;
+	uint32_t intr_rx_timer;
+	uint32_t intr_rx_high;
+	uint32_t intr_tx_explicit;
+	uint32_t intr_dma_error;
+	uint32_t intr_clear;
+	uint32_t intr_all;
+	int rs422_select_pin;
+};
+
+static struct hooks hooks_array[IOC4_NUM_SERIAL_PORTS] = {
+	/* Values for port 0 */
+	{
+	 IOC4_SIO_IR_S0_DELTA_DCD, IOC4_SIO_IR_S0_DELTA_CTS,
+	 IOC4_SIO_IR_S0_TX_MT, IOC4_SIO_IR_S0_RX_TIMER,
+	 IOC4_SIO_IR_S0_RX_HIGH, IOC4_SIO_IR_S0_TX_EXPLICIT,
+	 IOC4_OTHER_IR_S0_MEMERR,
+	 (IOC4_SIO_IR_S0_TX_MT | IOC4_SIO_IR_S0_RX_FULL |
+	  IOC4_SIO_IR_S0_RX_HIGH | IOC4_SIO_IR_S0_RX_TIMER |
+	  IOC4_SIO_IR_S0_DELTA_DCD | IOC4_SIO_IR_S0_DELTA_CTS |
+	  IOC4_SIO_IR_S0_INT | IOC4_SIO_IR_S0_TX_EXPLICIT),
+	 IOC4_SIO_IR_S0, IOC4_GPPR_UART0_MODESEL_PIN,
+	 },
+
+	/* Values for port 1 */
+	{
+	 IOC4_SIO_IR_S1_DELTA_DCD, IOC4_SIO_IR_S1_DELTA_CTS,
+	 IOC4_SIO_IR_S1_TX_MT, IOC4_SIO_IR_S1_RX_TIMER,
+	 IOC4_SIO_IR_S1_RX_HIGH, IOC4_SIO_IR_S1_TX_EXPLICIT,
+	 IOC4_OTHER_IR_S1_MEMERR,
+	 (IOC4_SIO_IR_S1_TX_MT | IOC4_SIO_IR_S1_RX_FULL |
+	  IOC4_SIO_IR_S1_RX_HIGH | IOC4_SIO_IR_S1_RX_TIMER |
+	  IOC4_SIO_IR_S1_DELTA_DCD | IOC4_SIO_IR_S1_DELTA_CTS |
+	  IOC4_SIO_IR_S1_INT | IOC4_SIO_IR_S1_TX_EXPLICIT),
+	 IOC4_SIO_IR_S1, IOC4_GPPR_UART1_MODESEL_PIN,
+	 },
+
+	/* Values for port 2 */
+	{
+	 IOC4_SIO_IR_S2_DELTA_DCD, IOC4_SIO_IR_S2_DELTA_CTS,
+	 IOC4_SIO_IR_S2_TX_MT, IOC4_SIO_IR_S2_RX_TIMER,
+	 IOC4_SIO_IR_S2_RX_HIGH, IOC4_SIO_IR_S2_TX_EXPLICIT,
+	 IOC4_OTHER_IR_S2_MEMERR,
+	 (IOC4_SIO_IR_S2_TX_MT | IOC4_SIO_IR_S2_RX_FULL |
+	  IOC4_SIO_IR_S2_RX_HIGH | IOC4_SIO_IR_S2_RX_TIMER |
+	  IOC4_SIO_IR_S2_DELTA_DCD | IOC4_SIO_IR_S2_DELTA_CTS |
+	  IOC4_SIO_IR_S2_INT | IOC4_SIO_IR_S2_TX_EXPLICIT),
+	 IOC4_SIO_IR_S2, IOC4_GPPR_UART2_MODESEL_PIN,
+	 },
+
+	/* Values for port 3 */
+	{
+	 IOC4_SIO_IR_S3_DELTA_DCD, IOC4_SIO_IR_S3_DELTA_CTS,
+	 IOC4_SIO_IR_S3_TX_MT, IOC4_SIO_IR_S3_RX_TIMER,
+	 IOC4_SIO_IR_S3_RX_HIGH, IOC4_SIO_IR_S3_TX_EXPLICIT,
+	 IOC4_OTHER_IR_S3_MEMERR,
+	 (IOC4_SIO_IR_S3_TX_MT | IOC4_SIO_IR_S3_RX_FULL |
+	  IOC4_SIO_IR_S3_RX_HIGH | IOC4_SIO_IR_S3_RX_TIMER |
+	  IOC4_SIO_IR_S3_DELTA_DCD | IOC4_SIO_IR_S3_DELTA_CTS |
+	  IOC4_SIO_IR_S3_INT | IOC4_SIO_IR_S3_TX_EXPLICIT),
+	 IOC4_SIO_IR_S3, IOC4_GPPR_UART3_MODESEL_PIN,
+	 }
+};
+
+/* A ring buffer entry */
+struct ring_entry {
+	union {
+		struct {
+			uint32_t alldata;
+			uint32_t allsc;
+		} all;
+		struct {
+			char data[4];	/* data bytes */
+			char sc[4];	/* status/control */
+		} s;
+	} u;
+};
+
+/* Test the valid bits in any of the 4 sc chars using "allsc" member */
+#define RING_ANY_VALID \
+	((uint32_t)(IOC4_RXSB_MODEM_VALID | IOC4_RXSB_DATA_VALID) * 0x01010101)
+
+#define ring_sc     u.s.sc
+#define ring_data   u.s.data
+#define ring_allsc  u.all.allsc
+
+/* Number of entries per ring buffer. */
+#define ENTRIES_PER_RING (RING_BUF_SIZE / (int) sizeof(struct ring_entry))
+
+/* An individual ring */
+struct ring {
+	struct ring_entry entries[ENTRIES_PER_RING];
+};
+
+/* The whole enchilada */
+struct ring_buffer {
+	struct ring TX_0_OR_2;
+	struct ring RX_0_OR_2;
+	struct ring TX_1_OR_3;
+	struct ring RX_1_OR_3;
+};
+
+/* Get a ring from a port struct */
+#define RING(_p, _wh)	&(((struct ring_buffer *)((_p)->ip_cpu_ringbuf))->_wh)
+
+/* Infinite loop detection.
+ */
+#define MAXITER 10000000
+
+/* Prototypes */
+static void receive_chars(struct uart_port *);
+static void handle_intr(void *arg, uint32_t sio_ir);
+
+/*
+ * port_is_active - determines if this port is currently active
+ * @port: ptr to soft struct for this port
+ * @uart_port: uart port to test for
+ */
+static inline int port_is_active(struct ioc4_port *port,
+		struct uart_port *uart_port)
+{
+	if (port) {
+		if ((port->ip_flags & PORT_ACTIVE)
+					&& (port->ip_port == uart_port))
+			return 1;
+	}
+	return 0;
+}
+
+
+/**
+ * write_ireg - write the interrupt regs
+ * @ioc4_soft: ptr to soft struct for this port
+ * @val: value to write
+ * @which: which register

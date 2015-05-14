@@ -1,0 +1,107 @@
+T);
+		RD_REG_WORD(&reg->nvram);	/* PCI Posting. */
+		wait_cnt = NVR_WAIT_CNT;
+		do {
+			if (!--wait_cnt) {
+				DEBUG9_10(qla_printk(KERN_WARNING, ha,
+				    "NVRAM didn't go ready...\n"));
+				break;
+			}
+			NVRAM_DELAY();
+			word = RD_REG_WORD(&reg->nvram);
+		} while ((word & NVR_DATA_IN) == 0);
+
+		if (wait_cnt)
+			ret = QLA_SUCCESS;
+	} else
+		qla2x00_write_nvram_word(ha, ha->nvram_base, wprot_old);
+
+	return ret;
+}
+
+static void
+qla2x00_set_nvram_protection(struct qla_hw_data *ha, int stat)
+{
+	struct device_reg_2xxx __iomem *reg = &ha->iobase->isp;
+	uint32_t word, wait_cnt;
+
+	if (stat != QLA_SUCCESS)
+		return;
+
+	/* Set NVRAM write protection. */
+	/* Write enable. */
+	qla2x00_nv_write(ha, NVR_DATA_OUT);
+	qla2x00_nv_write(ha, 0);
+	qla2x00_nv_write(ha, 0);
+	for (word = 0; word < 8; word++)
+		qla2x00_nv_write(ha, NVR_DATA_OUT);
+
+	qla2x00_nv_deselect(ha);
+
+	/* Enable protection register. */
+	qla2x00_nv_write(ha, NVR_PR_ENABLE | NVR_DATA_OUT);
+	qla2x00_nv_write(ha, NVR_PR_ENABLE);
+	qla2x00_nv_write(ha, NVR_PR_ENABLE);
+	for (word = 0; word < 8; word++)
+		qla2x00_nv_write(ha, NVR_DATA_OUT | NVR_PR_ENABLE);
+
+	qla2x00_nv_deselect(ha);
+
+	/* Enable protection register. */
+	qla2x00_nv_write(ha, NVR_PR_ENABLE | NVR_DATA_OUT);
+	qla2x00_nv_write(ha, NVR_PR_ENABLE);
+	qla2x00_nv_write(ha, NVR_PR_ENABLE | NVR_DATA_OUT);
+	for (word = 0; word < 8; word++)
+		qla2x00_nv_write(ha, NVR_PR_ENABLE);
+
+	qla2x00_nv_deselect(ha);
+
+	/* Wait for NVRAM to become ready. */
+	WRT_REG_WORD(&reg->nvram, NVR_SELECT);
+	RD_REG_WORD(&reg->nvram);		/* PCI Posting. */
+	wait_cnt = NVR_WAIT_CNT;
+	do {
+		if (!--wait_cnt) {
+			DEBUG9_10(qla_printk(KERN_WARNING, ha,
+			    "NVRAM didn't go ready...\n"));
+			break;
+		}
+		NVRAM_DELAY();
+		word = RD_REG_WORD(&reg->nvram);
+	} while ((word & NVR_DATA_IN) == 0);
+}
+
+
+/*****************************************************************************/
+/* Flash Manipulation Routines                                               */
+/*****************************************************************************/
+
+#define OPTROM_BURST_SIZE	0x1000
+#define OPTROM_BURST_DWORDS	(OPTROM_BURST_SIZE / 4)
+
+static inline uint32_t
+flash_conf_addr(struct qla_hw_data *ha, uint32_t faddr)
+{
+	return ha->flash_conf_off | faddr;
+}
+
+static inline uint32_t
+flash_data_addr(struct qla_hw_data *ha, uint32_t faddr)
+{
+	return ha->flash_data_off | faddr;
+}
+
+static inline uint32_t
+nvram_conf_addr(struct qla_hw_data *ha, uint32_t naddr)
+{
+	return ha->nvram_conf_off | naddr;
+}
+
+static inline uint32_t
+nvram_data_addr(struct qla_hw_data *ha, uint32_t naddr)
+{
+	return ha->nvram_data_off | naddr;
+}
+
+static uint32_t
+qla24xx_r

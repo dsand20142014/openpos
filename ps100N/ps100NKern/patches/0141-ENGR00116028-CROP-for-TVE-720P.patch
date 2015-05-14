@@ -1,0 +1,261 @@
+terface.
+ *
+ */
+
+static int vidioc_querycap(struct file *file, void *fh,
+			   struct v4l2_capability *cap)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+
+	strlcpy(cap->driver, CAM_NAME, sizeof(cap->driver));
+	strlcpy(cap->card, cam->vfd->name, sizeof(cap->card));
+	cap->version = OMAP24XXCAM_VERSION;
+	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING;
+
+	return 0;
+}
+
+static int vidioc_enum_fmt_vid_cap(struct file *file, void *fh,
+				   struct v4l2_fmtdesc *f)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+	int rval;
+
+	rval = vidioc_int_enum_fmt_cap(cam->sdev, f);
+
+	return rval;
+}
+
+static int vidioc_g_fmt_vid_cap(struct file *file, void *fh,
+				struct v4l2_format *f)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+	int rval;
+
+	mutex_lock(&cam->mutex);
+	rval = vidioc_int_g_fmt_cap(cam->sdev, f);
+	mutex_unlock(&cam->mutex);
+
+	return rval;
+}
+
+static int vidioc_s_fmt_vid_cap(struct file *file, void *fh,
+				struct v4l2_format *f)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+	int rval;
+
+	mutex_lock(&cam->mutex);
+	if (cam->streaming) {
+		rval = -EBUSY;
+		goto out;
+	}
+
+	rval = vidioc_int_s_fmt_cap(cam->sdev, f);
+
+out:
+	mutex_unlock(&cam->mutex);
+
+	if (!rval) {
+		mutex_lock(&ofh->vbq.vb_lock);
+		ofh->pix = f->fmt.pix;
+		mutex_unlock(&ofh->vbq.vb_lock);
+	}
+
+	memset(f, 0, sizeof(*f));
+	vidioc_g_fmt_vid_cap(file, fh, f);
+
+	return rval;
+}
+
+static int vidioc_try_fmt_vid_cap(struct file *file, void *fh,
+				  struct v4l2_format *f)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+	int rval;
+
+	mutex_lock(&cam->mutex);
+	rval = vidioc_int_try_fmt_cap(cam->sdev, f);
+	mutex_unlock(&cam->mutex);
+
+	return rval;
+}
+
+static int vidioc_reqbufs(struct file *file, void *fh,
+			  struct v4l2_requestbuffers *b)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+	int rval;
+
+	mutex_lock(&cam->mutex);
+	if (cam->streaming) {
+		mutex_unlock(&cam->mutex);
+		return -EBUSY;
+	}
+
+	omap24xxcam_vbq_free_mmap_buffers(&ofh->vbq);
+	mutex_unlock(&cam->mutex);
+
+	rval = videobuf_reqbufs(&ofh->vbq, b);
+
+	/*
+	 * Either videobuf_reqbufs failed or the buffers are not
+	 * memory-mapped (which would need special attention).
+	 */
+	if (rval < 0 || b->memory != V4L2_MEMORY_MMAP)
+		goto out;
+
+	rval = omap24xxcam_vbq_alloc_mmap_buffers(&ofh->vbq, rval);
+	if (rval)
+		omap24xxcam_vbq_free_mmap_buffers(&ofh->vbq);
+
+out:
+	return rval;
+}
+
+static int vidioc_querybuf(struct file *file, void *fh,
+			   struct v4l2_buffer *b)
+{
+	struct omap24xxcam_fh *ofh = fh;
+
+	return videobuf_querybuf(&ofh->vbq, b);
+}
+
+static int vidioc_qbuf(struct file *file, void *fh, struct v4l2_buffer *b)
+{
+	struct omap24xxcam_fh *ofh = fh;
+
+	return videobuf_qbuf(&ofh->vbq, b);
+}
+
+static int vidioc_dqbuf(struct file *file, void *fh, struct v4l2_buffer *b)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+	struct videobuf_buffer *vb;
+	int rval;
+
+videobuf_dqbuf_again:
+	rval = videobuf_dqbuf(&ofh->vbq, b, file->f_flags & O_NONBLOCK);
+	if (rval)
+		goto out;
+
+	vb = ofh->vbq.bufs[b->index];
+
+	mutex_lock(&cam->mutex);
+	/* _needs_reset returns -EIO if reset is required. */
+	rval = vidioc_int_g_needs_reset(cam->sdev, (void *)vb->baddr);
+	mutex_unlock(&cam->mutex);
+	if (rval == -EIO)
+		schedule_work(&cam->sensor_reset_work);
+	else
+		rval = 0;
+
+out:
+	/*
+	 * This is a hack. We don't want to show -EIO to the user
+	 * space. Requeue the buffer and try again if we're not doing
+	 * this in non-blocking mode.
+	 */
+	if (rval == -EIO) {
+		videobuf_qbuf(&ofh->vbq, b);
+		if (!(file->f_flags & O_NONBLOCK))
+			goto videobuf_dqbuf_again;
+		/*
+		 * We don't have a videobuf_buffer now --- maybe next
+		 * time...
+		 */
+		rval = -EAGAIN;
+	}
+
+	return rval;
+}
+
+static int vidioc_streamon(struct file *file, void *fh, enum v4l2_buf_type i)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+	int rval;
+
+	mutex_lock(&cam->mutex);
+	if (cam->streaming) {
+		rval = -EBUSY;
+		goto out;
+	}
+
+	rval = omap24xxcam_sensor_if_enable(cam);
+	if (rval) {
+		dev_dbg(cam->dev, "vidioc_int_g_ifparm failed\n");
+		goto out;
+	}
+
+	rval = videobuf_streamon(&ofh->vbq);
+	if (!rval) {
+		cam->streaming = file;
+		sysfs_notify(&cam->dev->kobj, NULL, "streaming");
+	}
+
+out:
+	mutex_unlock(&cam->mutex);
+
+	return rval;
+}
+
+static int vidioc_streamoff(struct file *file, void *fh, enum v4l2_buf_type i)
+{
+	struct omap24xxcam_fh *ofh = fh;
+	struct omap24xxcam_device *cam = ofh->cam;
+	struct videobuf_queue *q = &ofh->vbq;
+	int rval;
+
+	atomic_inc(&cam->reset_disable);
+
+	flush_scheduled_work();
+
+	rval = videobuf_streamoff(q);
+	if (!rval) {
+		mutex_lock(&cam->mutex);
+		cam->streaming = NULL;
+		mutex_unlock(&cam->mutex);
+		sysfs_notify(&cam->dev->kobj, NULL, "streaming");
+	}
+
+	atomic_dec(&cam->reset_disable);
+
+	return rval;
+}
+
+static int vidioc_enum_input(struct file *file, void *fh,
+			     struct v4l2_input *inp)
+{
+	if (inp->index > 0)
+		return -EINVAL;
+
+	strlcpy(inp->name, "camera", sizeof(inp->name));
+	inp->type = V4L2_INPUT_TYPE_CAMERA;
+
+	return 0;
+}
+
+static int vidioc_g_input(struct file *file, void *fh, unsigned int *i)
+{
+	*i = 0;
+
+	return 0;
+}
+
+static int vidioc_s_input(struct file *file, void *fh, unsigned int i)
+{
+	if (i > 0)
+		return -EINVAL;
+
+	return 0;
+}
+
+static int vidio

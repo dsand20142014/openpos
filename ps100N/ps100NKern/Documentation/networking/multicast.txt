@@ -1,0 +1,108 @@
+strcpy(cap->driver, "stk");
+	strcpy(cap->card, "stk");
+	cap->version = DRIVER_VERSION_NUM;
+
+	cap->capabilities = V4L2_CAP_VIDEO_CAPTURE
+		| V4L2_CAP_READWRITE | V4L2_CAP_STREAMING;
+	return 0;
+}
+
+static int stk_vidioc_enum_input(struct file *filp,
+		void *priv, struct v4l2_input *input)
+{
+	if (input->index != 0)
+		return -EINVAL;
+
+	strcpy(input->name, "Syntek USB Camera");
+	input->type = V4L2_INPUT_TYPE_CAMERA;
+	return 0;
+}
+
+
+static int stk_vidioc_g_input(struct file *filp, void *priv, unsigned int *i)
+{
+	*i = 0;
+	return 0;
+}
+
+static int stk_vidioc_s_input(struct file *filp, void *priv, unsigned int i)
+{
+	if (i != 0)
+		return -EINVAL;
+	else
+		return 0;
+}
+
+/* from vivi.c */
+static int stk_vidioc_s_std(struct file *filp, void *priv, v4l2_std_id *a)
+{
+	return 0;
+}
+
+/* List of all V4Lv2 controls supported by the driver */
+static struct v4l2_queryctrl stk_controls[] = {
+	{
+		.id      = V4L2_CID_BRIGHTNESS,
+		.type    = V4L2_CTRL_TYPE_INTEGER,
+		.name    = "Brightness",
+		.minimum = 0,
+		.maximum = 0xffff,
+		.step    = 0x0100,
+		.default_value = 0x6000,
+	},
+	/*TODO: get more controls to work */
+};
+
+static int stk_vidioc_queryctrl(struct file *filp,
+		void *priv, struct v4l2_queryctrl *c)
+{
+	int i;
+	int nbr;
+	nbr = ARRAY_SIZE(stk_controls);
+
+	for (i = 0; i < nbr; i++) {
+		if (stk_controls[i].id == c->id) {
+			memcpy(c, &stk_controls[i],
+				sizeof(struct v4l2_queryctrl));
+			return 0;
+		}
+	}
+	return -EINVAL;
+}
+
+static int stk_vidioc_g_ctrl(struct file *filp,
+		void *priv, struct v4l2_control *c)
+{
+	struct stk_camera *dev = priv;
+	switch (c->id) {
+	case V4L2_CID_BRIGHTNESS:
+		c->value = dev->vsettings.brightness;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int stk_vidioc_s_ctrl(struct file *filp,
+		void *priv, struct v4l2_control *c)
+{
+	struct stk_camera *dev = priv;
+	switch (c->id) {
+	case V4L2_CID_BRIGHTNESS:
+		dev->vsettings.brightness = c->value;
+		return stk_sensor_set_brightness(dev, c->value >> 8);
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+
+static int stk_vidioc_enum_fmt_vid_cap(struct file *filp,
+		void *priv, struct v4l2_fmtdesc *fmtd)
+{
+	switch (fmtd->index) {
+	case 0:
+		fmtd->pixelformat = V4L2_PIX_FMT_RGB565;
+		strc

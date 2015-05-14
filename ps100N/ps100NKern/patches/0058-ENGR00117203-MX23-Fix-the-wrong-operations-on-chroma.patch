@@ -1,0 +1,237 @@
+ct.height;
+	fb->fmt.field = V4L2_FIELD_INTERLACED;
+	fb->fmt.bytesperline = fb->fmt.width;
+	fb->fmt.colorspace = V4L2_COLORSPACE_SMPTE170M;
+	fb->fmt.field = V4L2_FIELD_INTERLACED;
+	fb->fmt.priv = 0;
+	if (fb->fmt.pixelformat != V4L2_PIX_FMT_PAL8)
+		fb->fmt.bytesperline *= 2;
+	if (fb->fmt.pixelformat == V4L2_PIX_FMT_RGB32 ||
+	    fb->fmt.pixelformat == V4L2_PIX_FMT_YUV32)
+		fb->fmt.bytesperline *= 2;
+	fb->fmt.sizeimage = fb->fmt.bytesperline * fb->fmt.height;
+	fb->base = (void *)itv->osd_video_pbase;
+	fb->flags = 0;
+
+	if (itv->osd_chroma_key_state)
+		fb->flags |= V4L2_FBUF_FLAG_CHROMAKEY;
+
+	if (itv->osd_global_alpha_state)
+		fb->flags |= V4L2_FBUF_FLAG_GLOBAL_ALPHA;
+
+	if (yi->track_osd)
+		fb->flags |= V4L2_FBUF_FLAG_OVERLAY;
+
+	pixfmt &= 7;
+
+	/* no local alpha for RGB565 or unknown formats */
+	if (pixfmt == 1 || pixfmt > 4)
+		return 0;
+
+	/* 16-bit formats have inverted local alpha */
+	if (pixfmt == 2 || pixfmt == 3)
+		fb->capability |= V4L2_FBUF_CAP_LOCAL_INV_ALPHA;
+	else
+		fb->capability |= V4L2_FBUF_CAP_LOCAL_ALPHA;
+
+	if (itv->osd_local_alpha_state) {
+		/* 16-bit formats have inverted local alpha */
+		if (pixfmt == 2 || pixfmt == 3)
+			fb->flags |= V4L2_FBUF_FLAG_LOCAL_INV_ALPHA;
+		else
+			fb->flags |= V4L2_FBUF_FLAG_LOCAL_ALPHA;
+	}
+
+	return 0;
+}
+
+static int ivtv_s_fbuf(struct file *file, void *fh, struct v4l2_framebuffer *fb)
+{
+	struct ivtv_open_id *id = fh;
+	struct ivtv *itv = id->itv;
+	struct yuv_playback_info *yi = &itv->yuv_info;
+
+	if (!(itv->v4l2_cap & V4L2_CAP_VIDEO_OUTPUT_OVERLAY))
+		return -EINVAL;
+	if (!itv->osd_video_pbase)
+		return -EINVAL;
+
+	itv->osd_global_alpha_state = (fb->flags & V4L2_FBUF_FLAG_GLOBAL_ALPHA) != 0;
+	itv->osd_local_alpha_state =
+		(fb->flags & (V4L2_FBUF_FLAG_LOCAL_ALPHA|V4L2_FBUF_FLAG_LOCAL_INV_ALPHA)) != 0;
+	itv->osd_chroma_key_state = (fb->flags & V4L2_FBUF_FLAG_CHROMAKEY) != 0;
+	ivtv_set_osd_alpha(itv);
+	yi->track_osd = (fb->flags & V4L2_FBUF_FLAG_OVERLAY) != 0;
+	return ivtv_g_fbuf(file, fh, fb);
+}
+
+static int ivtv_overlay(struct file *file, void *fh, unsigned int on)
+{
+	struct ivtv_open_id *id = fh;
+	struct ivtv *itv = id->itv;
+
+	if (!(itv->v4l2_cap & V4L2_CAP_VIDEO_OUTPUT_OVERLAY))
+		return -EINVAL;
+
+	ivtv_vapi(itv, CX2341X_OSD_SET_STATE, 1, on != 0);
+
+	return 0;
+}
+
+static int ivtv_log_status(struct file *file, void *fh)
+{
+	struct ivtv *itv = ((struct ivtv_open_id *)fh)->itv;
+	u32 data[CX2341X_MBOX_MAX_DATA];
+
+	int has_output = itv->v4l2_cap & V4L2_CAP_VIDEO_OUTPUT;
+	struct v4l2_input vidin;
+	struct v4l2_audio audin;
+	int i;
+
+	IVTV_INFO("=================  START STATUS CARD #%d  =================\n",
+		       itv->instance);
+	IVTV_INFO("Version: %s Card: %s\n", IVTV_VERSION, itv->card_name);
+	if (itv->hw_flags & IVTV_HW_TVEEPROM) {
+		struct tveeprom tv;
+
+		ivtv_read_eeprom(itv, &tv);
+	}
+	ivtv_call_all(itv, core, log_status);
+	ivtv_get_input(itv, itv->active_input, &vidin);
+	ivtv_get_audio_input(itv, itv->audio_input, &audin);
+	IVTV_INFO("Video Input:  %s\n", vidin.name);
+	IVTV_INFO("Audio Input:  %s%s\n", audin.name,
+		(itv->dualwatch_stereo_mode & ~0x300) == 0x200 ? " (Bilingual)" : "");
+	if (has_output) {
+		struct v4l2_output vidout;
+		struct v4l2_audioout audout;
+		int mode = itv->output_mode;
+		static const char * const output_modes[5] = {
+			"None",
+			"MPEG Streaming",
+			"YUV Streaming",
+			"YUV Frames",
+			"Passthrough",
+		};
+		static const char * const audio_modes[5] = {
+			"Stereo",
+			"Left",
+			"Right",
+			"Mono",
+			"Swapped"
+		};
+		static const char * const alpha_mode[4] = {
+			"None",
+			"Global",
+			"Local",
+			"Global and Local"
+		};
+		static const char * const pixel_format[16] = {
+			"ARGB Indexed",
+			"RGB 5:6:5",
+			"ARGB 1:5:5:5",
+			"ARGB 1:4:4:4",
+			"ARGB 8:8:8:8",
+			"5",
+			"6",
+			"7",
+			"AYUV Indexed",
+			"YUV 5:6:5",
+			"AYUV 1:5:5:5",
+			"AYUV 1:4:4:4",
+			"AYUV 8:8:8:8",
+			"13",
+			"14",
+			"15",
+		};
+
+		ivtv_get_output(itv, itv->active_output, &vidout);
+		ivtv_get_audio_output(itv, 0, &audout);
+		IVTV_INFO("Video Output: %s\n", vidout.name);
+		IVTV_INFO("Audio Output: %s (Stereo/Bilingual: %s/%s)\n", audout.name,
+			audio_modes[itv->audio_stereo_mode],
+			audio_modes[itv->audio_bilingual_mode]);
+		if (mode < 0 || mode > OUT_PASSTHROUGH)
+			mode = OUT_NONE;
+		IVTV_INFO("Output Mode:  %s\n", output_modes[mode]);
+		ivtv_vapi_result(itv, data, CX2341X_OSD_GET_STATE, 0);
+		data[0] |= (read_reg(0x2a00) >> 7) & 0x40;
+		IVTV_INFO("Overlay:      %s, Alpha: %s, Pixel Format: %s\n",
+			data[0] & 1 ? "On" : "Off",
+			alpha_mode[(data[0] >> 1) & 0x3],
+			pixel_format[(data[0] >> 3) & 0xf]);
+	}
+	IVTV_INFO("Tuner:  %s\n",
+		test_bit(IVTV_F_I_RADIO_USER, &itv->i_flags) ? "Radio" : "TV");
+	cx2341x_log_status(&itv->params, itv->v4l2_dev.name);
+	IVTV_INFO("Status flags:    0x%08lx\n", itv->i_flags);
+	for (i = 0; i < IVTV_MAX_STREAMS; i++) {
+		struct ivtv_stream *s = &itv->streams[i];
+
+		if (s->vdev == NULL || s->buffers == 0)
+			continue;
+		IVTV_INFO("Stream %s: status 0x%04lx, %d%% of %d KiB (%d buffers) in use\n", s->name, s->s_flags,
+				(s->buffers - s->q_free.buffers) * 100 / s->buffers,
+				(s->buffers * s->buf_size) / 1024, s->buffers);
+	}
+
+	IVTV_INFO("Read MPG/VBI: %lld/%lld bytes\n",
+			(long long)itv->mpg_data_received,
+			(long long)itv->vbi_data_inserted);
+	IVTV_INFO("==================  END STATUS CARD #%d  ==================\n",
+			itv->instance);
+
+	return 0;
+}
+
+static int ivtv_decoder_ioctls(struct file *filp, unsigned int cmd, void *arg)
+{
+	struct ivtv_open_id *id = (struct ivtv_open_id *)filp->private_data;
+	struct ivtv *itv = id->itv;
+	int nonblocking = filp->f_flags & O_NONBLOCK;
+	struct ivtv_stream *s = &itv->streams[id->type];
+
+	switch (cmd) {
+	case IVTV_IOC_DMA_FRAME: {
+		struct ivtv_dma_frame *args = arg;
+
+		IVTV_DEBUG_IOCTL("IVTV_IOC_DMA_FRAME\n");
+		if (!(itv->v4l2_cap & V4L2_CAP_VIDEO_OUTPUT))
+			return -EINVAL;
+		if (args->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
+			return -EINVAL;
+		if (itv->output_mode == OUT_UDMA_YUV && args->y_source == NULL)
+			return 0;
+		if (ivtv_start_decoding(id, id->type)) {
+			return -EBUSY;
+		}
+		if (ivtv_set_output_mode(itv, OUT_UDMA_YUV) != OUT_UDMA_YUV) {
+			ivtv_release_stream(s);
+			return -EBUSY;
+		}
+		/* Mark that this file handle started the UDMA_YUV mode */
+		id->yuv_frames = 1;
+		if (args->y_source == NULL)
+			return 0;
+		return ivtv_yuv_prep_frame(itv, args);
+	}
+
+	case VIDEO_GET_PTS: {
+		u32 data[CX2341X_MBOX_MAX_DATA];
+		u64 *pts = arg;
+
+		IVTV_DEBUG_IOCTL("VIDEO_GET_PTS\n");
+		if (s->type < IVTV_DEC_STREAM_TYPE_MPG) {
+			*pts = s->dma_pts;
+			break;
+		}
+		if (!(itv->v4l2_cap & V4L2_CAP_VIDEO_OUTPUT))
+			return -EINVAL;
+
+		if (test_bit(IVTV_F_I_VALID_DEC_TIMINGS, &itv->i_flags)) {
+			*pts = (u64) ((u64)itv->last_dec_timing[2] << 32) |
+					(u64)itv->last_dec_timing[1];
+			break;
+		}
+		*pts = 0;
+		if (atomic_read(&itv->de

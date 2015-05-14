@@ -1,0 +1,54 @@
+unction always returns
+ * 0. If this function is called for ELS ring, this function checks if
+ * there is a vport associated with the ELS command. This function also
+ * starts els_tmofunc timer if this is an ELS command.
+ **/
+static int
+lpfc_sli_ringtxcmpl_put(struct lpfc_hba *phba, struct lpfc_sli_ring *pring,
+			struct lpfc_iocbq *piocb)
+{
+	list_add_tail(&piocb->list, &pring->txcmplq);
+	pring->txcmplq_cnt++;
+	if ((unlikely(pring->ringno == LPFC_ELS_RING)) &&
+	   (piocb->iocb.ulpCommand != CMD_ABORT_XRI_CN) &&
+	   (piocb->iocb.ulpCommand != CMD_CLOSE_XRI_CN)) {
+		if (!piocb->vport)
+			BUG();
+		else
+			mod_timer(&piocb->vport->els_tmofunc,
+				  jiffies + HZ * (phba->fc_ratov << 1));
+	}
+
+
+	return 0;
+}
+
+/**
+ * lpfc_sli_ringtx_get - Get first element of the txq
+ * @phba: Pointer to HBA context object.
+ * @pring: Pointer to driver SLI ring object.
+ *
+ * This function is called with hbalock held to get next
+ * iocb in txq of the given ring. If there is any iocb in
+ * the txq, the function returns first iocb in the list after
+ * removing the iocb from the list, else it returns NULL.
+ **/
+static struct lpfc_iocbq *
+lpfc_sli_ringtx_get(struct lpfc_hba *phba, struct lpfc_sli_ring *pring)
+{
+	struct lpfc_iocbq *cmd_iocb;
+
+	list_remove_head((&pring->txq), cmd_iocb, struct lpfc_iocbq, list);
+	if (cmd_iocb != NULL)
+		pring->txq_cnt--;
+	return cmd_iocb;
+}
+
+/**
+ * lpfc_sli_next_iocb_slot - Get next iocb slot in the ring
+ * @phba: Pointer to HBA context object.
+ * @pring: Pointer to driver SLI ring object.
+ *
+ * This function is called with hbalock held and the caller must post the
+ * iocb without releasing the lock. If the caller releases the lock,
+ * iocb slot returned by the function

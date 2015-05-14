@@ -1,0 +1,2604 @@
+ a transaction
+ * label to match the response to the request.  This label has to be
+ * different from any other transaction label in an outstanding request to
+ * the same node to make matching possible without ambiguity.
+ *
+ * There are 64 different tlabels, so an allocated tlabel has to be freed
+ * with hpsb_free_tlabel() after the transaction is complete (unless it's
+ * reused again for the same target node).
+ *
+ * Return value: Zero on success, otherwise non-zero. A non-zero return
+ * generally means there are no available tlabels. If this is called out
+ * of interrupt or atomic context, then it will sleep until can return a
+ * tlabel or a signal is received.
+ */
+int hpsb_get_tlabel(struct hpsb_packet *packet)
+{
+	if (irqs_disabled() || in_atomic())
+		return hpsb_get_tlabel_atomic(packet);
+
+	/* NB: The macro wait_event_interruptible() is called with a condition
+	 * argument with side effect.  This is only possible because the side
+	 * effect does not occur until the condition became true, and
+	 * wait_event_interruptible() won't evaluate the condition again after
+	 * that. */
+	return wait_event_interruptible(tlabel_wq,
+					!hpsb_get_tlabel_atomic(packet));
+}
+
+/**
+ * hpsb_free_tlabel - free an allocated transaction label
+ * @packet: packet whose tlabel and tl_pool needs to be cleared
+ *
+ * Frees the transaction label allocated with hpsb_get_tlabel().  The
+ * tlabel has to be freed after the transaction is complete (i.e. response
+ * was received for a split transaction or packet was sent for a unified
+ * transaction).
+ *
+ * A tlabel must not be freed twice.
+ */
+void hpsb_free_tlabel(struct hpsb_packet *packet)
+{
+	unsigned long flags, *tp;
+	int tlabel, n = NODEID_TO_NODE(packet->node_id);
+
+	if (unlikely(n == ALL_NODES))
+		return;
+	tp = packet->host->tl_pool[n].map;
+	tlabel = packet->tlabel;
+	BUG_ON(tlabel > 63 || tlabel < 0);
+
+	spin_lock_irqsave(&hpsb_tlabel_lock, flags);
+	BUG_ON(!__test_and_clear_bit(tlabel, tp));
+	spin_unlock_irqrestore(&hpsb_tlabel_lock, flags);
+
+	wake_up_interruptible(&tlabel_wq);
+}
+
+/**
+ * hpsb_packet_success - Make sense of the ack and reply codes
+ *
+ * Make sense of the ack and reply codes and return more convenient error codes:
+ * 0 = success.  -%EBUSY = node is busy, try again.  -%EAGAIN = error which can
+ * probably resolved by retry.  -%EREMOTEIO = node suffers from an internal
+ * error.  -%EACCES = this transaction is not allowed on requested address.
+ * -%EINVAL = invalid address at node.
+ */
+int hpsb_packet_success(struct hpsb_packet *packet)
+{
+	switch (packet->ack_code) {
+	case ACK_PENDING:
+		switch ((packet->header[1] >> 12) & 0xf) {
+		case RCODE_COMPLETE:
+			return 0;
+		case RCODE_CONFLICT_ERROR:
+			return -EAGAIN;
+		case RCODE_DATA_ERROR:
+			return -EREMOTEIO;
+		case RCODE_TYPE_ERROR:
+			return -EACCES;
+		case RCODE_ADDRESS_ERROR:
+			return -EINVAL;
+		default:
+			HPSB_ERR("received reserved rcode %d from node %d",
+				 (packet->header[1] >> 12) & 0xf,
+				 packet->node_id);
+			return -EAGAIN;
+		}
+
+	case ACK_BUSY_X:
+	case ACK_BUSY_A:
+	case ACK_BUSY_B:
+		return -EBUSY;
+
+	case ACK_TYPE_ERROR:
+		return -EACCES;
+
+	case ACK_COMPLETE:
+		if (packet->tcode == TCODE_WRITEQ
+		    || packet->tcode == TCODE_WRITEB) {
+			return 0;
+		} else {
+			HPSB_ERR("impossible ack_complete from node %d "
+				 "(tcode %d)", packet->node_id, packet->tcode);
+			return -EAGAIN;
+		}
+
+	case ACK_DATA_ERROR:
+		if (packet->tcode == TCODE_WRITEB
+		    || packet->tcode == TCODE_LOCK_REQUEST) {
+			return -EAGAIN;
+		} else {
+			HPSB_ERR("impossible ack_data_error from node %d "
+				 "(tcode %d)", packet->node_id, packet->tcode);
+			return -EAGAIN;
+		}
+
+	case ACK_ADDRESS_ERROR:
+		return -EINVAL;
+
+	case ACK_TARDY:
+	case ACK_CONFLICT_ERROR:
+	case ACKX_NONE:
+	case ACKX_SEND_ERROR:
+	case ACKX_ABORTED:
+	case ACKX_TIMEOUT:
+		/* error while sending */
+		return -EAGAIN;
+
+	default:
+		HPSB_ERR("got invalid ack %d from node %d (tcode %d)",
+			 packet->ack_code, packet->node_id, packet->tcode);
+		return -EAGAIN;
+	}
+}
+
+struct hpsb_packet *hpsb_make_readpacket(struct hpsb_host *host, nodeid_t node,
+					 u64 addr, size_t length)
+{
+	struct 5D0007810DC236800F1120920474F042105A0A0
+:1005E0004000F1127810511F7120404FA47005A0F7
+:1005F00040000C13507485A4000040000C137920B7
+:10060000000191200080D4728CA23D30902178109E
+:10061000B12B9120008091203D307920004F712036
+:100620001000680016136C7865A04000161378104F
+:10063000DC23E000CF127810164B7800CF123C1369
+:100640003C133E133E134B134B134B134B135613D8
+:100650005613631363134B134B134B134B133C137E
+:100660003C133E133E134B134B134B134B135613B8
+:100670005613631363134B134B134B134B13780035
+:100680003C137E007E107E12912000247810D12928
+:100690007F127F107F00912001807C007E007E1001
+:1006A0007E127810C8137F127F107F009120018086
+:1006B0007C007E007E107E12912000237810D129CC
+:1006C0007F127F107F00912001807C007E007E10D1
+:1006D0007E12912000237810D129912000247810D7
+:1006E000D1297F127F107F00912001807C0094131C
+:1006F000941396139613A313A313A313A313AE1368
+:10070000AE1396139613A313A313A313A313AF133C
+:10071000AF13AF13AF13AF13AF13AF13AF13AF13C9
+:10072000AF13AF13AF13AF13AF13AF13AF13780003
+:1007300094137E007E107E12912000237810D12920
+:100740007F127F107F00912001807C007E007E1050
+:100750007E127810D5137F127F107F0091200180C8
+:100760007C007C007E107E127E0D7E0E7E0F7E0051
+:10077000712000016920404F7920004FEC7084A067
+:10078000001CE2787810B04D7F007F0F7F0E7F0D48
+:100790007F127F107C00003C84A007007900CD13FD
+:1007A000DE13DE13E013E013E513E513EA13EA1397
+:1007B000003C84A003007900DA13DE13DE13F31388
+:1007C000F3137810B229912000227810EC477C00B6
+:1007D000912000217810EC477C00912000217810B6
+:1007E000EC47912000227810EC477C0091200021FA
+:1007F0007810EC477C00181418141A141A142714D3
+:10080000271427142714321432143F143F142714CA
+:100810002714271427145014501450145014501433
+:1008200050145014501450145014501450145014A8
+:10083000501450145014780018147E007E107E124C
+:10084000912000247810D1297F127F107F00912001
+:1008500001807C007E007E107E127810C8137F120B
+:100860007F107F00912001807C007E007E107E1230
+:10087000912000237810D1297F127F107F009120D2
+:1008800001807C007E007E107E1291200023781073
+:10089000D129912000247810D1297F127F107F0068
+:1008A000912001807C007E007E107E127E0D7E0EE7
+:1008B0007E0F7920004F712000026920404F003DDB
+:1008C0008CD040006614EC7084A0001CE278781094
+:1008D000B04D003D84D0400074146920804F7120D9
+:1008E0000001EC7084A0001CE6787810B04D7F0FFA
+:1008F0007F0E7F0D7F127F107F007C0008700B80C1
+:10090000C8008914077002008CA0E001C0008A149E
+:100910009CD0400089147A087A09C370024078009C
+:10092000C41568001A1561200000186084D0C0004A
+:100930001A15287805A0C0009E1410001B15780019
+:100940001A151079F4D14000A4147800B914147960
+:10095000ECD14000BD14FCD04000B3147E007810F0
+:10096000AE1D7F004000BD147800B9147E007810E1
+:10097000A11D7F004000BD14012007407800C31571
+:100980001079FCD0C000C7146120404F9CC1FCC747
+:100990007800CB146120804F9DC1FDC7646005A025
+:1009A000C0001A15127982602878FCC086A0180051
+:1009B000C000DB147E0C7810851B7F0C2B780000A8
+:1009C0007C6065A0400000157E0C9C607810901E35
+:1009D0007F0C9F6000007810D51C092018008760EC
+:1009E000030110787E00FF84C000F614FF854000EC
+:1009F000F814C5C012787810BB1D7F001278C000B3
+:100A0000141578100D1E10789CD0C00008156120B8
+:100A1000404F78000C156120804F9CC012787F6099
+:100A20000000D460DCD040001815DCC0D660012086
+:100A300005407800C3157800C1157C001078F4D00B
+:100A400040002315012007407800C31506A0C2709E
+:100A5000C670CA70CE70DA70C0703DA08AA0400027
+:100A6000C80031157900381500218AA04000C8005F
+:100A7000CF1579007815C1151716E0154F16871692
+:100A80008716D715ED1C9216CF15E415E615E81557
+:100A9000EA15F21CCF15A016FD16A51BE71CEC15D8
+:100AA000EA192C1A671AB81AA519B219C619D91950
+:100AB000EB17CF15341741174D1759176F177B17C1
+:100AC0007E178A1796179E17D317DF17CF15CF15E6
+:100AD000CF15CF15F8170A1826185C188418941823
+:100AE0009718C818F9180B1974198419CF15CF1550
+:100AF000CF15CF159419CF15CF15CF15CF15CF150D
+:100B0000171D1D1DCF15CF15CF15211D661DCF1526
+:100B1000CF15CF15CF15111681169A16F7169F1BF4
+:100B2000CF15CF15681BCF156A1D091D131DCF15D5
+:100B3000CF15CF15CF15CF15CF15CF15CF15CF1595
+:100B4000CF15CF15CF15CF15CF15CF15CF15CF1585
+:100B5000CF15CF15CF15CF15CF15CF15CF15CF1575
+:100B6000CF15CF15CF15CF15CF15CF15CF15CF1565
+:100B7000CF15CF15CF15CA72C67101200640780077
+:100B8000C315CE73CA72C67101200040C2706800DE
+:100B9000C415612000001B600100912000509120CD
+:100BA00
+int hpsb_read(struct hpsb_host *host, nodeid_t node, unsigned int generation,
+	      u64 addr, quadlet_t * buffer, size_t length)
+{
+	struct hpsb_packet *packet;
+	int retval = 0;
+
+	if (length == 0)
+		return -EINVAL;
+
+	packet = hpsb_make_readpacket(host, node, addr, length);
+
+	if (!packet) {
+		return -ENOMEM;
+	}
+
+	packet->generation = generation;
+	retval = hpsb_send_packet_and_wait(packet);
+	if (retval < 0)
+		goto hpsb_read_fail;
+
+	retval = hpsb_packet_success(packet);
+
+	if (retval == 0) {
+		if (length == 4) {
+			*buffer = packet->header[3];
+		} else {
+			memcpy(buffer, packet->data, length);
+		}
+	}
+
+      hpsb_read_fail:
+	hpsb_free_tlabel(packet);
+	hpsb_free_packet(packet);
+
+	return retval;
+}
+
+/**
+ * hpsb_write - generic write function
+ *
+ * Recognizes the local node ID and act accordingly.  Automatically uses a
+ * quadlet write request if @length == 4 and and a block write request
+ * otherwise.  It does not yet support lengths that are not a multiple of 4.
+ *
+ * You must explicitly specifiy the @generation for which the node ID is valid,
+ * to avoid sending packets to the wrong nodes when we race with a bus reset.
+ */
+int hpsb_write(struct hpsb_host *host, nodeid_t node, unsigned int generation,
+	       u64 addr, quadlet_t * buffer, size_t length)
+{
+	struct hpsb_packet *packet;
+	int retval;
+
+	if (length == 0)
+		return -EINVAL;
+
+	packet = hpsb_make_writepacket(host, node, addr, buffer, length);
+
+	if (!packet)
+		return -ENOMEM;
+
+	packet->generation = generation;
+	retval = hpsb_send_packet_and_wait(packet);
+	if (retval < 0)
+		goto hpsb_write_fail;
+
+	retval = hpsb_packet_success(packet);
+
+      hpsb_write_fail:
+	hpsb_free_tlabel(packet);
+	hpsb_free_packet(packet);
+
+	return retval;
+}
+
+int hpsb_lock(struct hpsb_host *host, nodeid_t node, unsigned int generation,
+	      u64 addr, int extcode, quadlet_t *data, quadlet_t arg)
+{
+	struct hpsb_packet *packet;
+	int retval = 0;
+
+	packet = hpsb_make_lockpacket(host, node, addr, extcode, data, arg);
+	if (!packet)
+		return -ENOMEM;
+
+	packet->generation = generation;
+	retval = hpsb_send_packet_and_wait(packet);
+	if (retval < 0)
+		goto hpsb_lock_fail;
+
+	retval = hpsb_packet_success(packet);
+
+	if (retval == 0)
+		*data = packet->data[0];
+
+hpsb_lock_fail:
+	hpsb_free_tlabel(packet);
+	hpsb_free_packet(packet);
+
+	return retval;
+}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       F4000BC181021C4717800B8151120B1
+:101180008D4F042212217E00FDC37810AB277F0211
+:101190007F017800BF15C47182A110004800D418E7
+:1011A0001078ECD0C000B915C8727800B8151120BD
+:1011B0004E4F04227E00122119200000781089274A
+:1011C0001078ECD04000E4187F017800C015C87199
+:1011D00082A110004800ED181021C4717800B815E4
+:1011E00011208E4F04227E001221FDC37810892722
+:1011F0007F027F017800BF15C471C87284A1FDFF12
+:10120000C000B81584A2FDFFC000B81500212079E8
+:1012100022780022247A26787800BF15C471FCD188
+:10122000C00013191120C053780015191120405423
+:10123000078184A00F0003800380038068A2192027
+:101240000000C872BCD2400024199DA31000B4D283
+:10125000400029199DA308009120008000687E00AD
+:1012600026A240004819026AECD440003519A5C3F3
+:10127000E4D4400039199DC3F4D4400048190F81CB
+:10128000F4D24000441978100828780048197810E2
+:10129000E62778004819CC72086806A240006A194F
+:1012A000A4A2FF001478E4D0C0005B1982A4280037
+:1012B000480067194000671978005F1982A443004D
+:1012C00048006719C471C6717F02CA7291200180FB
+:1012D0007800BA150A6A9DA30A00046805A3066887
+:1012E0007F020C6BC471912001807800BE15C47719
+:1012F00078102B1E91200080146A1C6B91200180B5
+:10130000C8701668CC701E6808277800BE15C470B7
+:101310006120404F18611A601078ECD0C000C015F1
+:10132000C8706120804F18621A607800BF15C471C0
+:10133000C872CC7382A11000C800B91578102A2891
+:1013400084A300404000A31995A220007800BE1598
+:10135000C47778102B1E91200080086A8DC20A6A1B
+:101360009120018008277800BF15C47778102B1EC4
+:1013700091200080086A94A2F9FF0A6A046805A017
+:101380004000C11978106F2691200180082778004D
+:10139000BF15C47778102B1E91200080086A95C273
+:1013A0000A6A046805A04000D41978106F269120BD
+:1013B000018008277800BF15C4774120010049202B
+:1013C000050051202000912000807810461E9120B9
+:1013D00001800827086A7800BF15C4771478E4D024
+:1013E000C000FE19FCD74000F8197810AE1D40006F
+:1013F000FE197800C3157810A11D4000FE19780071
+:10140000C315C873CC72C677CA73CE727810CD1E5E
+:10141000C000281A186805A04000221A08277E0775
+:1014200078105A287F07C000221A01201500FCD727
+:10143000C0001B1A6120404F78001E1AFDC06120B9
+:10144000804F2A78912001807C009120018001202A
+:1014500005407800C315912001807800C115C4773C
+:101460001478E4D0C000401AFCD740003A1A781033
+:10147000AE1D4000401A7800C3157810A11D400031
+:10148000401A7800C315C677412021004920050085
+:1014900051202000912000807810461E092016005F
+:1014A000FCD7C000541A6120404F7800571A6120C1
+:1014B000804FFDC1676003007F6000007667836036
+:1014C0000F002A79D461DCC1D66178106F26912093
+:1014D00001807C00C877CA77C477C6771478E4D0D7
+:1014E000C0007E1AFCD74000781A7810AE1D40006C
+:1014F0007E1A7800C3157810A11D40007E1A78006E
+:10150000C315BCA700FF9120008009201700FCD75D
+:10151000C0008B1A6120404F78008E1A6120804FE6
+:10152000FDC17F60000067600200766783600F0086
+:101530002A79D461DCC1D66178106F2691200180B0
+:1015400041202100492005005120100091200080F9
+:10155000C87005A04000AC1AD460FDC0D6607810F9
+:10156000461EC8703668388784A71F00C000AC1AB2
+:10157000912001807C00192000001478E4D0C00084
+:10158000CE1AC87284D24000C81A7810AE1D40002E
+:10159000CE1A7800C3157810A11D4000CE1A78002D
+:1015A000C315C872CA72AC7884A00300C000F91ACF
+:1015B0003920000084D24000DB1AFDC74120210001
+:1015C000492004005120080078102B1E9120008033
+:1015D0000868D4C00DA80A6991200180388784A7C3
+:1015E0001F00C000E11ABCA700FF3F8738873F8774
+:1015F00084A7000FC000E11A91200080C87284D235
+:10160000C0000B1B1078ECD04000071B69200001C4
+:1016100078000D1B6920000278000D1B6920000175
+:10162000086884A0FDFF0A683068B4D040002D1B14
+:101630004B680400A9201400486894D040001F1B88
+:10164000F000191B4B680900A9201400486884D0D9
+:101650004000291BF000231BA920FA00F0002B1BDF
+:101660007920004F09201800C87284D2C000391BAD
+:101670006120404F78003C1B6120804FFDC17F609E
+:1016800000002A796760010083600F00A7600000F6
+:10169000A860B260B660D460B4D04000581BB4C03B
+:1016A000D6607E0CB86065A00860D4C00A6018607F
+:1016B00001801A607F0CD46084A0FF77D660AC787C
+:1016C0008DC0AE78FF834000631B7C001B68470021
+:1016D000912001807C00CC737810BA1AEC69486ABA
+:1016E00085A100184A6885A14000EE68CC732120CE
+:1016F0000400A920FF09F000781B2184C000761B9C
+:101700001983C000741BEE694A6A912001807C0035
+:10171000FCD7C0008C1B6920404F78008E1B6920CD
+:10172000804FC471C6711669FF81C000961BA768FF
+:101730000100AC788CC0AE7884D0C0009E1B7810BD
+:101740002D1F7C00D875DC74DA75DE747800A71B59
+:101750002EA02025C471C873CC72C671CA73CE7214
+:101760007920004FDE7DDA7CD67BD27A7810041E99
+:101770004000D11CA9200500A120144F9120008019
+:10178000A1419120018009204000781018204000DC
+:10179000CA1B78100D1E7800D11C04608CA0FF00BD
+:1017A0008EA10900C000D51B7E007810BF237F00EA
+:1017B00084A000FF078009804000611C7E0C682C1B
+:1017C0007810041E40001B1C002C9E680981C0007C
+:1017D000DC1B9F6000007F0C7E0CDC7DD87CD47B02
+:1017E000D07A90A2400099A30000A1A40000A9A56E
+:1017F0000000DE7DDA7CD67BD27A682C9C6865A0FE
+:101800004000601C0920400078101820C0003E1CD9
+:10181000046084A0FF0086A00200C0001B1C0460BE
+:1018200084A0FF0086A00A00C000171C7E0178106B
+:10183000BB237F01002D02607800EA1B7F0C7E0C29
+:101840009C607810901E7F0C9F6000007810D51C63
+:10185000092018000860CDC00A6004608660107816
+:101860007E00FF84C000341CFF854000361CC5C0CC
+:1018700012787810BB1D7F00127878100D1E78004A
+:10188000D11C7F0C7E0C9C607810901E7F0C9F609A
+:1018900000007810D51C09201800876003011B6028
+:1018A000030010787E00FF84C000561CFF854000B6
+:1018B000581CC5C012787810BB1D7F0012787810B4
+:1018C0000D1E7800D11C7F0C1478E4D0C0008F1C52
+:1018D0001461FCD140006F1C7810AE1D40008F1CBD
+:1018E0007800731C7810A11D40008F1C7810D51C47
+:1018F00009201800876003011B60210010787E001A
+:10190000FF84C000831CFF854000851CC5C0127881
+:101910007810BB1D7F00127878100D1E0120074043
+:101920007800C315C474C873CC7214609120008011
+:101930007E0E09201200FCD0C0009F1C7120404F79
+:101940007800A21C7120804FFDC12A7967700500C4
+:10195000D471DCC1D6716A736E72727476707B70EA
+:101960000000002C7E702EA030251C6184A1600038
+:101970004000B91C7810B6467F0E9665A6659A663B
+:10198000AA66AF600000B360000014672360000027
+:10199000246096A00100C000CC1C00802660781056
+:1019A0006F26912001807C00C37005407800C4152B
+:1019B000A92005009920144F912000800A539120FE
+:1019C0000180002110A299A30000A1A40000A9A5F4
+:1019D00000007C00C471C77000001E797800C1153A
+:1019E000C471C67168217800F41C692000100C696C
+:1019F00016A0042D10A2688D0981C000F61C85A2D6
+:101A00000000C000041DC37000407800061DC370B4
+:101A10000340CA707800C4156479C671C47182A18C
+:101A20000300C800B91566797800C1156479C671DC
+:101A30007800C1150079C671C47102797800C115AA
+:101A40000079C6717800C115C470112000008CA007
+:101A50000D004000361D0C814800321D10820C81A3
+:101A60000C814800321D10820C81FF81C000BA1524
+:101A700010820E7A8CD24000621D1079CDC112798D
+:101A8000092021001920030084D240005C1D088138
+:101A90001920410011204E97122319204200108274
+:101AA00012231920430010821223192046001082AD
+:101AB000122319204700108212231920060011203A
+:101AC0005397122111207397122304790678780016
+:101AD000C0150478C6707800C115C471FCD1C0006F
+:101AE000721D1120C0537800741D112040540781CD
+:101AF00084A00F0003800380038068A2146AB4D21C
+:101B00004000831D112001007800851D1120000078
+:101B10000C6B0068DA707800BE151478F4D04000C1
+:101B2000951D01200740DB70000005A07800A01D76
+:101B3000FCD040009F1D01200740DB70010005A084
+:101B40007800A01D06A07C001478F4D04000AC1DE5
+:101B500001200740DB70000005A07800AD1D06A045
+:101B60007C001478FCD04000B91D01200740DB70D8
+:101B7000010005A07800BA1D06A07C0012711A723F
+:101B80001E731078C4D04000C41D2274267580AC2A
+:101B9000010008810C81A9819880A1203000037088
+:101BA00000008460A220A65307700100747984A10C
+:101BB00000FF4000E11D0F810C810C810480048036
+:101BC000078000A17800E41D0781048004807C79EF
+:101BD00008A1787A06A011A2107DC4D54000F11D9D
+:101BE000847B19A3807C21A40870FCD04000F11DE7
+:101BF00003700100077006001A711E72107DC4D5B3
+:101C00004000011E2273267484A0E0017C00487805
+:101C100065A040000C1E042C4A78632000007C0064
+:101C20007E0F7920004F48786220002C05A0C0006C
+:101C3000181E7810B2294A787F0F7C001120009975
+:101C40004A7AC47B19834000281E80A232001220E9
+:101C5000102078001F1E132000007C007E017E02F1
+:101C6000FCD7C000341E1120C0547800361E11204D
+:101C7000C07484A7000F0B8084A71F004000411E82
+:101C8000038003800380038005A168A27F027F0197
+:101C90007C0078102B1E00292A68002A2E6808680C
+:101CA00084A0EFF90DA80A697E0EFCD7C0005B1E68
+:101CB0000920534F7120404F78005F1E0920934F39
+:101CC0007120804F0C21046805A040006F1E16A1F2
+:101CD000C0006F1E6020006006687E010B200000BF
+:101CE0007800721E092000007E01046865A0400093
+:101CF000871E006006687810A21E781064201068A5
+:101D0000087909810A7901801268C000721E107971
+:101D1000A5C112797F0id) {
+			memcpy(qc, &(mt9v011_qctrl[i]),
+			       sizeof(*qc));
+			return 0;
+		}
+
+	return -EINVAL;
+}
+
+
+static int mt9v011_s_ctrl(struct v4l2_subdev *sd, struct v4l2_control *ctrl)
+{
+	struct mt9v011 *core = to_mt9v011(sd);
+	u8 i, n;
+	n = ARRAY_SIZE(mt9v011_qctrl);
+
+	for (i = 0; i < n; i++) {
+		if (ctrl->id != mt9v011_qctrl[i].id)
+			continue;
+		if (ctrl->value < mt9v011_qctrl[i].minimum ||
+		    ctrl->value > mt9v011_qctrl[i].maximum)
+			return -ERANGE;
+		v4l2_dbg(1, debug, sd, "s_ctrl: id=%d, value=%d\n",
+					ctrl->id, ctrl->value);
+		break;
+	}
+
+	switch (ctrl->id) {
+	case V4L2_CID_GAIN:
+		core->global_gain = ctrl->value;
+		break;
+	case V4L2_CID_RED_BALANCE:
+		core->red_bal = ctrl->value;
+		break;
+	case V4L2_CID_BLUE_BALANCE:
+		core->blue_bal = ctrl->value;
+		break;
+	case V4L2_CID_HFLIP:
+		core->hflip = ctrl->value;
+		set_read_mode(sd);
+		return 0;
+	case V4L2_CID_VFLIP:
+		core->vflip = ctrl->value;
+		set_read_mode(sd);
+		return 0;
+	default:
+		return -EINVAL;
+	}
+
+	set_balance(sd);
+
+	return 0;
+}
+
+static int mt9v011_enum_fmt(struct v4l2_subdev *sd, struct v4l2_fmtdesc *fmt)
+{
+	if (fmt->index > 0)
+		return -EINVAL;
+
+	fmt->flags = 0;
+	strcpy(fmt->description, "8 bpp Bayer GRGR..BGBG");
+	fmt->pixelformat = V4L2_PIX_FMT_SGRBG8;
+
+	return 0;
+}
+
+static int mt9v011_try_fmt(struct v4l2_subdev *sd, struct v4l2_format *fmt)
+{
+	struct v4l2_pix_format *pix = &fmt->fmt.pix;
+
+	if (pix->pixelformat != V4L2_PIX_FMT_SGRBG8)
+		return -EINVAL;
+
+	v4l_bound_align_image(&pix->width, 48, 639, 1,
+			      &pix->height, 32, 480, 1, 0);
+
+	return 0;
+}
+
+static int mt9v011_g_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parms)
+{
+	struct v4l2_captureparm *cp = &parms->parm.capture;
+
+	if (parms->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+
+	memset(cp, 0, sizeof(struct v4l2_captureparm));
+	cp->capability = V4L2_CAP_TIMEPERFRAME;
+	calc_fps(sd,
+		 &cp->timeperframe.numerator,
+		 &cp->timeperframe.denominator);
+
+	return 0;
+}
+
+static int mt9v011_s_parm(struct v4l2_subdev *sd, struct v4l2_streamparm *parms)
+{
+	struct v4l2_captureparm *cp = &parms->parm.capture;
+	struct v4l2_fract *tpf = &cp->timeperframe;
+	u16 speed;
+
+	if (parms->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+	if (cp->extendedmode != 0)
+		return -EINVAL;
+
+	speed = calc_speed(sd, tpf->numerator, tpf->denominator);
+
+	mt9v011_write(sd, R0A_MT9V011_CLK_SPEED, speed);
+	v4l2_dbg(1, debug, sd, "Setting speed to %d\n", speed);
+
+	/* Recalculate and update fps info */
+	calc_fps(sd, &tpf->numerator, &tpf->denominator);
+
+	return 0;
+}
+
+static int mt9v011_s_fmt(struct v4l2_subdev *sd, struct v4l2_format *fmt)
+{
+	struct v4l2_pix_format *pix = &fmt->fmt.pix;
+	struct mt9v011 *core = to_mt9v011(sd);
+	int rc;
+
+	rc = mt9v011_try_fmt(sd, fmt);
+	if (rc < 0)
+		return -EINVAL;
+
+	core->width = pix->width;
+	core->height = pix->height;
+
+	set_res(sd);
+
+	return 0;
+}
+
+static int mt9v011_s_config(struct v4l2_subdev *sd, int dumb, void *data)
+{
+	struct mt9v011 *core = to_mt9v011(sd);
+	unsigned *xtal = data;
+
+	v4l2_dbg(1, debug, sd, "s_config called\n");
+
+	if (xtal) {
+		core->xtal = *xtal;
+		v4l2_dbg(1, debug, sd, "xtal set to %d.%03d MHz\n",
+			 *xtal / 1000000, (*xtal / 1000) % 1000);
+	}
+
+	return 0;
+}
+
+
+#ifdef CONFIG_VIDEO_ADV_DEBUG
+static int mt9v011_g_register(struct v4l2_subdev *sd,
+			      struct v4l2_dbg_register *reg)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+
+	if (!v4l2_chip_match_i2c_client(client, &reg->match))
+		return -EINVAL;
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	reg->val = mt9v011_read(sd, reg->reg & 0xff);
+	reg->size = 2;
+
+	return 0;
+}
+
+static int mt9v011_s_register(struct v4l2_subdev *sd,
+			      struct v4l2_dbg_register *reg)
+{
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+
+	if (!v4l2_chip_match_i2c_client(client, &reg->match))
+		return -EINVAL;
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	mt9v011_write(sd, reg->reg & 0xff, reg->val & 0xffff);
+
+	return 0;
+}
+#endif
+
+static int mt9v011_g_chip_ident(struct v4l2_subdev *sd,
+				struct v4l2_dbg_chip_ident *chip)
+{
+	u16 version;
+	struct i2c_client *client = v4l2_get_subdevdata(sd);
+
+	version = mt9v011_read(sd, R00_MT9V011_CHIP_VERSION);
+
+	return v4l2_chip_ident_i2c_client(client, chip, V4L2_IDENT_MT9V011,
+					  version);
+}
+
+static const struct v4l2_subdev_core_ops mt9v011_core_ops = {
+	.queryctrl = mt9v011_queryctrl,
+	.g_ctrl = mt9v011_g_ctrl,
+	.s_ctrl = mt9v011_s_ctrl,
+	.reset = mt9v011_reset,
+	.s_config = mt9v011_s_config,
+	.g_chip_ident = mt9v011_g_chip_ident,
+#ifdef CONFIG_VIDEO_ADV_DEBUG
+	.g_register = mt9v011_g_register,
+	.s_register = mt9v011_s_register,
+#endif
+};
+
+static const struct v4l2_subdev_video_ops mt9v011_video_ops = {
+	.enum_fmt = mt9v011_enum_fmt,
+	.try_fmt = mt9v011_try_fmt,
+	.s_fmt = mt9v011_s_fmt,
+	.g_parm = mt9v011_g_parm,
+	.s_parm = mt9v011_s_parm,
+};
+
+static const struct v4l2_subdev_ops mt9v011_ops = {
+	.core  = &mt9v011_core_ops,
+	.video = &mt9v011_video_ops,
+};
+
+
+/****************************************************************************
+			I2C Client & Driver
+ ****************************************************************************/
+
+static int mt9v011_probe(struct i2c_client *c,
+			 const struct i2c_device_id *id)
+{
+	u16 version;
+	struct mt9v011 *core;
+	struct v4l2_subdev *sd;
+
+	/* Check if the adapter supports the needed features */
+	if (!i2c_check_functionality(c->adapter,
+	     I2C_FUNC_SMBUS_READ_BYTE | I2C_FUNC_SMBUS_WRITE_BYTE_DATA))
+		return -EIO;
+
+	core = kzalloc(sizeof(struct mt9v011), GFP_KERNEL);
+	if (!core)
+		return -ENOMEM;
+
+	sd = &core->sd;
+	v4l2_i2c_subdev_init(sd, c, &mt9v011_ops);
+
+	/* Check if the sensor is really a MT9V011 */
+	version = mt9v011_read(sd, R00_MT9V011_CHIP_VERSION);
+	if ((version != MT9V011_VERSION) &&
+	    (version != MT9V011_REV_B_VERSION)) {
+		v4l2_info(sd, "*** unknown micron chip detected (0x%04x).\n",
+			  version);
+		kfree(core);
+		return -EINVAL;
+	}
+
+	core->global_gain = 0x0024;
+	core->width  = 640;
+	core->height = 480;
+	core->xtal = 27000000;	/* Hz */
+
+	v4l_info(c, "chip found @ 0x%02x (%s - chip version 0x%04x)\n",
+		 c->addr << 1, c->adapter->name, version);
+
+	return 0;
+}
+
+static int mt9v011_remove(struct i2c_client *c)
+{
+	struct v4l2_subdev *sd = i2c_get_clientdata(c);
+
+	v4l2_dbg(1, debug, sd,
+		"mt9v011.c: removing mt9v011 adapter on address 0x%x\n",
+		c->addr << 1);
+
+	v4l2_device_unregister_subdev(sd);
+	kfree(to_mt9v011(sd));
+	return 0;
+}
+
+/* ----------------------------------------------------------------------- */
+
+static const struct i2c_device_id mt9v011_id[] = {
+	{ "mt9v011", 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(i2c, mt9v011_id);
+
+static struct v4l2_i2c_driver_data v4l2_i2c_data = {
+	.name = "mt9v011",
+	.probe = mt9v011_probe,
+	.remove = mt9v011_remove,
+	.id_table = mt9v011_id,
+};
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          K 25
+svn:wc:ra_dav:version-url
+V 68
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro
+END
+STG4000VTG.c
+K 25
+svn:wc:ra_dav:version-url
+V 81
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro/STG4000VTG.c
+END
+STG4000OverlayDevice.c
+K 25
+svn:wc:ra_dav:version-url
+V 91
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro/STG4000OverlayDevice.c
+END
+STG4000Reg.h
+K 25
+svn:wc:ra_dav:version-url
+V 81
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro/STG4000Reg.h
+END
+STG4000InitDevice.c
+K 25
+svn:wc:ra_dav:version-url
+V 88
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro/STG4000InitDevice.c
+END
+fbdev.c
+K 25
+svn:wc:ra_dav:version-url
+V 76
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro/fbdev.c
+END
+STG4000Interface.h
+K 25
+svn:wc:ra_dav:version-url
+V 87
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro/STG4000Interface.h
+END
+STG4000Ramdac.c
+K 25
+svn:wc:ra_dav:version-url
+V 84
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro/STG4000Ramdac.c
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 77
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/video/kyro/Makefile
+END
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         /*
+ * Core routines and tables shareable across OS platforms.
+ *
+ * Copyright (c) 1994-2002 Justin T. Gibbs.
+ * Copyright (c) 2000-2002 Adaptec Inc.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions, and the following disclaimer,
+ *    without modification.
+ * 2. Redistributions in binary form must reproduce at minimum a disclaimer
+ *    substantially similar to the "NO WARRANTY" disclaimer below
+ *    ("Disclaimer") and any redistribution must be conditioned upon
+ *    including a substantially similar Disclaimer requirement for further
+ *    binary redistribution.
+ * 3. Neither the names of the above-listed copyright holders nor the names
+ *    of any contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * Alternatively, this software may be distributed under the terms of the
+ * GNU General Public License ("GPL") version 2 as published by the Free
+ * Software Foundation.
+ *
+ * NO WARRANTY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGES.
+ *
+ * $Id: //depot/aic7xxx/aic7xxx/aic7xxx.c#155 $
+ */
+
+#ifdef __linux__
+#include "aic7xxx_osm.h"
+#include "aic7xxx_inline.h"
+#include "aicasm/aicasm_insformat.h"
+#else
+#include <dev/aic7xxx/aic7xxx_osm.h>
+#include <dev/aic7xxx/aic7xxx_inline.h>
+#include <dev/aic7xxx/aicasm/aicasm_insformat.h>
+#endif
+
+/***************************** Lookup Tables **********************************/
+static const char *const ahc_chip_names[] = {
+	"NONE",
+	"aic7770",
+	"aic7850",
+	"aic7855",
+	"aic7859",
+	"aic7860",
+	"aic7870",
+	"aic7880",
+	"aic7895",
+	"aic7895C",
+	"aic7890/91",
+	"aic7896/97",
+	"aic7892",
+	"aic7899"
+};
+static const u_int num_chip_names = ARRAY_SIZE(ahc_chip_names);
+
+/*
+ * Hardware error codes.
+ */
+struct ahc_hard_error_entry {
+        uint8_t errno;
+	const char *errmesg;
+};
+
+static const struct ahc_hard_error_entry ahc_hard_errors[] = {
+	{ ILLHADDR,	"Illegal Host Access" },
+	{ ILLSADDR,	"Illegal Sequencer Address referrenced" },
+	{ ILLOPCODE,	"Illegal Opcode in sequencer program" },
+	{ SQPARERR,	"Sequencer Parity Error" },
+	{ DPARERR,	"Data-path Parity Error" },
+	{ MPARERR,	"Scratch or SCB Memory Parity Error" },
+	{ PCIERRSTAT,	"PCI Error detected" },
+	{ CIOPARERR,	"CIOBUS Parity Error" },
+};
+static const u_int num_errors = ARRAY_SIZE(ahc_hard_errors);
+
+static const struct ahc_phase_table_entry ahc_phase_table[] =
+{
+	{ P_DATAOUT,	MSG_NOOP,		"in Data-out phase"	},
+	{ P_DATAIN,	MSG_INITIATOR_DET_ERR,	"in Data-in phase"	},
+	{ P_DATAOUT_DT,	MSG_NOOP,		"in DT Data-out phase"	},
+	{ P_DATAIN_DT,	MSG_INITIATOR_DET_ERR,	"in DT Data-in phase"	},
+	{ P_COMMAND,	MSG_NOOP,		"in Command phase"	},
+	{ P_MESGOUT,	MSG_NOOP,		"in Message-out phase"	},
+	{ P_STATUS,	MSG_INITIATOR_DET_ERR,	"in Status phase"	},
+	{ P_MESGIN,	MSG_PARITY_ERROR,	"in Message-in phase"	},
+	{ P_BUSFREE,	MSG_NOOP,		"while idle"		},
+	{ 0,		MSG_NOOP,		"in unknown phase"	}
+};
+
+/*
+ * In most cases we only wish to itterate over real phases, so
+ * exclude the last element from the count.
+ */
+static const u_int num_phases = ARRAY_SIZE(ahc_phase_table) - 1;
+
+/*
+ * Valid SCSIRATE values.  (p. 3-17)
+ * Provides a mapping of tranfer periods in ns to the proper value to
+ * stick in the scsixfer reg.
+ */
+static const struct ahc_syncrate ahc_syncrates[] =
+{
+      /* ultra2    fast/ultra  period     rate */
+	{ 0x42,      0x000,      9,      "80.0" },
+	{ 0x03,      0x000,     10,      "40.0" },
+	{ 0x04,      0x000,     11,      "33.0" },
+	{ 0x05,      0x100,     12,      "20.0" },
+	{ 0x06,      0x110,     15,      "16.0" },
+	{ 0x07,      0x120,     18,      "13.4" },
+	{ 0x08,      0x000,     25,      "10.0" },
+	{ 0x19,      0x010,     31,      "8.0"  },
+	{ 0x1a,      0x020,     37,      "6.67" },
+	{ 0x1b,      0x030,     43,      "5.7"  },
+	{ 0x1c,      0x040,     50,      "5.0"  },
+	{ 0x00,      0x050,     56,      "4.4"  },
+	{ 0x00,      0x060,     62,      "4.0"  },
+	{ 0x00,      0x070,     68,      "3.6"  },
+	{ 0x00,      0x000,      0,      NULL   }
+};
+
+/* Our Sequencer Program */
+#include "aic7xxx_seq.h"
+
+/**************************** Function Declarations ***************************/
+static void		ahc_force_renegotiation(struct ahc_softc *ahc,
+						struct ahc_devinfo *devinfo);
+static struct ahc_tmode_tstate*
+			ahc_alloc_tstate(struct ahc_softc *ahc,
+					 u_int scsi_id, char channel);
+#ifdef AHC_TARGET_MODE
+static void		ahc_free_tstate(struct ahc_softc *ahc,
+					u_int scsi_id, char channel, int force);
+#endif
+static const struct ahc_syncrate*
+			ahc_devlimited_syncrate(struct ahc_softc *ahc,
+					        struct ahc_initiator_tinfo *,
+						u_int *period,
+						u_int *ppr_options,
+						role_t role);
+static void		ahc_update_pending_scbs(struct ahc_softc *ahc);
+static void		ahc_fetch_devinfo(struct ahc_softc *ahc,
+					  struct ahc_devinfo *devinfo);
+static void		ahc_scb_devinfo(struct ahc_softc *ahc,
+					struct ahc_devinfo *devinfo,
+					struct scb *scb);
+static void		ahc_assert_atn(struct ahc_softc *ahc);
+static void		ahc_setup_initiator_msgout(struct ahc_softc *ahc,
+						   struct ahc_devinfo *devinfo,
+						   struct scb *scb);
+static void		ahc_build_transfer_msg(struct ahc_softc *ahc,
+					       struct ahc_devinfo *devinfo);
+static void		ahc_construct_sdtr(struct ahc_softc *ahc,
+					   struct ahc_devinfo *devinfo,
+					   u_int period, u_int offset);
+static void		ahc_construct_wdtr(struct ahc_softc *ahc,
+					   struct ahc_devinfo *devinfo,
+					   u_int bus_width);
+static void		ahc_construct_ppr(struct ahc_softc *ahc,
+					  struct ahc_devinfo *devinfo,
+					  u_int period, u_int offset,
+					  u_int bus_width, u_int ppr_options);
+static void		ahc_clear_msg_state(struct ahc_softc *ahc);
+static void		ahc_handle_proto_violation(struct ahc_softc *ahc);
+static void		ahc_handle_message_phase(struct ahc_softc *ahc);
+typedef enum {
+	AHCMSG_1B,
+	AHCMSG_2B,
+	AHCMSG_EXT
+} ahc_msgtype;
+static int		ahc_sent_msg(struct ahc_softc *ahc, ahc_msgtype type,
+				     u_int msgval, int full);
+static int		ahc_parse_msg(struct ahc_softc *ahc,
+				      struct ahc_devinfo *devinfo);
+static int		ahc_handle_msg_reject(struct ahc_softc *ahc,
+					      struct ahc_devinfo *devinfo);
+static void		ahc_handle_ign_wide_residue(struct ahc_softc *ahc,
+						struct ahc_devinfo *devinfo);
+static void		ahc_reinitialize_dataptrs(struct ahc_softc *ahc);
+static void		ahc_handle_devreset(struct ahc_softc *ahc,
+					    struct ahc_devinfo *devinfo,
+					    cam_status status, char *message,
+					    int verbose_level);
+#ifdef AHC_TARGET_MODE
+static void		ahc_setup_target_msgin(struct ahc_softc *ahc,
+					       struct ahc_devinfo *devinfo,
+					       struct scb *scb);
+#endif
+
+static bus_dmamap_callback_t	ahc_dmamap_cb; 
+static void		ahc_build_free_scb_list(struct ahc_softc *ahc);
+static int		ahc_init_scbdata(struct ahc_softc *ahc);
+static void		ahc_fini_scbdata(struct ahc_softc *ahc);
+static void		ahc_qinfifo_requeue(struct ahc_softc *ahc,
+					    struct scb *prev_scb,
+					    struct scb *scb);
+static int		ahc_qinfifo_count(struct ahc_softc *ahc);
+static u_int		ahc_rem_scb_from_disc_list(struct ahc_softc *ahc,
+						   u_int prev, u_int scbptr);
+static void		ahc_add_curscb_to_free_list(struct ahc_softc *ahc);
+static u_int		ahc_rem_wscb(struct ahc_softc *ahc,
+				     u_int scbpos, u_int prev);
+static void		ahc_reset_current_bus(struct ahc_softc *ahc);
+#ifdef AHC_DUMP_SEQ
+static void		ahc_dumpseq(struct ahc_softc *ahc);
+#endif
+static int		ahc_loadseq(struct ahc_softc *ahc);
+static int		ahc_check_patch(struct ahc_softc *ahc,
+					const struct patch **start_patch,
+					u_int start_instr, u_int *skip_addr);
+static void		ahc_download_instr(struct ahc_softc *ahc,
+					   u_int instrptr, uint8_t *dconsts);
+#ifdef AHC_TARGET_MODE
+static void		ahc_queue_lstate_event(struct ahc_softc *ahc,
+					       struct ahc_tmode_lstate *lstate,
+					       u_int initiator_id,
+					       u_int event_type,
+					       u_int event_arg);
+static void		ahc_update_scsiid(struct ahc_softc *ahc,
+					  u_int targid_mask);
+static int		ahc_handle_target_cmd(struct ahc_softc *ahc,
+					      struct target_cmd *cmd);
+#endif
+
+static u_int		ahc_index_busy_tcl(struct ahc_softc *ahc, u_int tcl);
+static void		ahc_unbusy_tcl(struct ahc_softc *ahc, u_int tcl);
+static void		ahc_busy_tcl(struct ahc_softc *ahc,
+				     u_int tcl, u_int busyid);
+
+/************************** SCB and SCB queue management **********************/
+static void		ahc_run_untagged_queues(struct ahc_softc *ahc);
+static void		ahc_run_untagged_queue(struct ahc_softc *ahc,
+					       struct scb_tailq *queue);
+
+/****************************** Initialization ********************************/
+static void		 ahc_alloc_scbs(struct ahc_softc *ahc);
+static void		 ahc_shutdown(void *arg);
+
+/*************************** Interrupt Services *******************************/
+static void		ahc_clear_intstat(struct ahc_softc *ahc);
+static void		ahc_run_qoutfifo(struct ahc_softc *ahc);
+#ifdef AHC_TARGET_MODE
+static void		ahc_run_tqinfifo(struct ahc_softc *ahc, int paused);
+#endif
+static void		ahc_handle_brkadrint(struct ahc_softc *ahc);
+static void		ahc_handle_seqint(struct ahc_softc *ahc, u_int intstat);
+static void		ahc_handle_scsiint(struct ahc_softc *ahc,
+					   u_int intstat);
+static void		ahc_clear_critical_section(struct ahc_softc *ahc);
+
+/***************************** Error Recovery *********************************/
+static void		ahc_freeze_devq(struct ahc_softc *ahc, struct scb *scb);
+static int		ahc_abort_scbs(struct ahc_softc *ahc, int target,
+				       char channel, int lun, u_int tag,
+				       role_t role, uint32_t status);
+static void		ahc_calc_residual(struct ahc_softc *ahc,
+					  struct scb *scb);
+
+/*********************** Untagged Transaction Routines ************************/
+static inline void	ahc_freeze_untagged_queues(struct ahc_softc *ahc);
+static inline void	ahc_release_untagged_queues(struct ahc_softc *ahc);
+
+/*
+ * Block our completion routine from starting the next untagged
+ * transaction for this target or target lun.
+ */
+static inline void
+ahc_freeze_untagged_queues(struct ahc_softc *ahc)
+{
+	if ((ahc->flags & AHC_SCB_BTT) == 0)
+		ahc->untagged_queue_lock++;
+}
+
+/*
+ * Allow the next untagged transaction for this target or target lun
+ * to be executed.  We use a counting semaphore to allow the lock
+ * to be acquired recursively.  Once the count drops to zero, the
+ * transaction queues will be run.
+ */
+static inline void
+ahc_release_untagged_queues(struct ahc_softc *ahc)
+{
+	if ((ahc->flags & AHC_SCB_BTT) == 0) {
+		ahc->untagged_queue_lock--;
+		if (ahc->untagged_queue_lock == 0)
+			ahc_run_untagged_queues(ahc);
+	}
+}
+
+/************************* Sequencer Execution Control ************************/
+/*
+ * Work around any chip bugs related to halting sequencer execution.
+ * On Ultra2 controllers, we must clear the CIOBUS stretch signal by
+ * reading a register that will set this signal and deassert it.
+ * Without this workaround, if the chip is paused, by an interrupt or
+ * manual pause while accessing scb ram, accesses to certain registers
+ * will hang the system (infinite pci retries).
+ */
+static void
+ahc_pause_bug_fix(struct ahc_softc *ahc)
+{
+	if ((ahc->features & AHC_ULTRA2) != 0)
+		(void)ahc_inb(ahc, CCSCBCTL);
+}
+
+/*
+ * Determine whether the sequencer has halted code execution.
+ * Returns non-zero status if the sequencer is stopped.
+ */
+int
+ahc_is_paused(struct ahc_softc *ahc)
+{
+	return ((ahc_inb(ahc, HCNTRL) & PAUSE) != 0);
+}
+
+/*
+ * Request that the sequencer stop and wait, indefinitely, for it
+ * to stop.  The sequencer will only acknowledge that it is paused
+ * once it has reached an instruction boundary and PAUSEDIS is
+ * cleared in the SEQCTL register.  The sequencer may use PAUSEDIS
+ * for critical sections.
+ */
+void
+ahc_pause(struct ahc_softc *ahc)
+{
+	ahc_outb(ahc, HCNTRL, ahc->pause);
+
+	/*
+	 * Since the sequencer can disable pausing in a critical section, we
+	 * must loop until it actually stops.
+	 */
+	while (ahc_is_paused(ahc) == 0)
+		;
+
+	ahc_pause_bug_fix(ahc);
+}
+
+/*
+ * Allow the sequencer to continue program execution.
+ * We check here to ensure that no additional interrupt
+ * sources that would cause the sequencer to halt have been
+ * asserted.  If, for example, a SCSI bus reset is detected
+ * while we are fielding a different, pausing, interrupt type,
+ * we don't want to release the sequencer before going back
+ * into our interrupt handler and dealing with this new
+ * condition.
+ */
+void
+ahc_unpause(struct ahc_softc *ahc)
+{
+	if ((ahc_inb(ahc, INTSTAT) & (SCSIINT | SEQINT | BRKADRINT)) == 0)
+		ahc_outb(ahc, HCNTRL, ahc->unpause);
+}
+
+/************************** Memory mapping routines ***************************/
+static struct ahc_dma_seg *
+ahc_sg_bus_to_virt(struct scb *scb, uint32_t sg_busaddr)
+{
+	int sg_index;
+
+	sg_index = (sg_busaddr - scb->sg_list_phys)/sizeof(struct ahc_dma_seg);
+	/* sg_list_phys points to entry 1, not 0 */
+	sg_index++;
+
+	return (&scb->sg_list[sg_index]);
+}
+
+static uint32_t
+ahc_sg_virt_to_bus(struct scb *scb, struct ahc_dma_seg *sg)
+{
+	int sg_index;
+
+	/* sg_list_phys points to entry 1, not 0 */
+	sg_index = sg - &scb->sg_list[1];
+
+	return (scb->sg_list_phys + (sg_index * sizeof(*scb->sg_list)));
+}
+
+static uint32_t
+ahc_hscb_busaddr(struct ahc_softc *ahc, u_int index)
+{
+	return (ahc->scb_data->hscb_busaddr
+		+ (sizeof(struct hardware_scb) * index));
+}
+
+static void
+ahc_sync_scb(struct ahc_softc *ahc, struct scb *scb, int op)
+{
+	ahc_dmamap_sync(ahc, ahc->scb_data->hscb_dmat,
+			ahc->scb_data->hscb_dmamap,
+			/*offset*/(scb->hscb - ahc->hscbs) * sizeof(*scb->hscb),
+			/*len*/sizeof(*scb->hscb), op);
+}
+
+void
+ahc_sync_sglist(struct ahc_softc *ahc, struct scb *scb, int op)
+{
+	if (scb->sg_count == 0)
+		return;
+
+	ahc_dmamap_sync(ahc, ahc->scb_data->sg_dmat, scb->sg_map->sg_dmamap,
+			/*offset*/(scb->sg_list - scb->sg_map->sg_vaddr)
+				* sizeof(struct ahc_dma_seg),
+			/*len*/sizeof(struct ahc_dma_seg) * scb->sg_count, op);
+}
+
+#ifdef AHC_TARGET_MODE
+static uint32_t
+ahc_targetcmd_offset(struct ahc_softc *ahc, u_int index)
+{
+	return (((uint8_t *)&ahc->targetcmds[index]) - ahc->qoutfifo);
+}
+#endif
+
+/*********************** Miscelaneous Support Functions ***********************/
+/*
+ * Determine whether the sequencer reported a residual
+ * for this SCB/transaction.
+ */
+static void
+ahc_update_residual(struct ahc_softc *ahc, struct scb *scb)
+{
+	uint32_t sgptr;
+
+	sgptr = ahc_le32toh(scb->hscb->sgptr);
+	if ((sgptr & SG_RESID_VALID) != 0)
+		ahc_calc_residual(ahc, scb);
+}
+
+/*
+ * Return pointers to the transfer negotiation information
+ * for the specified our_id/remote_id pair.
+ */
+struct ahc_initiator_tinfo *
+ahc_fetch_transinfo(struct ahc_softc *ahc, char channel, u_int our_id,
+		    u_int remote_id, struct ahc_tmode_tstate **tstate)
+{
+	/*
+	 * Transfer data structures are stored from the perspective
+	 * of the target role.  Since the parameters for a connection
+	 * in the initiator role to a given target are the same as
+	 * when the roles are reversed, we pretend we are the target.
+	 */
+	if (channel == 'B')
+		our_id += 8;
+	*tstate = ahc->enabled_targets[our_id];
+	return (&(*tstate)->transinfo[remote_id]);
+}
+
+uint16_t
+ahc_inw(struct ahc_softc *ahc, u_int port)
+{
+	uint16_t r = ahc_inb(ahc, port+1) << 8;
+	return r | ahc_inb(ahc, port);
+}
+
+void
+ahc_outw(struct ahc_softc *ahc, u_int port, u_int value)
+{
+	ahc_outb(ahc, port, value & 0xFF);
+	ahc_outb(ahc, port+1, (value >> 8) & 0xFF);
+}
+
+uint32_t
+ahc_inl(struct ahc_softc *ahc, u_int port)
+{
+	return ((ahc_inb(ahc, port))
+	      | (ahc_inb(ahc, port+1) << 8)
+	      | (ahc_inb(ahc, port+2) << 16)
+	      | (ahc_inb(ahc, port+3) << 24));
+}
+
+void
+ahc_outl(struct ahc_softc *ahc, u_int port, uint32_t value)
+{
+	ahc_outb(ahc, port, (value) & 0xFF);
+	ahc_outb(ahc, port+1, ((value) >> 8) & 0xFF);
+	ahc_outb(ahc, port+2, ((value) >> 16) & 0xFF);
+	ahc_outb(ahc, port+3, ((value) >> 24) & 0xFF);
+}
+
+uint64_t
+ahc_inq(struct ahc_softc *ahc, u_int port)
+{
+	return ((ahc_inb(ahc, port))
+	      | (ahc_inb(ahc, port+1) << 8)
+	      | (ahc_inb(ahc, port+2) << 16)
+	      | (ahc_inb(ahc, port+3) << 24)
+	      | (((uint64_t)ahc_inb(ahc, port+4)) << 32)
+	      | (((uint64_t)ahc_inb(ahc, port+5)) << 40)
+	      | (((uint64_t)ahc_inb(ahc, port+6)) << 48)
+	      | (((uint64_t)ahc_inb(ahc, port+7)) << 56));
+}
+
+void
+ahc_outq(struct ahc_softc *ahc, u_int port, uint64_t value)
+{
+	ahc_outb(ahc, port, value & 0xFF);
+	ahc_outb(ahc, port+1, (value >> 8) & 0xFF);
+	ahc_outb(ahc, port+2, (value >> 16) & 0xFF);
+	ahc_outb(ahc, port+3, (value >> 24) & 0xFF);
+	ahc_outb(ahc, port+4, (value >> 32) & 0xFF);
+	ahc_outb(ahc, port+5, (value >> 40) & 0xFF);
+	ahc_outb(ahc, port+6, (value >> 48) & 0xFF);
+	ahc_outb(ahc, port+7, (value >> 56) & 0xFF);
+}
+
+/*
+ * Get a free scb. If there are none, see if we can allocate a new SCB.
+ */
+struct scb *
+ahc_get_scb(struct ahc_softc *ahc)
+{
+	struct scb *scb;
+
+	if ((scb = SLIST_FIRST(&ahc->scb_data->free_scbs)) == NULL) {
+		ahc_alloc_scbs(ahc);
+		scb = SLIST_FIRST(&ahc->scb_data->free_scbs);
+		if (scb == NULL)
+			return (NULL);
+	}
+	SLIST_REMOVE_HEAD(&ahc->scb_data->free_scbs, links.sle);
+	return (scb);
+}
+
+/*
+ * Return an SCB resource to the free list.
+ */
+void
+ahc_free_scb(struct ahc_softc *ahc, struct scb *scb)
+{
+	struct hardware_scb *hscb;
+
+	hscb = scb->hscb;
+	/* Clean up for the next user */
+	ahc->scb_data->scbindex[hscb->tag] = NULL;
+	scb->flags = SCB_FREE;
+	hscb->control = 0;
+
+	SLIST_INSERT_HEAD(&ahc->scb_data->free_scbs, scb, links.sle);
+
+	/* Notify the OSM that a resource is now available. */
+	ahc_platform_scb_free(ahc, scb);
+}
+
+struct scb *
+ahc_lookup_scb(struct ahc_softc *ahc, u_int tag)
+{
+	struct scb* scb;
+
+	scb = ahc->scb_data->scbindex[tag];
+	if (scb != NULL)
+		ahc_sync_scb(ahc, scb,
+			     BUS_DMASYNC_POSTREAD|BUS_DMASYNC_POSTWRITE);
+	return (scb);
+}
+
+static void
+ahc_swap_with_next_hscb(struct ahc_softc *ahc, struct scb *scb)
+{
+	struct hardware_scb *q_hscb;
+	u_int  saved_tag;
+
+	/*
+	 * Our queuing method is a bit tricky.  The card
+	 * knows in advance which HSCB to download, and we
+	 * can't disappoint it.  To achieve this, the next
+	 * SCB to download is saved off in ahc->next_queued_scb.
+	 * When we are called to queue "an arbitrary scb",
+	 * we copy the contents of the incoming HSCB to the one
+	 * the sequencer knows about, swap HSCB pointers and
+	 * finally assign the SCB to the tag indexed location
+	 * in the scb_array.  This makes sure that we can still
+	 * locate the correct SCB by SCB_TAG.
+	 */
+	q_hscb = ahc->next_queued_scb->hscb;
+	saved_tag = q_hscb->tag;
+	memcpy(q_hscb, scb->hscb, sizeof(*scb->hscb));
+	if ((scb->flags & SCB_CDB32_PTR) != 0) {
+		q_hscb->shared_data.cdb_ptr =
+		    ahc_htole32(ahc_hscb_busaddr(ahc, q_hscb->tag)
+			      + offsetof(struct hardware_scb, cdb32));
+	}
+	q_hscb->tag = saved_tag;
+	q_hscb->next = scb->hscb->tag;
+
+	/* Now swap HSCB pointers. */
+	ahc->next_queued_scb->hscb = scb->hscb;
+	scb->hscb = q_hscb;
+
+	/* Now define the mapping from tag to SCB in the scbindex */
+	ahc->scb_data->scbindex[scb->hscb->tag] = scb;
+}
+
+/*
+ * Tell the sequencer about a new transaction to execute.
+ */
+void
+ahc_queue_scb(struct ahc_softc *ahc, struct scb *scb)
+{
+	ahc_swap_with_next_hscb(ahc, scb);
+
+	if (scb->hscb->tag == SCB_LIST_NULL
+	 || scb->hscb->next == SCB_LIST_NULL)
+		panic("Attempt to queue invalid SCB tag %x:%x\n",
+		      scb->hscb->tag, scb->hscb->next);
+
+	/*
+	 * Setup data "oddness".
+	 */
+	scb->hscb->lun &= LID;
+	if (ahc_get_transfer_length(scb) & 0x1)
+		scb->hscb->lun |= SCB_XFERLEN_ODD;
+
+	/*
+	 * Keep a history of SCBs we've downloaded in the qinfifo.
+	 */
+	ahc->qinfifo[ahc->qinfifonext++] = scb->hscb->tag;
+
+	/*
+	 * Make su04800D1357810B22900227900D435D835A3
+:104BB000E935F635E93586A500134000E93586A5C7
+:104BC0000083C000CF3503700000186001801A60B8
+:104BD000086084A0EFFB0A60007086A0050040001A
+:104BE000F335781018411B7878007C001B78790029
+:104BF0007C0090780780018084A0070080A01800C6
+:104C00009A78A8798CA1FF0086A1030040000B369A
+:104C100086A1000040000B36780007411B78790020
+:104C20007C00206895C02268FF82C000183678108A
+:104C3000184178001F36118240001D367810B229C5
+:104C400078102B411B7878007C007810D3433078A3
+:104C500084A0C000C00045367E0108327E000120DD
+:104C6000044F0420ECD07F00400037368CA10003B5
+:104C7000780039368CA100047F01400040361800CE
+:104C8000453678004236280045361A7906A07C0061
+:104C900085A001007C0084A66000C00052362F6809
+:104CA0000000336800007800C136DCD6C0006A36E8
+:104CB000B468DCD0C0006A369869946A2E69326A9A
+:104CC000487005A0C0006736002205A14000D64507
+:104CD0004B7015007800D6457C00ACD6400090366D
+:104CE000F4D6400076362F68000033680000780064
+:104CF000D645B46884A0004035A6F4D6C00070360E
+:104D0000487005A0C00083364B701500DCD6C0008B
+:104D10008C36B468DCD040008C36A86CA46D2E6C48
+:104D2000326D7800D645F4D6400099362F680000E1
+:104D3000336800007800D645B46884A0004835A6E2
+:104D4000F4D6C0009336487005A0C000A6364B705C
+:104D50001500082410250027FB80C800AD36008010
+:104D600084A03F0008A191A200002E69326A0021B0
+:104D700005A2C000BA367800D645007086A00600AD
+:104D80004000C1367800D6457C0046690860CDC039
+:104D9000CCD34000C9368DC00A6018683A681B68D9
+:104DA00006008F68000093680000306A2C693E6A34
+:104DB00042692F6803003368000037682000976855
+:104DC00000009B68200000707900E3360C2AF5365D
+:104DD000ED36EB36EB36EB36EB36EB367810B229A8
+:104DE000206884D0C000F5367810193E7800FB3674
+:104DF0005C70502C602000680260602A08328CA130
+:104E00000003400004372120584F78000637212046
+:104E1000984F042405A040000D3720207800063765
+:104E2000222D6B2000007C007810203E7810363E4A
+:104E30000860CCC00A602B6800009B780E00146FDD
+:104E400038691A694469166908328CA10003400068
+:104E50002A370920000078002C370920010078103B
+:104E6000814ADCD6400034371C69EDC11E691868E0
+:104E7000FCD04000433768788CA0FF0040004137E9
+:104E80001B681E00780043371B68000084B20003D3
+:104E9000C0004B372120984F78004D372120584FC4
+:104EA000006822203C6A4069326A2E69C06860202E
+:104EB0000060A4D040008D3741202100492005002A
+:104EC000512020007E0D7E0F7E157E147920004F2C
+:104ED0007810461E7F147F157F0FCC70102009209C
+:104EE00001017E0204226DA040007D37146806A7F0
+:104EF00040007A370068780070372068D5C0226893
+:104F00007F0210820981C0006E377F0D6770030039
+:104F10007F700000767783700F00D471DCC1D6718A
+:104F2000186886A00200C0009937176800002B6837
+:104F300000001C68ECC01E687810732078000C2AF2
+:104F4000D87CDC7DD07F781048362B6800009B78B9
+:104F50000E00146F7810D7438CA0FF0016691868F4
+:104F6000FCD04000B23748701A688CA600DF1E697A
+:104F70006770000078000C2A007005A0C000BF37E1
+:104F800078000C2A06A07810D6452069ACD1C00064
+:104F9000C8371B6814008CA600DF1E692B68000050
+:104FA000206884A0FF00226800707900D4370C2AA2
+:104FB000DE37DE37E137E137E137DC37DC377810D1
+:104FC000B2291868780043340860A4C00A601768E2
+:104FD00000007800DE3D00237900EB37EE37F03734
+:104FE00060387810B229FCD6C000473800700DA098
+:104FF0007900F7370C2A0138013831380138443844
+:10500000FF37FF377810B22984A66000400031389E
+:1050100086A06000C0002E38ACC6F4C6EDC65A7E2D
+:10502000B66E1C68ACC01E6886A102004000203825
+:105030007810D645AC69B06815A1400020387810CA
+:1050400077497800223878103F491B787900D4716D
+:10505000B4D1C000082AA47086A00100C000522A62
+:105060007C00ECD640000B381868FCD04000443877
+:10507000F4D6C0003E381B6815001B787900780014
+:10508000082A1B6807002F680000336800007810AA
+:1050900069437C00FCC65A7EDC7AD879D0781B80C4
+:1050A000C8005038008084A03F0008A191A20000F1
+:1050B000986B002102A3B268946B002203A3AE6830
+:1050C0001B7879007C007810B229002379006538BC
+:1050D0006A388F38EF387810B229007079006D384F
+:1050E000753877388038753875387538753875384B
+:1050F0007810B229AC69B06815A1400080387810EA
+:1051000077497800823878103F491C68B4C01E681F
+:10511000D470B4D0C000082AA47086A00100C000DA
+:10512000522A7C00FCD6C000DF3800700DA0790048
+:1051300096380C2AA638A038D638A638DC389E38DF
+:105140009E387810B2299468D678DE789868D2783C
+:10515000DA7884A660004000D63886A06000C000DF
+:10516000D338B4A6BFBFEDC65A7EB66E86A1020084
+:105170004000C2387810D645AC69B06815A140002F
+:10518000C238781077497800C43878103F491B78C6
+:1051900079001C68B4C01E68D471B4D1C000082A5C
+:1051A000A47086A00100C000522A7C00ECD640000A
+:1051B000B0381868FCD04000DC381B6807001B784A
+:1051C000F9007C00FCC65A7EDC7AD879986B002105
+:1051D00002A3B268946B002203A3AE68D2791B7855
+:1051E00079007C00DCD64000F8382B7809301B7839
+:1051F00079007800082A8478ACC08678E47884A0A6
+:105200000800C0000B3984A4000240000539F5C62F
+:10521000DDC65A7E1B7879007800082A206895C080
+:1052200022687810E242DDC6781018411B787800B9
+:105230007800082A002379001A391D391F392139CD
+:105240007810B22978001141D4D6C0005C39E479D5
+:10525000ACD140002F39EC7884A0030040002F39F6
+:105260002B7809309B786000AB78000084A6FBFFA8
+:105270005A78E479ACD140003F39EC7884A003003F
+:10528000C00058390120044F0420E4D0C000543934
+:105290002068C4D0400054397E0C587060200460EF
+:1052A0009DC00660086084A0FF000A607F0C01209A
+:1052B00014007800433484A1070079009239907A71
+:1052C00094A207009B786000A879FF814000903984
+:1052D0009B781000A87B84A30100C0008339A87BC1
+:1052E000A87B86A30100C00076390920F7FF78006B
+:1052F0007C3986A30300C00083390920EFFF7E0CB0
+:1053000058706020046004A106607F0C9B786000E8
+:10531000AB78000084A6FBFF5A782B78093020690F
+:105320008CA1FFFC226978005D43D930E3309C39C1
+:10533000A2399A399A395D435D437810B2292069C0
+:105340008CA1FFFC22697800634320698CA1FFFCDB
+:10535000226978005D43E47984A130004000B239CD
+:10536000EC7884A00300C000E639007086A0040039
+:10537000C000CC39647086A00200C000C239112080
+:105380000200192000007800652F647086A00600D6
+:105390004000BC39647086A004004000BC39007035
+:1053A00086A000004000082A206984A12004400053
+:1053B000DB39D4C1226918687800433418688EA09C
+:1053C00002004000E439FDC01A6801201400780092
+:1053D000433484A107007900EA395D435D43F23923
+:1053E0005D43A543A5435D435D43BCD64000343ACD
+:1053F0008471FF814000343A82A10D00D000013A4F
+:10540000877000007800063A82A10C00867009209F
+:105410000C009B786100AA797E157E137E1488703B
+:10542000148110A28A7280A00B0000AD982084B273
+:1054300000034000283A7E000120044F0420ECD0F5
+:105440007F004000243AA1202B0178002A3AA120B5
+:105450002B0278002A3AA1202B019B7800000881BA
+:10546000AC81A6537F147F137F1578006343D4D695
+:10547000C000883A206884D0400063438CA6600056
+:1054800084A660004000463A86A06000C000463A0C
+:10549000F5C194C15A79B6699B786000AB78000079
+:1054A0009B7861001868FDC01A68AA7808800C8192
+:1054B00040004F3E8CA1F800C0004F3E7E157E1389
+:1054C0007E147E0108328CA100034000743A7E00F5
+:1054D0000120044F0420ECD07F004000703AA1204E
+:1054E0002B017800763AA1202B027800763AA12091
+:1054F0002B017F019B7800000080AC8080AD0B0009
+:105500009820A6537F147F137F151468FCC0078072
+:105510008278780063431868FCD040008E3A1B689C
+:1055200008002068ADC02268781020411B78EA008E
+:105530007C0000237900993A9E3A763B9C3A781099
+:10554000B229D87CDC7DD07FFF82C000C73A0072D0
+:1055500086A2030040001034D471BCD1C000CA3A06
+:10556000B4D14000CA3A7E0D3B7800881B784C00CD
+:10557000BC706DA0B468A5C05A789468D678DE78FF
+:105580009868D278DA78B4C1D671037030007F0D94
+:105590007800CE3A00727800CE3A3B7800181B783B
+:1055A0004A0084A20F007900D23A613B103BDC3AFA
+:1055B0003F34DA3A613BDA3ADA3A7810B2291C68B9
+:1055C000ECD04000E33A08608DC00A60206985C1D4
+:1055D00022690068066005A0C000EC3A026008601D
+:1055E000D4C00A601C6884A00E00C000003B84B2D6
+:1055F00000034000FC3A0920C0957800053B0920D3
+:10560000D0967800053B3070BA684071CC7008A124
+:10561000042102680A2D5E71DCD6C000103BFCC676
+:10562000B66E7800613BB66E84A66000C0001A3B7F
+:1056300084A6FF7FB6687800613BDCD6C000283BBB
+:1056400084A6FF7FB6689468A6689868AA687810F0
+:10565000D6457800613BACD64000343B06A07810BC
+:10566000D64508241025AA69A66A7800443B082478
+:10567000102500271B80C8003B3B008084A03F0012
+:1056800008A191A20000AA69A66A7810D645FCD6A6
+:105690004000613B84A6FF7FB66810250824ACD685
+:1056A000C000593B00271B80C800543B008084A0E9
+:1056B0003F0008A191A20000986B002102A3B268EC
+:1056C000946B002203A3AE68007086A03000C00077
+:1056D0000C2A03700200BC706DA0BC684270B870E8
+:1056E00065A0C0685A70002D4E7080AD09004670EC
+:1056F0007C0086A50088C000833B03700000186012
+:1057000001801A60086084A0EFFB0A6078001141F4
+:105710004770000082A2060050008D3B7810B2292D
+:1057200000237900903B933BA53BB13B00227900DD
+:10573000963B9C3B11419E3B9C3BEB3B403C781095
+:10574000B229807c_softc *ahc)
+{
+	/*
+	 * We upset the sequencer :-(
+	 * Lookup the error message
+	 */
+	int i;
+	int error;
+
+	error = ahc_inb(ahc, ERROR);
+	for (i = 0; error != 1 && i < num_errors; i++)
+		error >>= 1;
+	printf("%s: brkadrint, %s at seqaddr = 0x%x\n",
+	       ahc_name(ahc), ahc_hard_errors[i].errmesg,
+	       ahc_inb(ahc, SEQADDR0) |
+	       (ahc_inb(ahc, SEQADDR1) << 8));
+
+	ahc_dump_card_state(ahc);
+
+	/* Tell everyone that this HBA is no longer available */
+	ahc_abort_scbs(ahc, CAM_TARGET_WILDCARD, ALL_CHANNELS,
+		       CAM_LUN_WILDCARD, SCB_LIST_NULL, ROLE_UNKNOWN,
+		       CAM_NO_HBA);
+
+	/* Disable all interrupt sources by resetting the controller */
+	ahc_shutdown(ahc);
+}
+
+static void
+ahc_handle_seqint(struct ahc_softc *ahc, u_int intstat)
+{
+	struct scb *scb;
+	struct ahc_devinfo devinfo;
+	
+	ahc_fetch_devinfo(ahc, &devinfo);
+
+	/*
+	 * Clear the upper byte that holds SEQINT status
+	 * codes and clear the SEQINT bit. We will unpause
+	 * the sequencer, if appropriate, after servicing
+	 * the request.
+	 */
+	ahc_outb(ahc, CLRINT, CLRSEQINT);
+	switch (intstat & SEQINT_MASK) {
+	case BAD_STATUS:
+	{
+		u_int  scb_index;
+		struct hardware_scb *hscb;
+
+		/*
+		 * Set the default return value to 0 (don't
+		 * send sense).  The sense code will change
+		 * this if needed.
+		 */
+		ahc_outb(ahc, RETURN_1, 0);
+
+		/*
+		 * The sequencer will notify us when a command
+		 * has an error that would be of interest to
+		 * the kernel.  This allows us to leave the sequencer
+		 * running in the common case of command completes
+		 * without error.  The sequencer will already have
+		 * dma'd the SCB back up to us, so we can reference
+		 * the in kernel copy directly.
+		 */
+		scb_index = ahc_inb(ahc, SCB_TAG);
+		scb = ahc_lookup_scb(ahc, scb_index);
+		if (scb == NULL) {
+			ahc_print_devinfo(ahc, &devinfo);
+			printf("ahc_intr - referenced scb "
+			       "not valid during seqint 0x%x scb(%d)\n",
+			       intstat, scb_index);
+			ahc_dump_card_state(ahc);
+			panic("for safety");
+			goto unpause;
+		}
+
+		hscb = scb->hscb; 
+
+		/* Don't want to clobber the original sense code */
+		if ((scb->flags & SCB_SENSE) != 0) {
+			/*
+			 * Clear the SCB_SENSE Flag and have
+			 * the sequencer do a normal command
+			 * complete.
+			 */
+			scb->flags &= ~SCB_SENSE;
+			ahc_set_transaction_status(scb, CAM_AUTOSENSE_FAIL);
+			break;
+		}
+		ahc_set_transaction_status(scb, CAM_SCSI_STATUS_ERROR);
+		/* Freeze the queue until the client sees the error. */
+		ahc_freeze_devq(ahc, scb);
+		ahc_freeze_scb(scb);
+		ahc_set_scsi_status(scb, hscb->shared_data.status.scsi_status);
+		switch (hscb->shared_data.status.scsi_status) {
+		case SCSI_STATUS_OK:
+			printf("%s: Interrupted for staus of 0???\n",
+			       ahc_name(ahc));
+			break;
+		case SCSI_STATUS_CMD_TERMINATED:
+		case SCSI_STATUS_CHECK_COND:
+		{
+			struct ahc_dma_seg *sg;
+			struct scsi_sense *sc;
+			struct ahc_initiator_tinfo *targ_info;
+			struct ahc_tmode_tstate *tstate;
+			struct ahc_transinfo *tinfo;
+#ifdef AHC_DEBUG
+			if (ahc_debug & AHC_SHOW_SENSE) {
+				ahc_print_path(ahc, scb);
+				printf("SCB %d: requests Check Status\n",
+				       scb->hscb->tag);
+			}
+#endif
+
+			if (ahc_perform_autosense(scb) == 0)
+				break;
+
+			targ_info = ahc_fetch_transinfo(ahc,
+							devinfo.channel,
+							devinfo.our_scsiid,
+							devinfo.target,
+							&tstate);
+			tinfo = &targ_info->curr;
+			sg = scb->sg_list;
+			sc = (struct scsi_sense *)(&hscb->shared_data.cdb); 
+			/*
+			 * Save off the residual if there is one.
+			 */
+			ahc_update_residual(ahc, scb);
+#ifdef AHC_DEBUG
+			if (ahc_debug & AHC_SHOW_SENSE) {
+				ahc_print_path(ahc, scb);
+				printf("Sending Sense\n");
+			}
+#endif
+			sg->addr = ahc_get_sense_bufaddr(ahc, scb);
+			sg->len = ahc_get_sense_bufsize(ahc, scb);
+			sg->len |= AHC_DMA_LAST_SEG;
+
+			/* Fixup byte order */
+			sg->addr = ahc_htole32(sg->addr);
+			sg->len = ahc_htole32(sg->len);
+
+			sc->opcode = REQUEST_SENSE;
+			sc->byte2 = 0;
+			if (tinfo->protocol_version <= SCSI_REV_2
+			 && SCB_GET_LUN(scb) < 8)
+				sc->byte2 = SCB_GET_LUN(scb) << 5;
+			sc->unused[0] = 0;
+			sc->unused[1] = 0;
+			sc->length = sg->len;
+			sc->control = 0;
+
+			/*
+			 * We can't allow the target to disconnect.
+			 * This will be an untagged transaction and
+			 * having the target disconnect will make this
+			 * transaction indestinguishable from outstanding
+			 * tagged transactions.
+			 */
+			hscb->control = 0;
+
+			/*
+			 * This request sense could be because the
+			 * the device lost power or in some other
+			 * way has lost our transfer negotiations.
+			 * Renegotiate if appropriate.  Unit attention
+			 * errors will be reported before any data
+			 * phases occur.
+			 */
+			if (ahc_get_residual(scb) 
+			 == ahc_get_transfer_length(scb)) {
+				ahc_update_neg_request(ahc, &devinfo,
+						       tstate, targ_info,
+						       AHC_NEG_IF_NON_ASYNC);
+			}
+			if (tstate->auto_negotiate & devinfo.target_mask) {
+				hscb->control |= MK_MESSAGE;
+				scb->flags &= ~SCB_NEGOTIATE;
+				scb->flags |= SCB_AUTO_NEGOTIATE;
+			}
+			hscb->cdb_len = sizeof(*sc);
+			hscb->dataptr = sg->addr; 
+			hscb->datacnt = sg->len;
+			hscb->sgptr = scb->sg_list_phys | SG_FULL_RESID;
+			hscb->sgptr = ahc_htole32(hscb->sgptr);
+			scb->sg_count = 1;
+			scb->flags |= SCB_SENSE;
+			ahc_qinfifo_requeue_tail(ahc, scb);
+			ahc_outb(ahc, RETURN_1, SEND_SENSE);
+			/*
+			 * Ensure we have enough time to actually
+			 * retrieve the sense.
+			 */
+			ahc_scb_timer_reset(scb, 5 * 1000000);
+			break;
+		}
+		default:
+			break;
+		}
+		break;
+	}
+	case NO_MATCH:
+	{
+		/* Ensure we don't leave the selection hardware on */
+		ahc_outb(ahc, SCSISEQ,
+			 ahc_inb(ahc, SCSISEQ) & (ENSELI|ENRSELI|ENAUTOATNP));
+
+		printf("%s:%c:%d: no active SCB for reconnecting "
+		       "target - issuing BUS DEVICE RESET\n",
+		       ahc_name(ahc), devinfo.channel, devinfo.target);
+		printf("SAVED_SCSIID == 0x%x, SAVED_LUN == 0x%x, "
+		       "ARG_1 == 0x%x ACCUM = 0x%x\n",
+		       ahc_inb(ahc, SAVED_SCSIID), ahc_inb(ahc, SAVED_LUN),
+		       ahc_inb(ahc, ARG_1), ahc_inb(ahc, ACCUM));
+		printf("SEQ_FLAGS == 0x%x, SCBPTR == 0x%x, BTT == 0x%x, "
+		       "SINDEX == 0x%x\n",
+		       ahc_inb(ahc, SEQ_FLAGS), ahc_inb(ahc, SCBPTR),
+		       ahc_index_busy_tcl(ahc,
+			    BUILD_TCL(ahc_inb(ahc, SAVED_SCSIID),
+				      ahc_inb(ahc, SAVED_LUN))),
+		       ahc_inb(ahc, SINDEX));
+		printf("SCSIID == 0x%x, SCB_SCSIID == 0x%x, SCB_LUN == 0x%x, "
+		       "SCB_TAG == 0x%x, SCB_CONTROL == 0x%x\n",
+		       ahc_inb(ahc, SCSIID), ahc_inb(ahc, SCB_SCSIID),
+		       ahc_inb(ahc, SCB_LUN), ahc_inb(ahc, SCB_TAG),
+		       ahc_inb(ahc, SCB_CONTROL));
+		printf("SCSIBUSL == 0x%x, SCSISIGI == 0x%x\n",
+		       ahc_inb(ahc, SCSIBUSL), ahc_inb(ahc, SCSISIGI));
+		printf("SXFRCTL0 == 0x%x\n", ahc_inb(ahc, SXFRCTL0));
+		printf("SEQCTL == 0x%x\n", ahc_inb(ahc, SEQCTL));
+		ahc_dump_card_state(ahc);
+		ahc->msgout_buf[0] = MSG_BUS_DEV_RESET;
+		ahc->msgout_len = 1;
+		ahc->msgout_index = 0;
+		ahc->msg_type = MSG_TYPE_INITIATOR_MSGOUT;
+		ahc_outb(ahc, MSG_OUT, HOST_MSG);
+		ahc_assert_atn(ahc);
+		break;
+	}
+	case SEND_REJECT: 
+	{
+		u_int rejbyte = ahc_inb(ahc, ACCUM);
+		printf("%s:%c:%d: Warning - unknown message received from "
+		       "target (0x%x).  Rejecting\n", 
+		       ahc_name(ahc), devinfo.channel, devinfo.target, rejbyte);
+		break; 
+	}
+	case PROTO_VIOLATION:
+	{
+		ahc_handle_proto_violation(ahc);
+		break;
+	}
+	case IGN_WIDE_RES:
+		ahc_handle_ign_wide_residue(ahc, &devinfo);
+		break;
+	case PDATA_REINIT:
+		ahc_reinitialize_dataptrs(ahc);
+		break;
+	case BAD_PHASE:
+	{
+		u_int lastphase;
+
+		lastphase = ahc_inb(ahc, LASTPHASE);
+		printf("%s:%c:%d: unknown scsi bus phase %x, "
+		       "lastphase = 0x%x.  Attempting to continue\n",
+		       ahc_name(ahc), devinfo.channel, devinfo.target,
+		       lastphase, ahc_inb(ahc, SCSISIGI));
+		break;
+	}
+	case MISSED_BUSFREE:
+	{
+		u_int lastphase;
+
+		lastphase = ahc_inb(ahc, LASTPHASE);
+		printf("%s:%c:%d: Missed busfree. "
+		       "Lastphase = 0x%x, Curphase = 0x%x\n",
+		       ahc_name(ahc), devinfo.channel, devinfo.target,
+		       lastphase, ahc_inb(ahc, SCSISIGI));
+		ahc_restart(ahc);
+		return;
+	}
+	case HOST_MSG_LOOP:
+	{
+		/*
+		 * The sequencer has encountered a message phase
+		 * that requires host assistance for completion.
+		 * While handling the message phase(s), we will be
+		 * notified by the sequencer after each byte is
+		 * transfered so we can track bus phase changes.
+		 *
+		 * If this is the first time we've seen a HOST_MSG_LOOP
+		 * interrupt, initialize the state of the host message
+		 * loop.
+		 */
+		if (ahc->msg_type == MSG_TYPE_NONE) {
+			struct scb *scb;
+			u_int scb_index;
+			u_int bus_phase;
+
+			bus_phase = ahc_inb(ahc, SCSISIGI) & PHASE_MASK;
+			if (bus_phase != P_MESGIN
+			 && bus_phase != P_MESGOUT) {
+				printf("ahc_intr: HOST_MSG_LOOP bad "
+				       "phase 0x%x\n",
+				      bus_phase);
+				/*
+				 * Probably transitioned to bus free before
+				 * we got here.  Just punt the message.
+				 */
+				ahc_clear_intstat(ahc);
+				ahc_restart(ahc);
+				return;
+			}
+
+			scb_index = ahc_inb(ahc, SCB_TAG);
+			scb = ahc_lookup_scb(ahc, scb_index);
+			if (devinfo.role == ROLE_INITIATOR) {
+				if (bus_phase == P_MESGOUT) {
+					if (scb == NULL)
+						panic("HOST_MSG_LOOP with "
+						      "invalid SCB %x\n",
+						      scb_index);
+
+					ahc_setup_initiator_msgout(ahc,
+								   &devinfo,
+								   scb);
+				} else {
+					ahc->msg_type =
+					    MSG_TYPE_INITIATOR_MSGIN;
+					ahc->msgin_index = 0;
+				}
+			}
+#ifdef AHC_TARGET_MODE
+			else {
+				if (bus_phase == P_MESGOUT) {
+					ahc->msg_type =
+					    MSG_TYPE_TARGET_MSGOUT;
+					ahc->msgin_index = 0;
+				}
+				else 
+					ahc_setup_target_msgin(ahc,
+							       &devinfo,
+							       scb);
+			}
+#endif
+		}
+
+		ahc_handle_message_phase(ahc);
+		break;
+	}
+	case PERR_DETECTED:
+	{
+		/*
+		 * If we've cleared the parity error interrupt
+		 * but the sequencer still believes that SCSIPERR
+		 * is true, it must be that the parity error is
+		 * for the currently presented byte on the bus,
+		 * and we are not in a phase (data-in) where we will
+		 * eventually ack this byte.  Ack the byte and
+		 * throw it away in the hope that the target will
+		 * take us to message out to deliver the appropriate
+		 * error message.
+		 */
+		if ((intstat & SCSIINT) == 0
+		 && (ahc_inb(ahc, SSTAT1) & SCSIPERR) != 0) {
+
+			if ((ahc->features & AHC_DT) == 0) {
+				u_int curphase;
+
+				/*
+				 * The hardware will only let you ack bytes
+				 * if the expected phase in SCSISIGO matches
+				 * the current phase.  Make sure this is
+				 * currently the case.
+				 */
+				curphase = ahc_inb(ahc, SCSISIGI) & PHASE_MASK;
+				ahc_outb(ahc, LASTPHASE, curphase);
+				ahc_outb(ahc, SCSISIGO, curphase);
+			}
+			if ((ahc_inb(ahc, SCSISIGI) & (CDI|MSGI)) == 0) {
+				int wait;
+
+				/*
+				 * In a data phase.  Faster to bitbucket
+				 * the data than to individually ack each
+				 * byte.  This is also the only strategy
+				 * that will work with AUTOACK enabled.
+				 */
+				ahc_outb(ahc, SXFRCTL1,
+					 ahc_inb(ahc, SXFRCTL1) | BITBUCKET);
+				wait = 5000;
+				while (--wait != 0) {
+					if ((ahc_inb(ahc, SCSISIGI)
+					  & (CDI|MSGI)) != 0)
+						break;
+					ahc_delay(100);
+				}
+				ahc_outb(ahc, SXFRCTL1,
+					 ahc_inb(ahc, SXFRCTL1) & ~BITBUCKET);
+				if (wait == 0) {
+					struct	scb *scb;
+					u_int	scb_index;
+
+					ahc_print_devinfo(ahc, &devinfo);
+					printf("Unable to clear parity error.  "
+					       "Resetting bus.\n");
+					scb_index = ahc_inb(ahc, SCB_TAG);
+					scb = ahc_lookup_scb(ahc, scb_index);
+					if (scb != NULL)
+						ahc_set_transaction_status(scb,
+						    CAM_UNCOR_PARITY);
+					ahc_reset_channel(ahc, devinfo.channel, 
+							  /*init reset*/TRUE);
+				}
+			} else {
+				ahc_inb(ahc, SCSIDATL);
+			}
+		}
+		break;
+	}
+	case DATA_OVERRUN:
+	{
+		/*
+		 * When the sequencer detects an overrun, it
+		 * places the controller in "BITBUCKET" mode
+		 * and allows the target to complete its transfer.
+		 * Unfortunately, none of the counters get updated
+		 * when the controller is in this mode, so we have
+		 * no way of knowing how large the overrun was.
+		 */
+		u_int scbindex = ahc_inb(ahc, SCB_TAG);
+		u_int lastphase = ahc_inb(ahc, LASTPHASE);
+		u_int i;
+
+		scb = ahc_lookup_scb(ahc, scbindex);
+		for (i = 0; i < num_phases; i++) {
+			if (lastphase == ahc_phase_table[i].phase)
+				break;
+		}
+		ahc_print_path(ahc, scb);
+		printf("data overrun detected %s."
+		       "  Tag == 0x%x.\n",
+		       ahc_phase_table[i].phasemsg,
+  		       scb->hscb->tag);
+		ahc_print_path(ahc, scb);
+		printf("%s seen Data Phase.  Length = %ld.  NumSGs = %d.\n",
+		       ahc_inb(ahc, SEQ_FLAGS) & DPHASE ? "Have" : "Haven't",
+		       ahc_get_transfer_length(scb), scb->sg_count);
+		if (scb->sg_count > 0) {
+			for (i = 0; i < scb->sg_count; i++) {
+
+				printf("sg[%d] - Addr 0x%x%x : Length %d\n",
+				       i,
+				       (ahc_le32toh(scb->sg_list[i].len) >> 24
+				        & SG_HIGH_ADDR_BITS),
+				       ahc_le32toh(scb->sg_list[i].addr),
+				       ahc_le32toh(scb->sg_list[i].len)
+				       & AHC_SG_LEN_MASK);
+			}
+		}
+		/*
+		 * Set this and it will take effect when the
+		 * target does a command complete.
+		 */
+		ahc_freeze_devq(ahc, scb);
+		if ((scb->flags & SCB_SENSE) == 0) {
+			ahc_set_transaction_status(scb, CAM_DATA_RUN_ERR);
+		} else {
+			scb->flags &= ~SCB_SENSE;
+			ahc_set_transaction_status(scb, CAM_AUTOSENSE_FAIL);
+		}
+		ahc_freeze_scb(scb);
+
+		if ((ahc->features & AHC_ULTRA2) != 0) {
+			/*
+			 * Clear the channel in case we return
+			 * to data phase later.
+			 */
+			ahc_outb(ahc, SXFRCTL0,
+				 ahc_inb(ahc, SXFRCTL0) | CLRSTCNT|CLRCHN);
+			ahc_outb(ahc, SXFRCTL0,
+				 ahc_inb(ahc, SXFRCTL0) | CLRSTCNT|CLRCHN);
+		}
+		if ((ahc->flags & AHC_39BIT_ADDRESSING) != 0) {
+			u_int dscommand1;
+
+			/* Ensure HHADDR is 0 for future DMA operations. */
+			dscommand1 = ahc_inb(ahc, DSCOMMAND1);
+			ahc_outb(ahc, DSCOMMAND1, dscommand1 | HADDLDSEL0);
+			ahc_outb(ahc, HADDR, 0);
+			ahc_outb(ahc, DSCOMMAND1, dscommand1);
+		}
+		break;
+	}
+	case MKMSG_FAILED:
+	{
+		u_int scbindex;
+
+		printf("%s:%c:%d:%d: Attempt to issue message failed\n",
+		       ahc_name(ahc), devinfo.channel, devinfo.target,
+		       devinfo.lun);
+		scbindex = ahc_inb(ahc, SCB_TAG);
+		scb = ahc_lookup_scb(ahc, scbindex);
+		if (scb != NULL
+		 && (scb->flags & SCB_RECOVERY_SCB) != 0)
+			/*
+			 * Ensure that we didn't put a second instance of this
+			 * SCB into the QINFIFO.
+			 */
+			ahc_search_qinfifo(ahc, SCB_GET_TARGET(ahc, scb),
+					   SCB_GET_CHANNEL(ahc, scb),
+					   SCB_GET_LUN(scb), scb->hscb->tag,
+					   ROLE_INITIATOR, /*status*/0,
+					   SEARCH_REMOVE);
+		break;
+	}
+	case NO_FREE_SCB:
+	{
+		printf("%s: No free or disconnected SCBs\n", ahc_name(ahc));
+		ahc_dump_card_state(ahc);
+		panic("for safety");
+		break;
+	}
+	case SCB_MISMATCH:
+	{
+		u_int scbptr;
+
+		scbptr = ahc_inb(ahc, SCBPTR);
+		printf("Bogus TAG after DMA.  SCBPTR %d, tag %d, our tag %d\n",
+		       scbptr, ahc_inb(ahc, ARG_1),
+		       ahc->scb_data->hscbs[scbptr].tag);
+		ahc_dump_card_state(ahc);
+		panic("for saftey");
+		break;
+	}
+	case OUT_OF_RANGE:
+	{
+		printf("%s: BTT calculation out of range\n", ahc_name(ahc));
+		printf("SAVED_SCSIID == 0x%x, SAVED_LUN == 0x%x, "
+		       "ARG_1 == 0x%x ACCUM = 0x%x\n",
+		       ahc_inb(ahc, SAVED_SCSIID), ahc_inb(ahc, SAVED_LUN),
+		       ahc_inb(ahc, ARG_1), ahc_inb(ahc, ACCUM));
+		printf("SEQ_FLAGS == 0x%x, SCBPTR == 0x%x, BTT == 0x%x, "
+		       "SINDEX == 0x%x\n, A == 0x%x\n",
+		       ahc_inb(ahc, SEQ_FLAGS), ahc_inb(ahc, SCBPTR),
+		       ahc_index_busy_tcl(ahc,
+			    BUILD_TCL(ahc_inb(ahc, SAVED_SCSIID),
+				      ahc_inb(ahc, SAVED_LUN))),
+		       ahc_inb(ahc, SINDEX),
+		       ahc_inb(ahc, ACCUM));
+		printf("SCSIID == 0x%x, SCB_SCSIID == 0x%x, SCB_LUN == 0x%x, "
+		       "SCB_TAG == 0x%x, SCB_CONTROL == 0x%x\n",
+		       ahc_inb(ahc, SCSIID), ahc_inb(ahc, SCB_SCSIID),
+		       ahc_inb(ahc, SCB_LUN), ahc_inb(ahc, SCB_TAG),
+		       ahc_inb(ahc, SCB_CONTROL));
+		printf("SCSIBUSL == 0x%x, SCSISIGI == 0x%x\n",
+		       ahc_inb(ahc, SCSIBUSL), ahc_inb(ahc, SCSISIGI));
+		ahc_dump_card_state(ahc);
+		panic("for safety");
+		break;
+	}
+	default:
+		printf("ahc_intr: seqint, "
+		       "intstat == 0x%x, scsisigi = 0x%x\n",
+		       intstat, ahc_inb(ahc, SCSISIGI));
+		break;
+	}
+unpause:
+	/*
+	 *  The sequencer is paused immediately on
+	 *  a SEQINT, so we should restart it when
+	 *  we're done.
+	 */
+	ahc_unpause(ahc);
+}
+
+static void
+ahc_handle_scsiint(struct ahc_softc *ahc, u_int intstat)
+{
+	u_int	scb_index;
+	u_int	status0;
+	u_int	status;
+	struct	scb *scb;
+	char	cur_channel;
+	char	intr_channel;
+
+	if ((ahc->features & AHC_TWIN) != 0
+	 && ((ahc_inb(ahc, SBLKCTL) & SELBUSB) != 0))
+		cur_channel = 'B';
+	else
+		cur_channel = 'A';
+	intr_channel = cur_channel;
+
+	if ((ahc->features & AHC_ULTRA2) != 0)
+		status0 = ahc_inb(ahc, SSTAT0) & IOERR;
+	else
+		status0 = 0;
+	status = ahc_inb(ahc, SSTAT1) & (SELTO|SCSIRSTI|BUSFREE|SCSIPERR);
+	if (status == 0 && status0 == 0) {
+		if ((ahc->features & AHC_TWIN) != 0) {
+			/* Try the other channel */
+		 	ahc_outb(ahc, SBLKCTL, ahc_inb(ahc, SBLKCTL) ^ SELBUSB);
+			status = ahc_inb(ahc, SSTAT1)
+			       & (SELTO|SCSIRSTI|BUSFREE|SCSIPERR);
+			intr_channel = (cur_channel == 'A') ? 'B' : 'A';
+		}
+		if (status == 0) {
+			printf("%s: Spurious SCSI interrupt\n", ahc_name(ahc));
+			ahc_outb(ahc, CLRINT, CLRSCSIINT);
+			ahc_unpause(ahc);
+			return;
+		}
+	}
+
+	/* Make sure the sequencer is in a safe location. */
+	ahc_clear_critical_section(ahc);
+
+	scb_index = ahc_inb(ahc, SCB_TAG);
+	scb = ahc_lookup_scb(ahc, scb_index);
+	if (scb != NULL
+	 && (ahc_inb(ahc, SEQ_FLAGS) & NOT_IDENTIFIED) != 0)
+		scb = NULL;
+
+	if ((ahc->features & AHC_ULTRA2) != 0
+	 && (status0 & IOERR) != 0) {
+		int now_lvd;
+
+		now_lvd = ahc_inb(ahc, SBLKCTL) & ENAB40;
+		printf("%s: Transceiver State Has Changed to %s mode\n",
+		       ahc_name(ahc), now_lvd ? "LVD" : "SE");
+		ahc_outb(ahc, CLRSINT0, CLRIOERR);
+		/*
+		 * When transitioning to SE mode, the reset line
+		 * glitches, triggering an arbitration bug in some
+		 * Ultra2 controllers.  This bug is cleared when we
+		 * assert the reset line.  Since a reset glitch has
+		 * already occurred with this transition and a
+		 * transceiver state change is handled just like
+		 * a bus reset anyway, asserting the reset line
+		 * ourselves is safe.
+		 */
+		ahc_reset_channel(ahc, intr_channel,
+				 /*Initiate Reset*/now_lvd == 0);
+	} else if ((status & SCSIRSTI) != 0) {
+		printf("%s: Someone reset channel %c\n",
+			ahc_name(ahc), intr_channel);
+		if (intr_channel != cur_channel)
+		 	ahc_outb(ahc, SBLKCTL, ahc_inb(ahc, SBLKCTL) ^ SELBUSB);
+		ahc_reset_channel(ahc, intr_channel, /*Initiate Reset*/FALSE);
+	} else if ((status & SCSIPERR) != 0) {
+		/*
+		 * Determine the bus phase and queue an appropriate message.
+		 * SCSIPERR is latched true as soon as a parity error
+		 * occurs.  If the sequencer acked the transfer that
+		 * caused the parity error and the currently presented
+		 * transfer on the bus has correct parity, SCSIPERR will
+		 * be cleared by CLRSCSIPERR.  Use this to determine if
+		 * we should look at the last phase the sequencer recorded,
+		 * or the current phase presented on the bus.
+		 */
+		struct	ahc_devinfo devinfo;
+		u_int	mesg_out;
+		u_int	curphase;
+		u_int	errorphase;
+		u_int	lastphase;
+		u_int	scsirate;
+		u_int	i;
+		u_int	sstat2;
+		int	silent;
+
+		lastphase = ahc_inb(ahc, LASTPHASE);
+		curphase = ahc_inb(ahc, SCSISIGI) & PHASE_MASK;
+		sstat2 = ahc_inb(ahc, SSTAT2);
+		ahc_outb(ahc, CLRSINT1, CLRSCSIPERR);
+		/*
+		 * For all phases save DATA, the sequencer won't
+		 * automatically ack a byte that has a parity error
+		 * in it.  So the only way that the current phase
+		 * could be 'data-in' is if the parity error is for
+		 * an already acked byte in the data phase.  During
+		 * synchronous data-in transfers, we may actually
+		 * ack bytes before latching the current phase in
+		 * LASTPHASE, leading to the discrepancy between
+		 * curphase and lastphase.
+		 */
+		if ((ahc_inb(ahc, SSTAT1) & SCSIPERR) != 0
+		 || curphase == P_DATAIN || curphase == P_DATAIN_DT)
+			errorphase = curphase;
+		else
+			errorphase = lastphase;
+
+		for (i = 0; i < num_phases; i++) {
+			if (errorphase == ahc_phase_table[i].phase)
+				break;
+		}
+		mesg_out = ahc_phase_table[i].mesg_out;
+		silent = FALSE;
+		if (scb != NULL) {
+			if (SCB_IS_SILENT(scb))
+				silent = TRUE;
+			else
+				ahc_print_path(ahc, scb);
+			scb->flags |= SCB_TRANSMISSION_ERROR;
+		} else
+			printf("%s:%c:%d: ", ahc_name(ahc), intr_channel,
+			       SCSIID_TARGET(ahc, ahc_inb(ahc, SAVED_SCSIID)));
+		scsirate = ahc_inb(ahc, SCSIRATE);
+		if (silent == FALSE) {
+			printf("parity error detected %s. "
+			       "SEQADDR(0x%x) SCSIRATE(0x%x)\n",
+			       ahc_phase_table[i].phasemsg,
+			       ahc_inw(ahc, SEQADDR0),
+			       scsirate);
+			if ((ahc->features & AHC_DT) != 0) {
+				if ((sstat2 & CRCVALERR) != 0)
+					printf("\tCRC Value Mismatch\n");
+				if ((sstat2 & CRCENDERR) != 0)
+					printf("\tNo terminal CRC packet "
+					       "recevied\n");
+				if ((sstat2 & CRCREQERR) != 0)
+					printf("\tIllegal CRC packet "
+					       "request\n");
+				if ((sstat2 & DUAL_EDGE_ERR) != 0)
+					printf("\tUnexpected %sDT Data Phase\n",
+					       (scsirate & SINGLE_EDGE)
+					     ? "" : "non-");
+			}
+		}
+
+		if ((ahc->features & AHC_DT) != 0
+		 && (sstat2 & DUAL_EDGE_ERR) != 0) {
+			/*
+			 * This error applies regardless of
+			 * data direction, so ignore the value
+			 * in the phase table.
+			 */
+			mesg_out = MSG_INITIATOR_DET_ERR;
+		}
+
+		/*
+		 * We've set the hardware to assert ATN if we   
+		 * get a parity error on "in" phases, so all we  
+		 * need to do is stuff the message buffer with
+		 * the appropriate message.  "In" phases have set
+		 * mesg_out to something other than MSG_NOP.
+		 */
+		if (mesg_out != MSG_NOOP) {
+			if (ahc->msg_type != MSG_TYPE_NONE)
+				ahc->send_msg_perror = TRUE;
+			else
+				ahc_outb(ahc, MSG_OUT, mesg_out);
+		}
+		/*
+		 * Force a renegotiation with this target just in
+		 * case we are out of sync for some external reason
+		 * unknown (or unreported) by the target.
+		 */
+		ahc_fetch_devinfo(ahc, &devinfo);
+		ahc_force_renegotiation(ahc, &devinfo);
+
+		ahc_outb(ahc, CLRINT, CLRSCSIINT);
+		ahc_unpause(ahc);
+	} else if ((status & SELTO) != 0) {
+		u_int	scbptr;
+
+		/* Stop the selection */
+		ahc_outb(ahc, SCSISEQ, 0);
+
+		/* No more pending messages */
+		ahc_clear_msg_state(ahc);
+
+		/* Clear interrupt state */
+		ahc_outb(ahc, SIMODE1, ahc_inb(ahc, SIMODE1) & ~ENBUSFREE);
+		ahc_outb(ahc, CLRSINT1, CLRSELTIMEO|CLRBUSFREE|CLRSCSIPERR);
+
+		/*
+		 * Although the driver does not care about the
+		 * 'Selection in Progress' status bit, the busy
+		 * LED does.  SELINGO is only cleared by a sucessfull
+		 * selection, so we must manually clear it to insure
+		 * the LED turns off just incase no future successful
+		 * selections occur (e.g. no devices on the bus).
+		 */
+		ahc_outb(ahc, CLRSINT0, CLRSELINGO);
+
+		scbptr = ahc_inb(ahc, WAITING_SCBH);
+		ahc_outb(ahc, SCBPTR, scbptr);
+		scb_index = ahc_inb(ahc, SCB_TAG);
+
+		scb = ahc_lookup_scb(ahc, scb_index);
+		if (scb == NULL) {
+			printf("%s: ahc_intr - referenced scb not "
+			       "valid during SELTO scb(%d, %d)\n",
+			       ahc_name(ahc), scbptr, scb_index);
+			ahc_dump_card_state(ahc);
+		} else {
+			struct ahc_devinfo devinfo;
+#ifdef AHC_DEBUG
+			if ((ahc_debug & AHC_SHOW_SELTO) != 0) {
+				ahc_print_path(ahc, scb);
+				printf("Saw Selection Timeout for SCB 0x%x\n",
+				       scb_index);
+			}
+#endif
+			ahc_scb_devinfo(ahc, &devinfo, scb);
+			ahc_set_transaction_status(scb, CAM_SEL_TIMEOUT);
+			ahc_freeze_devq(ahc, scb);
+
+			/*
+			 * Cancel any pending transactions on the device
+			 * now that it seems to be missing.  This will
+			 * also revert us to async/narrow transfers until
+			 * we can renegotiate with the device.
+			 */
+			ahc_handle_devreset(ahc, &devinfo,
+					    CAM_SEL_TIMEOUT,
+					    "Selection Timeout",
+					    /*verbose_level*/1);
+		}
+		ahc_outb(ahc, CLRINT, CLRSCSIINT);
+		ahc_restart(ahc);
+	} else if ((status & BUSFREE) != 0
+		&& (ahc_inb(ahc, SIMODE1) & ENBUSFREE) != 0) {
+		struct	ahc_devinfo devinfo;
+		u_int	lastphase;
+		u_int	saved_scsiid;
+		u_int	saved_lun;
+		u_int	target;
+		u_int	initiator_role_id;
+		char	channel;
+		int	printerror;
+
+		/*
+		 * Clear our selection hardware as soon as possible.
+		 * We may have an entry in the waiting Q for this target,
+		 * that is affected by this busfree and we don't want to
+		 * go about selecting the target while we handle the event.
+		 */
+		ahc_outb(ahc, SCSISEQ,
+			 ahc_inb(ahc, SCSISEQ) & (ENSELI|ENRSELI|ENAUTOATNP));
+
+		/*
+		 * Disable busfree interrupts and clear the busfree
+		 * interrupt status.  We do this here so that several
+		 * bus transactions occur prior to clearing the SCSIINT
+		 * latch.  It can take a bit for the clearing to take effect.
+		 */
+		ahc_outb(ahc, SIMODE1, ahc_inb(ahc, SIMODE1) & ~ENBUSFREE);
+		ahc_outb(ahc, CLRSINT1, CLRBUSFREE|CLRSCSIPERR);
+
+		/*
+		 * Look at what phase we were last in.
+		 * If its message out, chances are pretty good
+		 * that the busfree was in response to one of
+		 * our abort requests.
+		 */
+		lastphase = ahc_inb(ahc, LASTPHASE);
+		saved_scsiid = ahc_inb(ahc, SAVED_SCSIID);
+		saved_lun = ahc_inb(ahc, SAVED_LUN);
+		target = SCSIID_TARGET(ahc, saved_scsiid);
+		initiator_role_id = SCSIID_OUR_ID(saved_scsiid);
+		channel = SCSIID_CHANNEL(ahc, saved_scsiid);
+		ahc_compile_devinfo(&devinfo, initiator_role_id,
+				    target, saved_lun, channel, ROLE_INITIATOR);
+		printerror = 1;
+
+		if (lastphase == P_MESGOUT) {
+			u_int tag;
+
+			tag = SCB_LIST_NULL;
+			if (ahc_sent_msg(ahc, AHCMSG_1B, MSG_ABORT_TAG, TRUE)
+			 || ahc_sent_msg(ahc, AHCMSG_1B, MSG_ABORT, TRUE)) {
+				if (ahc->msgout_buf[ahc->msgout_index - 1]
+				 == MSG_ABORT_TAG)
+					tag = scb->hscb->tag;
+				ahc_print_path(ahc, scb);
+				printf("SCB %d - Abort%s Completed.\n",
+				       scb->hscb->tag, tag == SCB_LIST_NULL ?
+				       "" : " Tag");
+				ahc_abort_scbs(ahc, target, channel,
+					       saved_lun, tag,
+					       ROLE_INITIATOR,
+					       CAM_REQ_ABORTED);
+				printerror = 0;
+			} else if (ahc_sent_msg(ahc, AHCMSG_1B,
+						MSG_BUS_DEV_RESET, TRUE)) {
+#ifdef __FreeBSD__
+				/*
+				 * Don't mark the user's request for this BDR
+				 * as completing with CAM_BDR_SENT.  CAM3
+				 * specifies CAM_REQ_CMP.
+				 */
+				if (scb != NULL
+				 && scb->io_ctx->ccb_h.func_code== XPT_RESET_DEV
+				 && ahc_match_scb(ahc, scb, target, channel,
+						  CAM_LUN_WILDCARD,
+						  SCB_LIST_NULL,
+						  ROLE_INITIATOR)) {
+					ahc_set_transaction_status(scb, CAM_REQ_CMP);
+				}
+#endif
+				ahc_compile_devinfo(&devinfo,
+						    initiator_role_id,
+						    target,
+						    CAM_LUN_WILDCARD,
+						    channel,
+						    ROLE_INITIATOR);
+				ahc_handle_devreset(ahc, &devinfo,
+						    CAM_BDR_SENT,
+						    "Bus Device Reset",
+						    /*verbose_level*/0);
+				printerror = 0;
+			} else if (ahc_se

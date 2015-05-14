@@ -1,0 +1,45 @@
+I Posting. */
+	NVRAM_DELAY();
+}
+
+/**
+ * qla2x00_write_nvram_word() - Write NVRAM data.
+ * @ha: HA context
+ * @addr: Address in NVRAM to write
+ * @data: word to program
+ */
+static void
+qla2x00_write_nvram_word(struct qla_hw_data *ha, uint32_t addr, uint16_t data)
+{
+	int count;
+	uint16_t word;
+	uint32_t nv_cmd, wait_cnt;
+	struct device_reg_2xxx __iomem *reg = &ha->iobase->isp;
+
+	qla2x00_nv_write(ha, NVR_DATA_OUT);
+	qla2x00_nv_write(ha, 0);
+	qla2x00_nv_write(ha, 0);
+
+	for (word = 0; word < 8; word++)
+		qla2x00_nv_write(ha, NVR_DATA_OUT);
+
+	qla2x00_nv_deselect(ha);
+
+	/* Write data */
+	nv_cmd = (addr << 16) | NV_WRITE_OP;
+	nv_cmd |= data;
+	nv_cmd <<= 5;
+	for (count = 0; count < 27; count++) {
+		if (nv_cmd & BIT_31)
+			qla2x00_nv_write(ha, NVR_DATA_OUT);
+		else
+			qla2x00_nv_write(ha, 0);
+
+		nv_cmd <<= 1;
+	}
+
+	qla2x00_nv_deselect(ha);
+
+	/* Wait for NVRAM to become ready */
+	WRT_REG_WORD(&reg->nvram, NVR_SELECT);
+	RD_REG_WORD(&reg->nvram);		/

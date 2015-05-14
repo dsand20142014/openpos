@@ -1,0 +1,2424 @@
+/*
+ * Linux driver the digital TV devices equipped with B2C2 FlexcopII(b)/III
+ * flexcop-pci.c - covers the PCI part including DMA transfers
+ * see flexcop.c for copyright information
+ */
+
+#define FC_LOG_PREFIX "flexcop-pci"
+#include "flexcop-common.h"
+
+static int enable_pid_filtering = 1;
+module_param(enable_pid_filtering, int, 0444);
+MODULE_PARM_DESC(enable_pid_filtering,
+	"enable hardware pid filtering: supported values: 0 (fullts), 1");
+
+static int irq_chk_intv = 100;
+module_param(irq_chk_intv, int, 0644);
+MODULE_PARM_DESC(irq_chk_intv, "set the interval for IRQ streaming watchdog.");
+
+#ifdef CONFIG_DVB_B2C2_FLEXCOP_DEBUG
+#define dprintk(level,args...) \
+	do { if ((debug & level)) printk(args); } while (0)
+#define DEBSTATUS ""
+#else
+#define dprintk(level,args...)
+#define DEBSTATUS " (debugging is not enabled)"
+#endif
+
+#define deb_info(args...) dprintk(0x01, args)
+#define deb_reg(args...) dprintk(0x02, args)
+#define deb_ts(args...) dprintk(0x04, args)
+#define deb_irq(args...) dprintk(0x08, args)
+#define deb_chk(args...) dprintk(0x10, args)
+
+static int debug;
+module_param(debug, int, 0644);
+MODULE_PARM_DESC(debug,
+	"set debug level (1=info,2=regs,4=TS,8=irqdma,16=check (|-able))."
+	DEBSTATUS);
+
+#define DRIVER_VERSION "0.1"
+#define DRIVER_NAME "Technisat/B2C2 FlexCop II/IIb/III Digital TV PCI Driver"
+#define DRIVER_AUTHOR "Patrick Boettcher <patrick.boettcher@desy.de>"
+
+struct flexcop_pci {
+	struct pci_dev *pdev;
+
+#define FC_PCI_INIT     0x01
+#define FC_PCI_DMA_INIT 0x02
+	int init_state;
+
+	void __iomem *io_mem;
+	u32 irq;
+	/* buffersize (at least for DMA1, need to be % 188 == 0,
+	 * this logic is required */
+#define FC_DEFAULT_DMA1_BUFSIZE (1280 * 188)
+#define FC_DEFAULT_DMA2_BUFSIZE (10 * 188)
+	struct flexcop_dma dma[2];
+
+	int active_dma1_addr; /* 0 = addr0 of dma1; 1 = addr1 of dma1 */
+	u32 last_dma1_cur_pos;
+	/* position of the pointer last time the timer/packet irq occured */
+	int count;
+	int count_prev;
+	int stream_problem;
+
+	spinlock_t irq_lock;
+	unsigned long last_irq;
+
+	struct delayed_work irq_check_work;
+	struct flexcop_device *fc_dev;
+};
+
+static int lastwreg, lastwval, lastrreg, lastrval;
+
+static flexcop_ibi_value flexcop_pci_read_ibi_reg(struct flexcop_device *fc,
+		flexcop_ibi_register r)
+{
+	struct flexcop_pci *fc_pci = fc->bus_specific;
+	flexcop_ibi_value v;
+	v.raw = readl(fc_pci->io_mem + r);
+
+	if (lastrreg != r || lastrval != v.raw) {
+		lastrreg = r; lastrval = v.raw;
+		deb_reg("new rd: %3x: %08x\n", r, v.raw);
+	}
+
+	return v;
+}
+
+static int flexcop_pci_write_ibi_reg(struct flexcop_device *fc,
+		flexcop_ibi_register r, flexcop_ibi_value v)
+{
+	struct flexcop_pci *fc_pci = fc->bus_specific;
+
+	if (lastwreg != r || lastwval != v.raw) {
+		lastwreg = r; lastwval = v.raw;
+		deb_reg("new wr: %3x: %08x\n", r, v.raw);
+	}
+
+	writel(v.raw, fc_pci->io_mem + r);
+	return 0;
+}
+
+static void flexcop_pci_irq_check_work(struct work_struct *work)
+{
+	struct flexcop_pci *fc_pci =
+		container_of(work, struct flexcop_pci, irq_check_work.work);
+	struct flexcop_device *fc = fc_pci->fc_dev;
+
+	if (fc->feedcount) {
+
+		if (fc_pci->count == fc_pci->count_prev) {
+			deb_chk("no IRQ since the last check\n");
+			if (fc_pci->stream_problem++ == 3) {
+				struct dvb_demux_feed *feed;
+				deb_info("flexcop-pci: stream problem, resetting pid filter\n");
+
+				spin_lock_irq(&fc->demux.lock);
+				list_for_each_entry(feed, &fc->demux.feed_list,
+						list_head) {
+					flexcop_pid_feed_control(fc, feed, 0);
+				}
+
+				list_for_each_entry(feed, &fc->demux.feed_list,
+						list_head) {
+					flexcop_pid_feed_control(fc, feed, 1);
+				}
+				spin_unlock_irq(&fc->demux.lock);
+
+				fc_pci->stream_problem = 0;
+			}
+		} else {
+			fc_pci->stream_problem = 0;
+			fc_pci->count_prev = fc_pci->count;
+		}
+	}
+
+	schedule_delayed_work(&fc_pci->irq_check_work,
+			msecs_to_jiffies(irq_chk_intv < 100 ? 100 : irq_chk_intv));
+}
+
+/* When PID filtering is turned on, we use the timer IRQ, because small amounts
+ * of data need to be passed to the user space instantly as well. When PID
+ * filtering is turned off, we use the page-change-IRQ */
+static irqreturn_t flexcop_pci_isr(int irq, void *dev_id)
+{
+	struct flexcop_pci *fc_pci = dev_id;
+	struct flexcop_device *fc = fc_pci->fc_dev;
+	unsigned long flags;
+	flexcop_ibi_value v;
+	irqreturn_t ret = IRQ_HANDLED;
+
+	spin_lock_irqsave(&fc_pci->irq_lock, flags);
+	v = fc->read_ibi_reg(fc, irq_20c);
+
+	/* errors */
+	if (v.irq_20c.Data_receiver_error)
+		deb_chk("data receiver error\n");
+	if (v.irq_20c.Continuity_error_flag)
+		deb_chk("Contunuity error flag is set\n");
+	if (v.irq_20c.LLC_SNAP_FLAG_set)
+		deb_chk("LLC_SNAP_FLAG_set is set\n");
+	if (v.irq_20c.Transport_Error)
+		deb_chk("Transport error\n");
+
+	if ((fc_pci->count % 1000) == 0)
+		deb_chk("%d valid irq took place so far\n", fc_pci->count);
+
+	if (v.irq_20c.DMA1_IRQ_Status == 1) {
+		if (fc_pci->active_dma1_addr == 0)
+			flexcop_pass_dmx_packets(fc_pci->fc_dev,
+					fc_pci->dma[0].cpu_addr0,
+					fc_pci->dma[0].size / 188);
+		else
+			flexcop_pass_dmx_packets(fc_pci->fc_dev,
+					fc_pci->dma[0].cpu_addr1,
+					fc_pci->dma[0].size / 188);
+
+		deb_irq("page change to page: %d\n",!fc_pci->active_dma1_addr);
+		fc_pci->active_dma1_addr = !fc_pci->active_dma1_addr;
+		/* for the timer IRQ we only can use buffer dmx feeding, because we don't have
+		 * complete TS packets when reading from the DMA memory */
+	} else if (v.irq_20c.DMA1_Timer_Status == 1) {
+		dma_addr_t cur_addr =
+			fc->read_ibi_reg(fc,dma1_008).dma_0x8.dma_cur_addr << 2;
+		u32 cur_pos = cur_addr - fc_pci->dma[0].dma_addr0;
+
+		deb_irq("%u irq: %08x cur_addr: %llx: cur_pos: %08x, "
+			"last_cur_pos: %08x ",
+				jiffies_to_usecs(jiffies - fc_pci->last_irq),
+				v.raw, (unsigned long long)cur_addr, cur_pos,
+				fc_pci->last_dma1_cur_pos);
+		fc_pci->last_irq = jiffies;
+
+		/* buffer end was reached, restarted from the beginning
+		 * pass the data from last_cur_pos to the buffer end to the demux
+		 */
+		if (cur_pos < fc_pci->last_dma1_cur_pos) {
+			deb_irq(" end was reached: passing %d bytes ",
+				(fc_pci->dma[0].size*2 - 1) -
+				fc_pci->last_dma1_cur_pos);
+			flexcop_pass_dmx_data(fc_pci->fc_dev,
+				fc_pci->dma[0].cpu_addr0 +
+					fc_pci->last_dma1_cur_pos,
+				(fc_pci->dma[0].size*2) -
+					fc_pci->last_dma1_cur_pos);
+			fc_pci->last_dma1_cur_pos = 0;
+		}
+
+		if (cur_pos > fc_pci->last_dma1_cur_pos) {
+			deb_irq(" passing %d bytes ",
+				cur_pos - fc_pci->last_dma1_cur_pos);
+			flexcop_pass_dmx_data(fc_pci->fc_dev,
+				fc_pci->dma[0].cpu_addr0 +
+					fc_pci->last_dma1_cur_pos,
+				cur_pos - fc_pci->last_dma1_cur_pos);
+		}
+		deb_irq("\n");
+
+		fc_pci->last_dma1_cur_pos = cur_pos;
+		fc_pci->count++;
+	} else {
+		deb_irq("isr for flexcop called, "
+			"apparently without reason (%08x)\n", v.raw);
+		ret = IRQ_NONE;
+	}
+
+	spin_unlock_irqrestore(&fc_pci->irq_lock, flags);
+	return ret;
+}
+
+static int flexcop_pci_stream_control(struct flexcop_device *fc, int onoff)
+{
+	struct flexcop_pci *fc_pci = fc->bus_specific;
+	if (onoff) {
+		flexcop_dma_config(fc, &fc_pci->dma[0], FC_DMA_1);
+		flexcop_dma_config(fc, &fc_pci->dma[1], FC_DMA_2);
+		flexcop_dma_config_timer(fc, FC_DMA_1, 0);
+		flexcop_dma_xfer_control(fc, FC_DMA_1,
+				FC_DMA_SUBADDR_0 | FC_DMA_SUBADDR_1, 1);
+		deb_irq("DMA xfer enabled\n");
+
+		fc_pci->last_dma1_cur_pos = 0;
+		flexcop_dma_control_timer_irq(fc, FC_DMA_1, 1);
+		deb_irq("IRQ enabled\n");
+		fc_pci->count_prev = fc_pci->count;
+	} else {
+		flexcop_dma_control_timer_irq(fc, FC_DMA_1, 0);
+		deb_irq("IRQ disabled\n");
+
+		flexcop_dma_xfer_control(fc, FC_DMA_1,
+			 FC_DMA_SUBADDR_0 | FC_DMA_SUBADDR_1, 0);
+		deb_irq("DMA xfer disabled\n");
+	}
+	return 0;
+}
+
+static int flexcop_pci_dma_init(struct flexcop_pci *fc_pci)
+{
+	int ret;
+	ret = flexcop_dma_allocate(fc_pci->pdev, &fc_pci->dma[0],
+			FC_DEFAULT_DMA1_BUFSIZE);
+	if (ret != 0)
+		return ret;
+
+	ret = flexcop_dma_allocate(fc_pci->pdev, &fc_pci->dma[1],
+			FC_DEFAULT_DMA2_BUFSIZE);
+	if (ret != 0) {
+		flexcop_dma_free(&fc_pci->dma[0]);
+		return ret;
+	}
+
+	flexcop_sram_set_dest(fc_pci->fc_dev, FC_SRAM_DEST_MEDIA |
+			FC_SRAM_DEST_NET, FC_SRAM_DEST_TARGET_DMA1);
+	flexcop_sram_set_dest(fc_pci->fc_dev, FC_SRAM_DEST_CAO |
+			FC_SRAM_DEST_CAI, FC_SRAM_DEST_TARGET_DMA2);
+	fc_pci->init_state |= FC_PCI_DMA_INIT;
+	return ret;
+}
+
+static void flexcop_pci_dma_exit(struct flexcop_pci *fc_pci)
+{
+	if (fc_pci->init_state & FC_PCI_DMA_INIT) {
+		flexcop_dma_free(&fc_pci->dma[0]);
+		flexcop_dma_free(&fc_pci->dma[1]);
+	}
+	fc_pci->init_state &= ~FC_PCI_DMA_INIT;
+}
+
+static int flexcop_pci_init(struct flexcop_pci *fc_pci)
+{
+	int ret;
+	u8 card_rev;
+
+	pci_read_config_byte(fc_pci->pdev, PCI_CLASS_REVISION, &card_rev);
+	info("card revision %x", card_rev);
+
+	if ((ret = pci_enable_device(fc_pci->pdev)) != 0)
+		return ret;
+	pci_set_master(fc_pci->pdev);
+
+	if ((ret = pci_request_regions(fc_pci->pdev, DRIVER_NAME)) != 0)
+		goto err_pci_disable_device;
+
+	fc_pci->io_mem = pci_iomap(fc_pci->pdev, 0, 0x800);
+
+	if (!fc_pci->io_mem) {
+		err("cannot map io memory\n");
+		ret = -EIO;
+		goto err_pci_release_regions;
+	}
+
+	pci_set_drvdata(fc_pci->pdev, fc_pci);
+	spin_lock_init(&fc_pci->irq_lock);
+	if ((ret = request_irq(fc_pci->pdev->irq, flexcop_pci_isr,
+					IRQF_SHARED, DRIVER_NAME, fc_pci)) != 0)
+		goto err_pci_iounmap;
+
+	fc_pci->init_state |= FC_PCI_INIT;
+	return ret;
+
+err_pci_iounmap:
+	pci_iounmap(fc_pci->pdev, fc_pci->io_mem);
+	pci_set_drvdata(fc_pci->pdev, NULL);
+err_pci_release_regions:
+	pci_release_regions(fc_pci->pdev);
+err_pci_disable_device:
+	pci_disable_device(fc_pci->pdev);
+	return ret;
+}
+
+static void flexcop_pci_exit(struct flexcop_pci *fc_pci)
+{
+	if (fc_pci->init_state & FC_PCI_INIT) {
+		free_irq(fc_pci->pdev->irq, fc_pci);
+		pci_iounmap(fc_pci->pdev, fc_pci->io_mem);
+		pci_set_drvdata(fc_pci->pdev, NULL);
+		pci_release_regions(fc_pci->pdev);
+		pci_disable_device(fc_pci->pdev);
+	}
+	fc_pci->init_state &= ~FC_PCI_INIT;
+}
+
+static int flexcop_pci_probe(struct pci_dev *pdev,
+		const struct pci_device_id *ent)
+{
+	struct flexcop_device *fc;
+	struct flexcop_pci *fc_pci;
+	int ret = -ENOMEM;
+
+	if ((fc = flexcop_device_kmalloc(sizeof(struct flexcop_pci))) == NULL) {
+		err("out of memory\n");
+		return -ENOMEM;
+	}
+
+	/* general flexcop init */
+	fc_pci = fc->bus_specific;
+	fc_pci->fc_dev = fc;
+
+	fc->read_ibi_reg = flexcop_pci_read_ibi_reg;
+	fc->write_ibi_reg = flexcop_pci_write_ibi_reg;
+	fc->i2c_request = flexcop_i2c_request;
+	fc->get_mac_addr = flexcop_eeprom_check_mac_addr;
+	fc->stream_control = flexcop_pci_stream_control;
+
+	if (enable_pid_filtering)
+		info("will use the HW PID filter.");
+	else
+		info("will pass the complete TS to the demuxer.");
+
+	fc->pid_filtering = enable_pid_filtering;
+	fc->bus_type = FC_PCI;
+	fc->dev = &pdev->dev;
+	fc->owner = THIS_MODULE;
+
+	/* bus specific part */
+	fc_pci->pdev = pdev;
+	if ((ret = flexcop_pci_init(fc_pci)) != 0)
+		goto err_kfree;
+
+	/* init flexcop */
+	if ((ret = flexcop_device_initialize(fc)) != 0)
+		goto err_pci_exit;
+
+	/* init dma */
+	if ((ret = flexcop_pci_dma_init(fc_pci)) != 0)
+		goto err_fc_exit;
+
+	INIT_DELAYED_WORK(&fc_pci->irq_check_work, flexcop_pci_irq_check_work);
+
+	if (irq_chk_intv > 0)
+		schedule_delayed_work(&fc_pci->irq_check_work,
+				msecs_to_jiffies(irq_chk_intv < 100 ?
+					100 :
+					irq_chk_intv));
+	return ret;
+
+err_fc_exit:
+	flexcop_device_exit(fc);
+err_pci_exit:
+	flexcop_pci_exit(fc_pci);
+err_kfree:
+	flexcop_device_kfree(fc);
+	return ret;
+}
+
+/* in theory every _exit function should be called exactly two times,
+ * here and in the bail-out-part of the _init-function
+ */
+static void flexcop_pci_remove(struct pci_dev *pdev)
+{
+	struct flexcop_pci *fc_pci = pci_get_drvdata(pdev);
+
+	if (irq_chk_intv > 0)
+		cancel_delayed_work(&fc_pci->irq_check_work);
+
+	flexcop_pci_dma_exit(fc_pci);
+	flexcop_device_exit(fc_pci->fc_dev);
+	flexcop_pci_exit(fc_pci);
+	flexcop_device_kfree(fc_pci->fc_dev);
+}
+
+static struct pci_device_id flexcop_pci_tbl[] = {
+	{ PCI_DEVICE(0x13d0, 0x2103) },
+	{ },
+};
+
+MODULE_DEVICE_TABLE(pci, flexcop_pci_tbl);
+
+static struct pci_driver flexcop_pci_driver = {
+	.name     = "b2c2_flexcop_pci",
+	.id_table = flexcop_pci_tbl,
+	.probe    = flexcop_pci_probe,
+	.remove   = flexcop_pci_remove,
+};
+
+static int __init flexcop_pci_module_init(void)
+{
+	return pci_register_driver(&flexcop_pci_driver);
+}
+
+static void __exit flexcop_pci_module_exit(void)
+{
+	pci_unregister_driver(&flexcop_pci_driver);
+}
+
+module_init(flexcop_pci_module_init);
+module_exit(flexcop_pci_module_exit);
+
+MODULE_AUTHOR(DRIVER_AUTHOR);
+MODULE_DESCRIPTION(DRIVER_NAME);
+MODULE_LICENSE("GPL");
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             0A653077001000120FD04042070
+:1017500082A00500C800B01B09202200042184A03B
+:101760000040C000A21B107084A000F04000B91B14
+:10177000077008007800BD1B08710381C800A21B18
+:101780000770020084A1E001037000007C000120CA
+:10179000FD04042082A00400C800CD1B7800D01BEB
+:1017A00006A07800D21B85A001007C007E0E71206F
+:1017B0000052082D5870026805A0C000DD1B5E7144
+:1017C0005A717F0E7C00082C5878026005A0C0007A
+:1017D000E71B5E795A797C009120008014617810B3
+:1017E0008021006984A10001C000352084A100028D
+:1017F000C00031201C6805A0C0003D20036000002F
+:10180000082C5C7865A0C000051C5A797800061C7D
+:1018100002615E799120018078108C227C007E0E1E
+:101820007120005258706DA040001A1C00685A7058
+:1018300005A0C000191C5E70FF8D7F0E7C007E0D20
+:101840007E0C7E0F7920005280AF16006020006071
+:1018500005A04000431C6820146806A3C000331C88
+:10186000286884A0FF0006A44000361C602D780084
+:10187000241C006805A00260C000421C80AF160056
+:1018800006AC4000411C002C5E78002D7F0F7F0CC1
+:101890007F0D05A07C007E0D7E0C7E0F792000520E
+:1018A00080AF16006020006005A040006B1C68201F
+:1018B000146884A0FF0006A340005E1C602D780021
+:1018C000501C006805A00260C0006A1C80AF1600B2
+:1018D00006AC4000691C002C5E78002D7F0F7F0C49
+:1018E0007F0D05A07C007E0D7E0C7E0F79200052BE
+:1018F00080AF1600602000606DA04000901C14684E
+:1019000006A34000831C602D7800781C006805A0A9
+:101910000260C0008F1C80AF160006AC40008E1C19
+:10192000002C5E78002D7F0F7F0C7F0D05A07C00C2
+:101930009120008069204052006886A0000040008D
+:10194000A31C91200180E37809007C008068BCA082
+:1019500000FF412021004920040051201000781090
+:10196000D219388784A71F00C000AC1C91200180C9
+:1019700001200A807800C31C01200C807800C31C61
+:1019800078109C1A01200D807800C31CC270612061
+:1019900000001B600100912080407C000460082C46
+:1019A00063200000847800808678887805A08A7992
+:1019B0004000DA1C022C7800DB1C8E797C00076862
+:1019C00003017E0C61200052082D6B200000846012
+:1019D00000808660886005A08A614000EF1C022DAF
+:1019E0007800F01C8E617F0C7C007810031D400095
+:1019F000021D7E0C9C6065A04000FD1C7810171A2B
+:101A00007F0C9F60000078109A197C008C7865A08C
+:101A10004000151D91200080847801808678042C78
+:101A20008E7805A0C000131D8A7800809120018067
+:101A30007C00A920100006A0048086808E81C8004A
+:101A40001F1D00A27000231D78001A1D86808E8144
+:101A50007C007E15A920100005A04000491D1AA198
+:101A6000C800491D13828D8148003A1D1AA1C80083
+:101A70003B1D7000411D78002F1D1AA10823108204
+:101A80007000411D78002F1D7E00003284A0FFF7FA
+:101A900080207F007F157C007E00003285A000083A
+:101AA0007800451D9479D07006A14000BD1D91209D
+:101AB000008071202000047005A0C000BD1D0870CA
+:101AC000087206A2C000BD1D86A20800C000BD1D90
+:101AD00071201000781080194000BD1D9C7A987B01
+:101AE000A47CA07D84A100FF40008B1D312000005C
+:101AF0000B81B5860B81B5860B81B5860B81B586CA
+:101B00000B81B5860B81B586002110A2002619A392
+:101B1000A1A40000A9A500007800951D07810480FC
+:101B2000048010A299A30000A1A40000A9A50000B0
+:101B30000920200078107B19912001804000B41DFD
+:101B400078109A19A8780080AA7886A00200C000B0
+:101B5000BD1D91200080E3780200AB780000CC78B6
+:101B600085A00300CE78912001807800BD1DAB7860
+:101B7000000078104921046084A00F007900C21D84
+:101B800071201000912001807C00D21DF41D1A1ECE
+:101B9000D21D371EE11DC91FE41FD21DEE1D141EEC
+:101BA0007F1EEE1E571F691FE01F39200004DC78DE
+:101BB00005A7DE78086005A70A60781064209C609D
+:101BC000DA78781031217C00DC7884A000014000B4
+:101BD000E81D7800D21D1C6085A080001E60780082
+:101BE000FB1D7810C41BC000D21D78106321DC7867
+:101BF00084A000014000FB1D7800D21DDF780000AA
+:101C00000460078084A0FF00D27801809F600000FC
+:101C10004000111E781064204000111EDC7885A061
+:101C20000001DE787800131E781088207C00781080
+:101C3000C41BC000D21D78105F21DC788CA0000E80
+:101C4000C000231E84A00001C000251E7800D21D04
+:101C500078106420C000361E04618CA1FF0086A1AC
+:101C600007004000212086A10F00400021207810AD
+:101C700088207C00DC7884A0000140003E1E7800B3
+:101C8000D21DDF780000146711200100A920010097
+:101C9000186084A0FF0005A04000611E1120010013
+:101CA000BCA700FFA92020008EA001004000611EFB
+:101CB0003920000011200200A92000018EA002009E
+:101CC0004000611E78007C1E7810C51991200080AC
+:101CD0002B6800002F680000086884A0DEFF0A68F7
+:101CE000E8AD1000912001807000751E7800631E21
+:101CF000118240007C1EA92000017800631E78102C
+:101D00009A197C0001206752042084A000804000C2
+:101D10004920146178108021006984A101004000ED
+:101D2000A01E286084A0FF00C0004120006884A09D
+:101D3000010040004920036800000B6800000768AC
+:101D4000000078005120112001002060F4D04000F4
+:101D5000A81E95A20200C4D04000AD1E95A20800A6
+:101D6000CCD04000B21E95A200041C6084A00200EA
+:101D70004000B91E95A204002C608CA0FF0082A137
+:101D8000020048004D2082A11B00C8004D204000E9
+:101D90004D200E692C6007808CA0FF0082A10200FC
+:101DA00048004D2082A11B00C8004D2040004D205E
+:101DB0001269306005A0C000DC1E01201E000080FA
+:101DC0001668286084A0FF0040004920066828604B
+:101DD000078084A0FF00400049200A68026A78005A
+:101DE000512001204052042086A00700C000531F4C
+:101DF00001206752042084A0008040004920146123
+:101E0000781080210120525204201020FF824000CF
+:101E10000E1F80A00500042084A0FF0006A1C000C2
+:101E2000531F91200080046A086B186484A4030087
+:101E300040002D1F28618CA1FF000180C000231FDE
+:101E4000002110A24800531F78002D1F0180C00000
+:101E5000531F002112A24800531FFF824000531F4E
+:101E600084A40C004000471F28610F818CA1FF0053
+:101E700082A00400C0003F1F002118A34800531F88
+:101E80007800471F82A00400C000531F00211AA33E
+:101E90004800531F306005A040004D1F00801668A9
+:101EA000066A0A6B91200180780051209120018000
+:101EB00078004D2014617810802191200080086BFB
+:101EC00018834800651F0A6B91200180780060200C
+:101ED0009120018078004D202460078084A0FF00BD
+:101EE0004000871F86A08000C000C71FA9200800EF
+:101EF0006920107691200080006884A0FFFC0268B1
+:101F0000E8AD08007000831F7800791F91200180E0
+:101F100078005120286015A04000C71F1461781078
+:101F200080217E0C7E0DE8AD0700912000800068C6
+:101F30000DA04000C31F06A240009E1F682178002C
+:101F4000941F602100600268682C7810AC197F0D26
+:101F500018680DA04000BB1F602000621A6A1C6A4E
+:101F600002621E6878108919A02D9821A9203100DD
+:101F7000A353602D7810CB1C7800BE1F086800802A
+:101F80000A68912001807F0C7800602091200180F8
+:101F90007F0D7F0C78004920146178108021006843
+:101FA00084A001004000392091200080046A108242
+:101FB0004800DC1F066A9120018078006020912093
+:101FC000018078004D207810C41BC000D21D146120
+:101FD00078108021BE60BB600000006984A1080009
+:101FE0004000F31F206085A00001226084A1010051
+:101FF0004000492084A10001C000352084A10002D6
+:10200000C00031201C6805A0C0003D20046084A0F1
+:10201000FF0086A00F00C0000C2078106321DF783D
+:1020200000000460078084A0FF00D27801809F60D8
+:102030000000400021207810642040002120DC783E
+:1020400085A00001DE787C00D7780000DB780000F6
+:10205000246084A000FF26607810AC3A40004F1D39
+:102060007810E91B78004F1D0920170078005320D5
+:1020700009200E0078005320092007007800532023
+:10208000092035007800532009203E0078005320B5
+:10209000092004007800532009200600780053200E
+:1020A000092016007800532009200100246084A034
+:1020B00000FF05A12660912000807810CB1C9120A4
+:1020C000018078004F1D78109A1978004F1DD47840
+:1020D0006DA0C0006F20002CD678DA789F600000D9
+:1020E00078007B20002C9E689F600000D678002D31
+:1020F0000260D87806ADC0007B200260D0780180F5
+:10210000D278C0008720DC7884A0FFFEDE78D87803
+:10211000602006A07C002EA030251C61A26184A155
+:10212000FFE11E6084A16000400097207E0E7810C1
+:10213000D3487F0E9665A6659A66AA66AF600000D2
+:10214000B360000014677810C51991200080A0606A
+:1021500084A00080C000BE20086884A00100400068
+:10216000BE20912001807810311A912000807810D3
+:10217000CB1C91200180D7780000DB78000078002C
+:102180003021246096A00100C000C5200080266098
+:10219000106A14689120018002A24800D4204000F7
+:1021A000D420392000027810312178003021082C09
+:1021B00091200080A06084A0008040000121006880
+:1021C00065A040000621046A7E0E71204052007016
+:1021D00084A001004000FB20487006A2C000FB2044
+:1021E000046B1C2360210263002305A0C000F620BD
+:1021F0000269602202617F0E78000D216021026277
+:1022000006697F0E78000D21006865A04000062158
+:1022100002610269C0000A210669602103600000B2
+:102220006021A06084A0008040001721086884A07D
+:10223000FCFF0A681068008012689120018008681D
+:102240008CA040004000262186A040000A6878103B
+:10225000421A9120008078106F2291200180DB7853
+:102260000000D77800007C00086005A70A60912074
+:1022700000807810CB1C91200180D87865A04000A8
+:1022800044219C60DA789F60000078003421D77880
+:102290000000DB7800007C009079947800800AA12F
+:1022A000C800502106A09678D270047805A040009E
+:1022B0005E2101800678C0005E2168005E219120C9
+:1022C00080407C00392077217800652139207D21EC
+:1022D000042705A04000762100AC6820086B0C6C38
+:1022E0001069146A0A690E6/*
+ *  linux/drivers/video/macmodes.h -- Standard MacOS video modes
+ *
+ *	Copyright (C) 1998 Geert Uytterhoeven
+ *
+ *  This file is subject to the terms and conditions of the GNU General Public
+ *  License. See the file COPYING in the main directory of this archive for
+ *  more details.
+ */
+
+#ifndef _VIDEO_MACMODES_H
+#define _VIDEO_MACMODES_H
+
+    /*
+     *  Video mode values.
+     *  These are supposed to be the same as the values that Apple uses in
+     *  MacOS.
+     */
+
+#define VMODE_NVRAM		0
+#define VMODE_512_384_60I	1	/* 512x384, 60Hz interlaced (NTSC) */
+#define VMODE_512_384_60	2	/* 512x384, 60Hz */
+#define VMODE_640_480_50I	3	/* 640x480, 50Hz interlaced (PAL) */
+#define VMODE_640_480_60I	4	/* 640x480, 60Hz interlaced (NTSC) */
+#define VMODE_640_480_60	5	/* 640x480, 60Hz (VGA) */
+#define VMODE_640_480_67	6	/* 640x480, 67Hz */
+#define VMODE_640_870_75P	7	/* 640x870, 75Hz (portrait) */
+#define VMODE_768_576_50I	8	/* 768x576, 50Hz (PAL full frame) */
+#define VMODE_800_600_56	9	/* 800x600, 56Hz */
+#define VMODE_800_600_60	10	/* 800x600, 60Hz */
+#define VMODE_800_600_72	11	/* 800x600, 72Hz */
+#define VMODE_800_600_75	12	/* 800x600, 75Hz */
+#define VMODE_832_624_75	13	/* 832x624, 75Hz */
+#define VMODE_1024_768_60	14	/* 1024x768, 60Hz */
+#define VMODE_1024_768_70	15	/* 1024x768, 70Hz (or 72Hz?) */
+#define VMODE_1024_768_75V	16	/* 1024x768, 75Hz (VESA) */
+#define VMODE_1024_768_75	17	/* 1024x768, 75Hz */
+#define VMODE_1152_870_75	18	/* 1152x870, 75Hz */
+#define VMODE_1280_960_75	19	/* 1280x960, 75Hz */
+#define VMODE_1280_1024_75	20	/* 1280x1024, 75Hz */
+#define VMODE_1152_768_60	21	/* 1152x768, 60Hz     Titanium PowerBook */
+#define VMODE_1600_1024_60	22	/* 1600x1024, 60Hz 22" Cinema Display */
+#define VMODE_MAX		22
+#define VMODE_CHOOSE		99
+
+#define CMODE_NVRAM		-1
+#define CMODE_CHOOSE		-2
+#define CMODE_8			0	/* 8 bits/pixel */
+#define CMODE_16		1	/* 16 (actually 15) bits/pixel */
+#define CMODE_32		2	/* 32 (actually 24) bits/pixel */
+
+
+extern int mac_vmode_to_var(int vmode, int cmode,
+			    struct fb_var_screeninfo *var);
+extern int mac_var_to_vmode(const struct fb_var_screeninfo *var, int *vmode,
+			    int *cmode);
+extern int mac_map_monitor_sense(int sense);
+extern int mac_find_mode(struct fb_var_screeninfo *var,
+			 struct fb_info *info,
+			 const char *mode_option,
+			 unsigned int default_bpp);
+
+
+    /*
+     *  Addresses in NVRAM where video mode and pixel size are stored.
+     */
+
+#define NV_VMODE		0x140f
+#define NV_CMODE		0x1410
+
+#endif /* _VIDEO_MACMODES_H */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              /*
+ * Largely written by Julian Elischer (julian@tfs.com)
+ * for TRW Financial Systems.
+ *
+ * TRW Financial Systems, in accordance with their agreement with Carnegie
+ * Mellon University, makes this software available to CMU to distribute
+ * or use in any manner that they see fit as long as this message is kept with
+ * the software. For this reason TFS also grants any other persons or
+ * organisations permission to use or modify this software.
+ *
+ * TFS supplies this software to be publicly redistributed
+ * on the understanding that TFS is not responsible for the correct
+ * functioning of this software in any circumstances.
+ *
+ * Ported to run under 386BSD by Julian Elischer (julian@tfs.com) Sept 1992
+ *
+ * $FreeBSD: src/sys/cam/scsi/scsi_all.h,v 1.21 2002/10/08 17:12:44 ken Exp $
+ *
+ * Copyright (c) 2003 Adaptec Inc.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions, and the following disclaimer,
+ *    without modification.
+ * 2. Redistributions in binary form must reproduce at minimum a disclaimer
+ *    substantially similar to the "NO WARRANTY" disclaimer below
+ *    ("Disclaimer") and any redistribution must be conditioned upon
+ *    including a substantially similar Disclaimer requirement for further
+ *    binary redistribution.
+ * 3. Neither the names of the above-listed copyright holders nor the names
+ *    of any contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * Alternatively, this software may be distributed under the terms of the
+ * GNU General Public License ("GPL") version 2 as published by the Free
+ * Software Foundation.
+ *
+ * NO WARRANTY
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * HOLDERS OR CONTRIBUTORS BE LIABLE FOR SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+ * IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGES.
+ *
+ * $Id$
+ */
+
+#ifndef	_AICLIB_H
+#define _AICLIB_H
+
+struct scsi_sense
+{
+	uint8_t opcode;
+	uint8_t byte2;
+	uint8_t unused[2];
+	uint8_t length;
+	uint8_t control;
+};
+
+#define		SCSI_REV_0		0
+#define		SCSI_REV_CCS		1
+#define		SCSI_REV_2		2
+#define		SCSI_REV_SPC		3
+#define		SCSI_REV_SPC2		4
+
+struct scsi_sense_data
+{
+	uint8_t error_code;
+#define	SSD_ERRCODE			0x7F
+#define		SSD_CURRENT_ERROR	0x70
+#define		SSD_DEFERRED_ERROR	0x71
+#define	SSD_ERRCODE_VALID	0x80	
+	uint8_t segment;
+	uint8_t flags;
+#define	SSD_KEY				0x0F
+#define		SSD_KEY_NO_SENSE	0x00
+#define		SSD_KEY_RECOVERED_ERROR	0x01
+#define		SSD_KEY_NOT_READY	0x02
+#define		SSD_KEY_MEDIUM_ERROR	0x03
+#define		SSD_KEY_HARDWARE_ERROR	0x04
+#define		SSD_KEY_ILLEGAL_REQUEST	0x05
+#define		SSD_KEY_UNIT_ATTENTION	0x06
+#define		SSD_KEY_DATA_PROTECT	0x07
+#define		SSD_KEY_BLANK_CHECK	0x08
+#define		SSD_KEY_Vendor_Specific	0x09
+#define		SSD_KEY_COPY_ABORTED	0x0a
+#define		SSD_KEY_ABORTED_COMMAND	0x0b		
+#define		SSD_KEY_EQUAL		0x0c
+#define		SSD_KEY_VOLUME_OVERFLOW	0x0d
+#define		SSD_KEY_MISCOMPARE	0x0e
+#define		SSD_KEY_RESERVED	0x0f			
+#define	SSD_ILI		0x20
+#define	SSD_EOM		0x40
+#define	SSD_FILEMARK	0x80
+	uint8_t info[4];
+	uint8_t extra_len;
+	uint8_t cmd_spec_info[4];
+	uint8_t add_sense_code;
+	uint8_t add_sense_code_qual;
+	uint8_t fru;
+	uint8_t sense_key_spec[3];
+#define	SSD_SCS_VALID		0x80
+#define SSD_FIELDPTR_CMD	0x40
+#define SSD_BITPTR_VALID	0x08
+#define SSD_BITPTR_VALUE	0x07
+#define SSD_MIN_SIZE 18
+	uint8_t extra_bytes[14];
+#define SSD_FULL_SIZE sizeof(struct scsi_sense_data)
+};
+
+/*
+ * Status Byte
+ */
+#define	SCSI_STATUS_OK			0x00
+#define	SCSI_STATUS_CHECK_COND		0x02
+#define	SCSI_STATUS_COND_MET		0x04
+#define	SCSI_STATUS_BUSY		0x08
+#define SCSI_STATUS_INTERMED		0x10
+#define SCSI_STATUS_INTERMED_COND_MET	0x14
+#define SCSI_STATUS_RESERV_CONFLICT	0x18
+#define SCSI_STATUS_CMD_TERMINATED	0x22	/* Obsolete in SAM-2 */
+#define SCSI_STATUS_QUEUE_FULL		0x28
+#define SCSI_STATUS_ACA_ACTIVE		0x30
+#define SCSI_STATUS_TASK_ABORTED	0x40
+
+/************************* Large Disk Handling ********************************/
+static inline int
+aic_sector_div(sector_t capacity, int heads, int sectors)
+{
+	/* ugly, ugly sector_div calling convention.. */
+	sector_div(capacity, (heads * sectors));
+	return (int)capacity;
+}
+
+static inline uint32_t
+scsi_4btoul(uint8_t *bytes)
+{
+	uint32_t rv;
+
+	rv = (bytes[0] << 24) |
+	     (bytes[1] << 16) |
+	     (bytes[2] << 8) |
+	     bytes[3];
+	return (rv);
+}
+
+/* Macros for generating the elements of the PCI ID tables. */
+
+#define GETID(v, s) (unsigned)(((v) >> (s)) & 0xFFFF ?: PCI_ANY_ID)
+
+#define ID_C(x, c)						\
+{								\
+	GETID(x,32), GETID(x,48), GETID(x,0), GETID(x,16),	\
+	(c) << 8, 0xFFFF00, 0					\
+}
+
+#define ID2C(x)                          \
+	ID_C(x, PCI_CLASS_STORAGE_SCSI), \
+	ID_C(x, PCI_CLASS_STORAGE_RAID)
+
+#define IDIROC(x)  ((x) | ~ID_ALL_IROC_MASK)
+
+/* Generate IDs for all 16 possibilites.
+ * The argument has already masked out
+ * the 4 least significant bits of the device id.
+ * (e.g., mask: ID_9005_GENERIC_MASK).
+ */
+#define ID16(x)                          \
+	ID(x),                           \
+	ID((x) | 0x0001000000000000ull), \
+	ID((x) | 0x0002000000000000ull), \
+	ID((x) | 0x0003000000000000ull), \
+	ID((x) | 0x0004000000000000ull), \
+	ID((x) | 0x0005000000000000ull), \
+	ID((x) | 0x0006000000000000ull), \
+	ID((x) | 0x0007000000000000ull), \
+	ID((x) | 0x0008000000000000ull), \
+	ID((x) | 0x0009000000000000ull), \
+	ID((x) | 0x000A000000000000ull), \
+	ID((x) | 0x000B000000000000ull), \
+	ID((x) | 0x000C000000000000ull), \
+	ID((x) | 0x000D000000000000ull), \
+	ID((x) | 0x000E000000000000ull), \
+	ID((x) | 0x000F000000000000ull)
+
+#endif /*_AICLIB_H */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         K 25
+svn:wc:ra_dav:version-url
+V 66
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/scsi/osd
+END
+Kconfig
+K 25
+svn:wc:ra_dav:version-url
+V 74
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/scsi/osd/Kconfig
+END
+osd_debug.h
+K 25
+svn:wc:ra_dav:version-url
+V 78
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/scsi/osd/osd_debug.h
+END
+osd_initiator.c
+K 25
+svn:wc:ra_dav:version-url
+V 82
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/scsi/osd/osd_initiator.c
+END
+Kbuild
+K 25
+svn:wc:ra_dav:version-url
+V 73
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/scsi/osd/Kbuild
+END
+osd_uld.c
+K 25
+svn:wc:ra_dav:version-url
+V 76
+/svn/YF-110510-01/!svn/ver/1153/soft/trunk/kernel/drivers/scsi/osd/osd_uld.c
+END
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    053
+:103A3000FA242B7808301B7865007800FA24A87ADD
+:103A400078008A2C1883002302A14000282D48000A
+:103A5000282D78008A2C84A28000C0007B37780053
+:103A6000733778007B3778006B379B781800A8781D
+:103A700084A0FF008EA0010040003D2D78108C2412
+:103A8000A87A94A2FF00A87884A0FF008AA004006E
+:103A9000C8006B377900492D6B3708356B376536B1
+:103AA00082A20000C000532D78108C2478108F372C
+:103AB0002B7808301B7865007800FA2482A2030076
+:103AC000C000612D78108C2484A40080C000842D57
+:103AD0006C7005A040006B2D78108C24146F8277D9
+:103AE000BCA7000F7810BD38086085A021000A60CF
+:103AF000388784A71F00C0006F2D781093376F7030
+:103B00000200092038520B2009007800862D781019
+:103B10009F372B7808301B7865007800FA2482A242
+:103B200004005000922D78108C2400237900952DEC
+:103B3000982D812EB42E86A2030040009E2D781071
+:103B40008C24012000007E00C06805A04000A72D45
+:103B500003700300A06884A000204000B02D08601E
+:103B600085A002000A607F003E70007084A00700FC
+:103B70007900B72D2325C12DC12DB62FF22F232576
+:103B8000F22FBF2D78108C2484A60010C000C92D00
+:103B90007810874840005B2E68788CA0FF004000BA
+:103BA000112E86A10800C000E02D7810B8340860FE
+:103BB00084A0EFFF0A6078105A344000112E78106C
+:103BC00087487800F82D86A12800C000112E7810B3
+:103BD0008748086084A0EFFF0A60186005A04000D5
+:103BE000F82D01801A6005A04000F82D018005A085
+:103BF0004000F82D1E60206884A0010040002325AD
+:103C0000206884A0FEFF226860707E0C602000683F
+:103C100002607F0C0460026805A0002DC0000E2E1B
+:103C200002600660780023257E017810E52E7F0172
+:103C300084A600DF1E682B680000146FFF8140001F
+:103C40005B2E86A10200C0005B2E84A60008C00087
+:103C50002E2E84A6600040002E2ED878DC7A2E68A6
+:103C6000326A206884A00008C0005B2E178794A2E7
+:103C70000F0013821382138290A2805490A200003E
+:103C80001C2284A30001C000442E78004A2E10821A
+:103C9000042285A018001220118284A30004400091
+:103CA000572EA06884A00001C000572E7810692FFD
+:103CB00078002325086085A002000A60166918684C
+:103CC00084A000804000632E3C701A688CA600DF40
+:103CD0001E697810A9347810B834C000702E0860BE
+:103CE00084A0EFFF0A60206884A00100C000792E44
+:103CF0007810A23478007D2E607060200068026029
+:103D00007810DC1C7800232582A204004800872E4E
+:103D100078108C24002279008A2E852E8E2E9B2EE0
+:103D20008E2E007086A005004000972E78108F37E9
+:103D30002B7808301B7865007800FA24907807808B
+:103D4000018084A0070080A018009A78A8798CA12F
+:103D5000FF0086A103004000B02E86A100004000B5
+:103D6000B02E78006B371B7865007800FA24206845
+:103D700085A004002268FF82C000BF2E78108F3714
+:103D80007800C62E11824000C42E78108C24781042
+:103D90009F372B7808301B7865007800FA242C7048
+:103DA00003804800D62E1920AF4E781013232F70B1
+:103DB00000807810E039307884A0C000C000E22E86
+:103DC0001800E22E1A7906A07C0085A001007C0074
+:103DD00084A66000C000EF2E2F680000336800004A
+:103DE0007800682F84A60008C000112FB46884A052
+:103DF000004835A684A60008C000112F9869946A6F
+:103E00002E69326A3C7005A0C000092F002205A16E
+:103E10004000102F3F701500007086A00600400083
+:103E2000102F781087487C0084A620004000332F94
+:103E300084A6004040001F2F2F6800003368000058
+:103E40007800092FB46884A0004835A684A60040F5
+:103E5000C000192F3C7005A0C0002D2F3F70150029
+:103E6000D879DC7A2E69326A7800092F84A600405E
+:103E700040003D2F2F680000336800007800092FB4
+:103E8000B46884A0004835A684A60040C000372F3F
+:103E90003C7005A0C0004B2F3F701500D879DC7A2C
+:103EA000D078FB80C800522F008084A03F0008A17A
+:103EB00091A200002E69326A002105A2C0005F2F86
+:103EC0007800092F007086A006004000682F781047
+:103ED000414C7800092F7C00086085A000020A6030
+:103EE00084A300024000752F086085A002000A60CC
+:103EF0001B6806008F68000093680000306A2C6918
+:103F00003E6A42692F68030033680000376820006A
+:103F1000976800009B682000B3680000AF6800004D
+:103F200000707900902F23259A2FA32F982F982F78
+:103F3000982F982F982F78108C24206884A0010047
+:103F4000C000A32F7810A2347800A92F6070502CE5
+:103F5000602000680260602A21205A52042405A0D3
+:103F60004000B22F20207800AB2F222D6B200000C4
+:103F70007C007810A9347810B834086084A0FFFD64
+:103F80000A602B6800009B780E00146F176802000F
+:103F90007810894C84A600084000CF2F1C698DA1A1
+:103FA00000201E69186884A000804000DF2F687818
+:103FB0008CA0FF004000DD2F1B681E007800DF2F63
+:103FC0001B68000021205A52042406AD4000E62F51
+:103FD000607400682220C36800003C6A4069326A4D
+:103FE0002E697810DC1C780023257810E52E2B68CC
+:103FF000000001200E00146F7810E6398CA0FF003D
+
+	else if (!pci_set_dma_mask(pci, DMA_BIT_MASK(32)))
+		pci_set_consistent_dma_mask(pci, DMA_BIT_MASK(32));
+	else
+		goto error_dma;
+
+	err = n_caps = whci_n_caps(pci);
+	if (n_caps < 0)
+		goto error_ncaps;
+
+	err = -ENOMEM;
+	card = kzalloc(sizeof(struct whci_card)
+		       + sizeof(struct whci_dev *) * (n_caps + 1),
+		       GFP_KERNEL);
+	if (card == NULL)
+		goto error_kzalloc;
+	card->pci = pci;
+	card->n_caps = n_caps;
+
+	err = -EBUSY;
+	if (!request_mem_region(pci_resource_start(pci, 0),
+				UWBCAPDATA_SIZE(card->n_caps),
+				"whci (capability data)"))
+		goto error_request_memregion;
+	err = -ENOMEM;
+	card->uwbbase = pci_iomap(pci, 0, UWBCAPDATA_SIZE(card->n_caps));
+	if (!card->uwbbase)
+		goto error_iomap;
+
+	/* Add each capability. */
+	for (n = 0; n <= card->n_caps; n++) {
+		err = whci_add_cap(card, n);
+		if (err < 0 && n == 0) {
+			dev_err(&pci->dev, "cannot bind UWB radio controller:"
+				" %d\n", err);
+			goto error_bind;
+		}
+		if (err < 0)
+			dev_warn(&pci->dev, "warning: cannot bind capability "
+				 "#%u: %d\n", n, err);
+	}
+	pci_set_drvdata(pci, card);
+	return 0;
+
+error_bind:
+	pci_iounmap(pci, card->uwbbase);
+error_iomap:
+	release_mem_region(pci_resource_start(pci, 0), UWBCAPDATA_SIZE(card->n_caps));
+error_request_memregion:
+	kfree(card);
+error_kzalloc:
+error_ncaps:
+error_dma:
+	pci_disable_msi(pci);
+	pci_disable_device(pci);
+error:
+	return err;
+}
+
+static void whci_remove(struct pci_dev *pci)
+{
+	struct whci_card *card = pci_get_drvdata(pci);
+	int n;
+
+	pci_set_drvdata(pci, NULL);
+	/* Unregister each capability in reverse (so the master device
+	 * is unregistered last). */
+	for (n = card->n_caps; n >= 0 ; n--)
+		whci_del_cap(card, n);
+	pci_iounmap(pci, card->uwbbase);
+	release_mem_region(pci_resource_start(pci, 0), UWBCAPDATA_SIZE(card->n_caps));
+	kfree(card);
+	pci_disable_msi(pci);
+	pci_disable_device(pci);
+}
+
+static struct pci_device_id whci_id_table[] = {
+	{ PCI_DEVICE_CLASS(PCI_CLASS_WIRELESS_WHCI, ~0) },
+	{ 0 },
+};
+MODULE_DEVICE_TABLE(pci, whci_id_table);
+
+
+static struct pci_driver whci_driver = {
+	.name     = "whci",
+	.id_table = whci_id_table,
+	.probe    = whci_probe,
+	.remove   = whci_remove,
+};
+
+static int __init whci_init(void)
+{
+	return pci_register_driver(&whci_driver);
+}
+
+static void __exit whci_exit(void)
+{
+	pci_unregister_driver(&whci_driver);
+}
+
+module_init(whci_init);
+module_exit(whci_exit);
+
+MODULE_DESCRIPTION("WHCI UWB Multi-interface Controller enumerator");
+MODULE_AUTHOR("Cambridge Silicon Radio Ltd.");
+MODULE_LICENSE("GPL");
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        5D000E632E9321233263300227900EC3210330E
+:1045E0007B37F232103342338433037005000120ED
+:1045F000107768204A707E15A92031000320000042
+:104600000080700002337800FB327F1580AD090016
+:10461000367017680000B76800072368000827682D
+:10462000030078006B3778108C240370050001209C
+:10463000107768204A7080AD09003670002279003A
+:104640001E337B3724332433423324337B377810B3
+:104650008C24037005000120107768204A7080AD1B
+:10466000090036700022790032333A333833383358
+:104670003A3338333A3378108C2478109F372B78BC
+:1046800008301B7865007800FA2403700200807AF5
+:1046900094A2000F9B781800A87C84A41F0015A288
+:1046A00069200076042D082D6271682005A0400065
+:1046B0005D33146806A240007933006878005033F7
+:1046C000037005000120107768204A7036707E154F
+:1046D000A920310003200000008070006E337800B4
+:1046E00067337F1580AD09003670166AB76800071A
+:1046F0002368000827680300B46E5A7E206884A0EF
+:10470000000C4000D333781097377800D333037010
+:104710000200807A94A2000F9B781800A87C84A4E1
+:104720001F0015A2A879A8798CA1FF00E8A1007547
+:10473000042D082D6271682005A04000A333146881
+:1047400006A24000BE33006878009633037005006F
+:104750000120107768204A707E15A92031000320BF
+:10476000000000807000B3337800AC337F1580AD5B
+:1047700009003670166AB7680007236800082768C2
+:104780000300B46E5A7E206884A0000C4000D3332E
+:1047900084A000084000CD3378109B377800D333D5
+:1047A000781097378B7000007800D3337E02078231
+:1047B00084A00F0003800380038080A080546020C9
+:1047C000567000605A7004605E7084A660004000FD
+:1047D0002B34986B946CAC69B06805A1C0000D34A3
+:1047E000D27BDA7BD67CDE7CB4A6FFB75A7E84A669
+:1047F000600086A0600040002B34C06805A0400027
+:104800000634037003002B68000078103A4B7800E0
+:10481000083478104B4BB5A600205A7E78002B3414
+:10482000B0681AA3002123A4002405A340002B3460
+:10483000D27BDA7BD67CDE7CB068B4A6FFBF5A7E22
+:104840007E00C06805A07F0040002934037003008B
+:1048500078103A4B78002B347810964B7F077810FD
+:10486000BD380920650084A6040040004C34E4787B
+:1048700084A0300040004434EC7884A00300400061
+:1048800044342B7808300920650078004C347E0FC2
+:1048900079200052781087487F0F400023251A792D
+:1048A000002D4A70078284A00F00038003800380DC
+:1048B00080A0805448207800FA24206005A04000A1
+:1048C000663401802260086085A008000A601070CC
+:1048D00026607C0006A078108748176800001B68D7
+:1048E0000100236840001F680001007084A00700D9
+:1048F000790077342325813481349E348934873498
+:1049000089347F3478108C247810A9347810A2343C
+:104910007810DC1C780023256C706F700000937099
+:104920000000790090349A349A349834983498344A
+:104930009A3498349A34790002296F700000780014
+:1049400023251B6800007800B62F006805A0C00072
+:10495000A734026006607C00106005A04000B234FD
+:104960000180D000B23478108C241260086084A0DA
+:10497000EFFF0A607C00186005A04000BE34018093
+:104980001A607C007810E0391B6818007800F53454
+:104990007810E0391B6819007800F5347810E03998
+:1049A0001B681A007800F5347810E0391B680300A2
+:1049B0007800F53480777810BD3884718CA1FF00C1
+:1049C000E8A10075042D082D682005A0C000E7347B
+:1049D000780023251468807206A24000EF34006836
+:1049E0007800E03400680A201B6805008B70000026
+:1049F0007810A934206884A00100C000FE3478102B
+:104A0000A2347810B8341F680000236820007810A2
+:104A1000DC1C7800232582A20300C0006B37A87D30
+:104A2000ACA5FF00A87CA4A4FF0020698DA1800094
+:104A3000226984A1000140006C358CA1FFFE22692F
+:104A4000A4A4FF004000563582A40C00480029357C
+:104A50004000293521200C002B852B8578102E381D
+:104A6000400033357810273678005F357810E93705
+:104A70007E0C6029046084A0F5FF06607810523631
+:104A80007F0C20698DA100012269587EB5A6040023
+:104A90005A7E84A60004C00050352B7808301B785D
+:104AA00056007800FA242B7808301B7865007800CF
+:104AB000FA247E0C6029046084A0F5FF066078105B
+:104AC00052367F0C587E84A60004C00068351B78DF
+:104AD00058007800FA241B7865007800FA247E0CD0
+:104AE0005470602000618CA100104000AC35086259
+:104AF000178294A2FF0082A20C004800803540007B
+:104B0000803511200C00002402A2C8008535202227
+:104B1000086294A2FF00187086A02800C000953596
+:104B200082A21900C8009B351120190078009B351E
+:104B300082A20C00C8009B3511200C00002202A5A7
+:104B4000C800A03528227810ED372B852B857810EA
+:104B50002E384000AC35781027367800B035781004
+:104B6000E93778105236587885A004005A787F0CBF
+:104B70002B7808301B7865007800FA247E0C6029B9
+:104B80000060E4D0C000D535B4D0C000CF3510608F
+:104B900084A00F00C000CF3504618CA1F5FF066131
+:104BA0007F0C7C0011203200192000007800FC35B9
+:104BB000A06884A00002C000CF35086294A2FF0064
+:104BC000187086A02800C000EA3582A21900C8002B
+:104BD000F035112019007800F03582A20C00C800D1
+:104BE000F03511200C0008631F839CA3FF0082A3F3
+:104BF0000C004800FC354000FC3519200C00AB7857
+:104C00000100AB780300AB780100AA7AAA7BC0A8A8
+:104C10000500206885A0000122687F0C7C007E0CC6
+:104C200060298CA1F5FF06611120320019200000D7
+:104C300078001736AB780100AB780300AB78010041
+:104C4000AA7AAA7BC0A80500206885A00001226876
+:104C50007F0C7C007E0C5471602178102E367F0C06
+:104C60007C00082084A0F0FF25A4867C18609A7838
+:104C7000AE7C1264A47884A0F8FF8CA1070005A183
+:104C8000A67816608A78A4A40F0027840482048082
+:104C900084A0FF0005A40E60EC788CD0C0005136D3
+:104CA000046084A0F5FF06607C007E0C54706020D8
+:104CB000781059367F0C7C0018609A78A47884A00C
+:104CC000F0FFA6781260847884A0F0FF86787C00DC
+:104CD00082A20200C0006B37A87A20698DA18000F3
+:104CE000226984A100024000AE368CA1FFFD22693A
+:104CF00094A2FF0082A20200C8006B377810F93638
+:104D00007810523680A901000C207810B93878103C
+:104D1000BB35FF884000A1369B7860000028AA7848
+:104D2000587EB5A604005A7E84A60004C0009B36B7
+:104D30002B7808301B7856007800FA242B7808303E
+:104D40001B7865007800FA24587E84A60004C00011
+:104D5000AA361B7858007800FA241B786500780082
+:104D6000FA2482A20200C800B63684A201004000E4
+:104D7000C036547188A100000C218CA10020C00015
+:104D8000C036112000007810DB377810F936781023
+:104D90005236587885A004005A782B7808301B7852
+:104DA00065007800FA247E0C7E02602900601120E4
+:104DB0000100ECD0C000E936BCD0C000E73614607A
+:104DC00084A04000C000E7368CA1EFFF066106A07A
+:104DD0007800F63611200000AB780100AB780200B5
+:104DE000AB780300AA7AC0A80400206885A000025E
+:104DF00022687F027F0C7C007E0C5470602078104B
+:104E000000377F0C7C00FF824000053711204000F6
+:104E1000186080A002009A78A47884A0BFFF05A241
+:104E2000A6788A781660EC788CD0C00018370460B9
+:104E300084A0EFFF06607C007E00007086A0030067
+:104E4000400022377F00780025377F0078006737E1
+:104E500084A6200040006737887884A04000400086
+:104E60006737B87B84A33F001B83C80035370080B9
+:104E700005A040004B371B83C8003E37018040002F
+:104E8000633784A6004040004B37B8781B80C800C9
+:104E90004737008084A03F00C0006337B4A6FFBF3F
+:104EA0005A7ED879DC7A0120010008A1C800573762
+:104EB00091A20000D279DA79D67ADE7A7810414C64
+:104EC0001B7864007810C64A7800FA241B786400C6
+:104ED0007800FA241B7865007800FA247810A3374C
+:104EE0002B7808301B7865007800FA2478108F370B
+:104EF0002B7808301B7865007800FA2427680200B8
+:104F000078109737E47884A0300040002325EC78AF
+:104F100084A00300400023252B7808301B7865000F
+:104F20007800FA24012005007800A53701200C0044
+:104F30007800A537012006007800A53701200D0074
+:104F40007800A537012009007800A5370120070067
+:104F50009B781000AA789B786000AB780100B5A61A
+:104F600004005A7E7C007E073F87BCA70F003B876A
+:104F70003B870387E0A08054B8A720009A7FA479DC
+:104F800084A10F004000C93784A1F0FFA678126009
+:104F9000046085A008000660388738879A7FA47966
+:104FA00084A140004000D93784A1BFFFA6781660D5
+:104FB000046085A0100006607F077C009B781000CD
+:104FC000AB780100AB780200AB780300AA7A9B783B
+:104FD0006000AB7804007C00212000002920320012
+:104FE0009B781000AB780100AB780300AB78010030
+:104FF000AA7DAA7C9B786000AB7805007C007E15BA
+:10500000078084A0FF000380038080A020009A789E
+:10501000A4798CA1F0FF01204652042082A0280030
+:10502000400017382120A03819201400A9200C00B6
+:1050300078001D382120AC3819201900A9200D0056
+:1050400011206400042484A0F0FF06A140002C3845
+:105050002084002310A270002C3878001F387F15A0
+:105060007C007E15092046520C2182A132004800A6
+:105070004238400046380920923819201100A920F2
+:105080000E00112032007800583882A1280040001C
+:1050900050380920A03819201400A9200C00112034
+:1050A0006400780058380920AC3819201900A9206C
+:1050B0000D0011206400002202A54000683848005D
+:1050C00068380881002310A27000653878005838CD
+:1050D0007F1506A07C007F1582A56400C800773884
+:1050E000087885A070000A78447085A0700046702A
+:1050F00078007738EC7884A0000340007F380421E2
+:105100007800903804219EA00211C0009038012040
+:10511000FD04042082A0050048008F380120011200
+:1051200078009038042105A07C0002110230023280
+:105130000342034404540456056605680678067A5B
+:10514000070C070C070E0232024202520262027280
+:10515000056605760578057A057C057E057F0222C1
+:105160000232024202520454046404740476047845
+:10517000047/*
+ * Copyright 2004-2007 Freescale Semiconductor, Inc. All Rights Reserved.
+ */
+
+/*
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+
+/*!
+ * @file mc13783/pmic_light_defs.h
+ * @brief This is the internal header PMIC(mc13783) Light and Backlight driver.
+ *
+ * @ingroup PMIC_LIGHT
+ */
+
+#ifndef __MC13783_LIGHT_DEFS_H__
+#define __MC13783_LIGHT_DEFS_H__
+
+#define LREG_0   REG_LED_CONTROL_0
+#define LREG_1   REG_LED_CONTROL_1
+#define LREG_2   REG_LED_CONTROL_2
+#define LREG_3   REG_LED_CONTROL_3
+#define LREG_4   REG_LED_CONTROL_4
+#define LREG_5   REG_LED_CONTROL_5
+
+/* REG_LED_CONTROL_0 */
+
+#define         BIT_LEDEN_LSH           0
+#define         BIT_LEDEN_WID           1
+#define         MASK_TRIODE_MAIN_BL     0x080
+#define         INDEX_AUXILIARY         1
+#define         INDEX_KEYPAD            2
+#define         BITS_FUN_LIGHT_LSH      17
+#define         BITS_FUN_LIGHT_WID      4
+#define         MASK_FUN_LIGHT          0x1E0000
+#define         MASK_BK1_FL             0x200000
+#define         ENABLE_BK1_FL           0x200000
+#define         MASK_BK2_FL             0x400000
+#define         ENABLE_BK2_FL           0x400000
+#define         MASK_BK3_FL             0x800000
+#define         ENABLE_BK3_FL           0x800000
+#define 	BIT_UP_MAIN_BL_LSH	1
+#define 	BIT_UP_MAIN_BL_WID	1
+#define 	BIT_UP_AUX_BL_LSH	2
+#define 	BIT_UP_AUX_BL_WID	1
+#define 	BIT_UP_KEY_BL_LSH	3
+#define 	BIT_UP_KEY_BL_WID	1
+#define 	BIT_DOWN_MAIN_BL_LSH	4
+#define 	BIT_DOWN_MAIN_BL_WID	1
+#define 	BIT_DOWN_AUX_BL_LSH	5
+#define 	BIT_DOWN_AUX_BL_WID	1
+#define 	BIT_DOWN_KEY_BL_LSH	6
+#define 	BIT_DOWN_KEY_BL_WID	1
+#define 	BIT_TRIODE_MAIN_BL_LSH	7
+#define 	BIT_TRIODE_MAIN_BL_WID	1
+#define 	BIT_TRIODE_AUX_BL_LSH	8
+#define 	BIT_TRIODE_AUX_BL_WID	1
+#define 	BIT_TRIODE_KEY_BL_LSH	9
+#define 	BIT_TRIODE_KEY_BL_WID	1
+
+#define         BIT_BOOSTEN_LSH         10
+#define         BIT_BOOSTEN_WID         1
+#define         BITS_BOOST_LSH          11
+#define         BITS_BOOST_WID          5
+#define         BITS_BOOST_ABMS_LSH     11
+#define         BITS_BOOST_ABMS_WID     3
+#define         BITS_BOOST_ABR_LSH      14
+#define         BITS_BOOST_ABR_WID      2
+
+#define         MAX_BOOST_ABMS          7
+#define         MAX_BOOST_ABR           3
+
+/* REG_LED_CONTROL_1 */
+
+#define         BIT_SLEWLIMTC_LSH       23
+#define         BIT_SLEWLIMTC_WID       1
+#define         BIT_TC1HALF_LSH         18
+#define         BIT_TC1HALF_WID         1
+#define         LEDR1RAMPUP             0x000001
+#define         LEDR2RAMPUP             0x000040
+#define         LEDR3RAMPUP             0x001000
+#define         LEDR1RAMPDOWN           0x000008
+#define         LEDR2RAMPDOWN           0x000200
+#define         LEDR3RAMPDOWN           0x008000
+
+/* REG_LED_CONTROL_2 */
+
+#define         BIT_SLEWLIMBL_LSH       23
+#define         BIT_SLEWLIMBL_WID       1
+#define         BIT_DUTY_CYCLE          9
+#define         MASK_DUTY_CYCLE         0x001E00
+#define         INDEX_AUX               4
+#define         INDEX_KYD               8
+#define         BIT_CL_MAIN_LSH		0
+#define         BIT_CL_MAIN_WID		3
+#define         BIT_CL_AUX_LSH		3
+#define         BIT_CL_AUX_WID		3
+#define         BIT_CL_KEY_LSH		6
+#define         BIT_CL_KEY_WID		3
+
+/* REG_LED_CONTROL_3 4 5 */
+#define         BITS_CL_RED_LSH         0
+#define         BITS_CL_RED_WID         2
+#define         BITS_CL_GREEN_LSH       2
+#define         BITS_CL_GREEN_WID       2
+#define         BITS_CL_BLUE_LSH        4
+#define         BITS_CL_BLUE_WID        2
+#define         BITS_DC_RED_LSH         6
+#define         BITS_DC_RED_WID         5
+#define         BITS_DC_GREEN_LSH       11
+#define         BITS_DC_GREEN_WID       5
+#define         BITS_DC_BLUE_LSH        16
+#define         BITS_DC_BLUE_WID        5
+#define         BIT_PERIOD_LSH          21
+#define         BIT_PERIOD_WID          2
+
+#define         DUTY_CYCLE_MAX          31
+
+/* Fun light pattern */
+#define		BLENDED_RAMPS_SLOW      	0
+#define		BLENDED_RAMPS_FAST      	1
+#define		SAW_RAMPS_SLOW  		2
+#define		SAW_RAMPS_FAST	     		3
+#define		BLENDED_INVERSE_RAMPS_SLOW	4
+#define		BLENDED_INVERSE_RAMPS_FAST	5
+#define		CHASING_LIGHTS_RGB_SLOW		6
+#define		CHASING_LIGHTS_RGB_FAST		7
+#define		CHASING_LIGHTS_BGR_SLOW		8
+#define		CHASING_LIGHTS_BGR_FAST		9
+#define		FUN_LIGHTS_OFF			15
+
+/*!
+ * This function initialize Light registers of mc13783 with 0.
+ *
+ * @return       This function returns 0 if successful.
+ */
+int pmic_light_init_reg(void);
+
+#endif				/*  __MC13783_LIGHT_DEFS_H__ */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                /*
+ * Copyright (C) 2003-2008 Takahiro Hirofuchi
+ *
+ * This is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307,
+ * USA.
+ */
+
+#include <linux/kernel.h>
+#include <linux/smp_lock.h>
+#include <linux/file.h>
+#include <linux/tcp.h>
+#include <linux/in.h>
+#include "usbip_common.h"
+
+/* version information */
+#define DRIVER_VERSION "1.0"
+#define DRIVER_AUTHOR "Takahiro Hirofuchi <hirofuchi _at_ users.sourceforge.net>"
+#define DRIVER_DESC "usbip common driver"
+
+/*-------------------------------------------------------------------------*/
+/* debug routines */
+
+#ifdef CONFIG_USB_DEBUG
+unsigned long usbip_debug_flag = 0xffffffff;
+#else
+unsigned long usbip_debug_flag;
+#endif
+EXPORT_SYMBOL_GPL(usbip_debug_flag);
+
+
+/* FIXME */
+struct device_attribute dev_attr_usbip_debug;
+EXPORT_SYMBOL_GPL(dev_attr_usbip_debug);
+
+
+static ssize_t show_flag(struct device *dev, struct device_attribute *attr,
+								char *buf)
+{
+	return sprintf(buf, "%lx\n", usbip_debug_flag);
+}
+
+static ssize_t store_flag(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
+{
+	unsigned long flag;
+
+	sscanf(buf, "%lx", &flag);
+	usbip_debug_flag = flag;
+
+	return count;
+}
+DEVICE_ATTR(usbip_debug, (S_IRUGO | S_IWUSR), show_flag, store_flag);
+
+static void usbip_dump_buffer(char *buff, int bufflen)
+{
+	int i;
+
+	if (bufflen > 128) {
+		for (i = 0; i < 128; i++) {
+			if (i%24 == 0)
+				printk("   ");
+			printk("%02x ", (unsigned char) buff[i]);
+			if (i%4 == 3)
+				printk("| ");
+			if (i%24 == 23)
+				printk("\n");
+		}
+		printk("... (%d byte)\n", bufflen);
+		return;
+	}
+
+	for (i = 0; i < bufflen; i++) {
+		if (i%24 == 0)
+			printk("   ");
+		printk("%02x ", (unsigned char) buff[i]);
+		if (i%4 == 3)
+			printk("| ");
+		if (i%24 == 23)
+			printk("\n");
+	}
+	printk("\n");
+
+}
+
+static void usbip_dump_pipe(unsigned int p)
+{
+	unsigned char type = usb_pipetype(p);
+	unsigned char ep = usb_pipeendpoint(p);
+	unsigned char dev = usb_pipedevice(p);
+	unsigned char dir = usb_pipein(p);
+
+	printk("dev(%d) ", dev);
+	printk("ep(%d) ",  ep);
+	printk("%s ", dir ? "IN" : "OUT");
+
+	switch (type) {
+	case PIPE_ISOCHRONOUS:
+		printk("%s ", "ISO");
+		break;
+	case PIPE_INTERRUPT:
+		printk("%s ", "INT");
+		break;
+	case PIPE_CONTROL:
+		printk("%s ", "CTL");
+		break;
+	case PIPE_BULK:
+		printk("%s ", "BLK");
+		break;
+	default:
+		printk("ERR");
+	}
+
+	printk("\n");
+
+}
+
+static void usbip_dump_usb_device(struct usb_device *udev)
+{
+	struct device *dev = &udev->dev;
+	int i;
+
+	dev_dbg(dev, "       devnum(%d) devpath(%s)",
+		udev->devnum, udev->devpath);
+
+	switch (udev->speed) {
+	case USB_SPEED_HIGH:
+		printk(" SPD_HIGH");
+		break;
+	case USB_SPEED_FULL:
+		printk(" SPD_FULL");
+		break;
+	case USB_SPEED_LOW:
+		printk(" SPD_LOW");
+		break;
+	case USB_SPEED_UNKNOWN:
+		printk(" SPD_UNKNOWN");
+		break;
+	default:
+		printk(" SPD_ERROR");
+	}
+
+	printk(" tt %p, ttport %d", udev->tt, udev->ttport);
+	printk("\n");
+
+	dev_dbg(dev, "                    ");
+	for (i = 0; i < 16; i++)
+		printk(" %2u", i);
+	printk("\n");
+
+	dev_dbg(dev, "       toggle0(IN) :");
+	for (i = 0; i < 16; i++)
+		printk(" %2u", (udev->toggle[0] & (1 << i)) ? 1 : 0);
+	printk("\n");
+
+	dev_dbg(dev, "       toggle1(OUT):");
+	for (i = 0; i < 16; i++)
+		printk(" %2u", (udev->toggle[1] & (1 << i)) ? 1 : 0);
+	printk("\n");
+
+
+	dev_dbg(dev, "       epmaxp_in   :");
+	for (i = 0; i < 16; i++) {
+		if (udev->ep_in[i])
+			printk(" %2u",
+			     le16_to_cpu(udev->ep_in[i]->desc.wMaxPacketSize));
+	}
+	printk("\n");
+
+	dev_dbg(dev, "       epmaxp_out  :");
+	for (i = 0; i < 16; i++) {
+		if (udev->ep_out[i])
+			printk(" %2u",
+			     le16_to_cpu(udev->ep_out[i]->desc.wMaxPacketSize));
+	}
+	printk("\n");
+
+	dev_dbg(dev, "parent %p, bus %p\n", udev->parent, udev->bus);
+
+	dev_dbg(dev, "descriptor %p, config %p, actconfig %p, "
+		"rawdescriptors %p\n", &udev->descriptor, udev->config,
+		udev->actconfig, udev->rawdescriptors);
+
+	dev_dbg(dev, "have_langid %d, string_langid %d\n",
+		udev->have_langid, udev->string_langid);
+
+	dev_dbg(dev, "maxchild %d, children %p\n",
+		udev->maxchild, udev->children);
+}
+
+static void usbip_dump_request_type(__u8 rt)
+{
+	switch (rt & USB_RECIP_MASK) {
+	case USB_RECIP_DEVICE:
+		printk("DEVICE");
+		break;
+	case USB_RECIP_INTERFACE:
+		printk("INTERF");
+		break;
+	case USB_RECIP_ENDPOINT:
+		printk("ENDPOI");
+		break;
+	case USB_RECIP_OTHER:
+		printk("OTHER ");
+		break;
+	default:
+		printk("------");
+	}
+}
+
+static void usbip_dump_usb_ctrlrequest(struct usb_ctrlrequest *cmd)
+{
+	if (!cmd) {
+		printk("      %s : null pointer\n", __func__);
+		return;
+	}
+
+	printk("       ");
+	printk("bRequestType(%02X) ", cmd->bRequestType);
+	printk("bRequest(%02X) " , cmd->bRequest);
+	printk("wValue(%04X) ", cmd->wValue);
+	printk("wIndex(%04X) ", cmd->wIndex);
+	printk("wLength(%04X) ", cmd->wLength);
+
+	printk("\n       ");
+
+	if ((cmd->bRequestType & USB_TYPE_MASK) == USB_TYPE_STANDARD) {
+		printk("STANDARD ");
+		switch (cmd->bRequest) {
+		case USB_REQ_GET_STATUS:
+			printk("GET_STATUS");
+			break;
+		case USB_REQ_CLEAR_FEATURE:
+			printk("CLEAR_FEAT");
+			break;
+		case USB_REQ_SET_FEATURE:
+			printk("SET_FEAT  ");
+			break;
+		case USB_REQ_SET_ADDRESS:
+			printk("SET_ADDRRS");
+			break;
+		case USB_REQ_GET_DESCRIPTOR:
+			printk("GET_DESCRI");
+			break;
+		case USB_REQ_SET_DESCRIPTOR:
+			printk("SET_DESCRI");
+			break;
+		case USB_REQ_GET_CONFIGURATION:
+			printk("GET_CONFIG");
+			break;
+		case USB_REQ_SET_CONFIGURATION:
+			printk("SET_CONFIG");
+			break;
+		case USB_REQ_GET_INTERFACE:
+			printk("GET_INTERF");
+			break;
+		case USB_REQ_SET_INTERFACE:
+			printk("SET_INTERF");
+			break;
+		case USB_REQ_SYNCH_FRAME:
+			printk("SYNC_FRAME");
+			break;
+		default:
+			printk("REQ(%02X) ", cmd->bRequest);
+		}
+
+		printk(" ");
+		usbip_dump_request_type(cmd->bRequestType);
+
+	} else if ((cmd->bRequestType & USB_TYPE_MASK) == USB_TYPE_CLASS)
+		printk("CLASS   ");
+
+	else if ((cmd->bRequestType & USB_TYPE_MASK) == USB_TYPE_VENDOR)
+		printk("VENDOR  ");
+
+	else if ((cmd->bRequestType & USB_TYPE_MASK) == USB_TYPE_RESERVED)
+		printk("RESERVED");
+
+	printk("\n");
+}
+
+void usbip_dump_urb(struct urb *urb)
+{
+	struct device *dev;
+
+	if (!urb) {
+		printk(KERN_DEBUG KBUILD_MODNAME
+		       ":%s: urb: null pointer!!\n", __func__);
+		return;
+	}
+
+	if (!urb->dev) {
+		printk(KERN_DEBUG KBUILD_MODNAME
+		       ":%s: urb->dev: null pointer!!\n", __func__);
+		return;
+	}
+	dev = &urb->dev->dev;
+
+	dev_dbg(dev, "   urb                   :%p\n", urb);
+	dev_dbg(dev, "   dev                   :%p\n", urb->dev);
+
+	usbip_dump_usb_device(urb->dev);
+
+	dev_dbg(dev, "   pipe                  :%08x ", urb->pipe);
+
+	usbip_dump_pipe(urb->pipe);
+
+	dev_dbg(dev, "   status                :%d\n", urb->status);
+	dev_dbg(dev, "   transfer_flags        :%08X\n", urb->transfer_flags);
+	dev_dbg(dev, "   transfer_buffer       :%p\n", urb->transfer_buffer);
+	dev_dbg(dev, "   transfer_buffer_length:%d\n", urb->transfer_buffer_length);
+	dev_dbg(dev, "   actual_length         :%d\n", urb->actual_length);
+	dev_dbg(dev, "   setup_packet          :%p\n", urb->setup_packet);
+
+	if (urb->setup_packet && usb_pipetype(urb->pipe) == PIPE_CONTROL)
+			usbip_dump_usb_ctrlrequest(
+			(struct usb_ctrlrequest *)urb->setup_packet);
+
+	dev_dbg(dev, "   start_frame           :%d\n", urb->start_frame);
+	dev_dbg(dev, "   number_of_packets     :%d\n", urb->number_of_packets);
+	dev_dbg(dev, "   interval              :%d\n", urb->interval);
+	dev_dbg(dev, "   error_count           :%d\n", urb->error_count);
+	dev_dbg(dev, "   context               :%p\n", urb->context);
+	dev_dbg(dev, "   complete              :%p\n", urb->complete);
+}
+EXPORT_SYMBOL_GPL(usbip_dump_urb);
+
+void usbip_dump_header(struct usbip_header *pdu)
+{
+	udbg("BASE: cmd %u seq %u devid %u dir %u ep %u\n",
+			pdu->base.command,
+			pdu->base.seqnum,
+			pdu->base.devid,
+			pdu->base.direction,
+			pdu->base.ep);
+
+	switch (pdu->base.command) {
+	case USBIP_CMD_SUBMIT:
+		udbg("CMD_SUBMIT: x_flags %u x_len %u sf %u #p %u iv %u\n",
+				pdu->u.cmd_submit.transfer_flags,
+				pdu->u.cmd_submit.transfer_buffer_length,
+				pdu->u.cmd_submit.start_frame,
+				pdu->u.cmd_submit.number_of_packets,
+				pdu->u.cmd_submit.interval);
+				break;
+	case USBIP_CMD_UNLINK:
+		udbg("CMD_UNLINK: seq %u\n", pdu->u.cmd_unlink.seqnum);
+		break;
+	case USBIP_RET_SUBMIT:
+		udbg("RET_SUBMIT: st %d al %u sf %d ec %d\n",
+				pdu->u.ret_submit.status,
+				pdu->u.ret_submit.actual_length,
+				pdu->u.ret_submit.start_frame,
+				pdu->u.ret_submit.error_count);
+	case USBIP_RET_UNLINK:
+		udbg("RET_UNLINK: status %d\n", pdu->u.ret_unlink.status);
+		break;
+	default:
+		/* NOT REACHED */
+		udbg("UNKNOWN\n");
+	}
+}
+EXPORT_SYMBOL_GPL(usbip_dump_header);
+
+
+/*-------------------------------------------------------------------------*/
+/* thread routines */
+
+int usbip_thread(void *param)
+{
+	struct usbip_task *ut = param;
+
+	if (!ut)
+		return -EINVAL;
+
+	lock_kernel();
+	daemonize(ut->name);
+	allow_signal(SIGKILL);
+	ut->thread = current;
+	unlock_kernel();
+
+	/* srv.rb must wait for rx_thread starting */
+	complete(&ut->thread_done);
+
+	/* start of while loop */
+	ut->loop_ops(ut);
+
+	/* end of loop */
+	ut->thread = NULL;
+
+	complete_and_exit(&ut->thread_done, 0);
+}
+
+void usbip_start_threads(struct usbip_device *ud)
+{
+	/*
+	 * threads are invoked per one device (per one connection).
+	 */
+	int retval;
+
+	retval = kernel_thread(usbip_thread, (void *)&ud->tcp_rx, 0);
+	if (retval < 0) {
+		printk(KERN_ERR "Creating tcp_rx thread for ud %p failed.\n",
+				ud);
+		return;
+	}
+	retval = kernel_thread(usbip_thread, (void *)&ud->tcp_tx, 0);
+	if (retval < 0) {
+		printk(KERN_ERR "Creating tcp_tx thread for ud %p failed.\n",
+				ud);
+		return;
+	}
+
+	/* confirm threads are starting */
+	wait_for_completion(&ud->tcp_rx.thread_done);
+	wait_for_completion(&ud->tcp_tx.thread_done);
+}
+EXPORT_SYMBOL_GPL(usbip_start_threads);
+
+void usbip_stop_threads(struct usbip_device *ud)
+{
+	/* kill threads related to this sdev, if v.c. exists */
+	if (ud->tcp_rx.thread != NULL) {
+		send_sig(SIGKILL, ud->tcp_rx.thread, 1);
+		wait_for_completion(&ud->tcp_rx.thread_done);
+		udbg("rx_thread for ud %p has finished\n", ud);
+	}
+
+	if (ud->tcp_tx.thread != NULL) {
+		send_sig(SIGKILL, ud->tcp_tx.thread, 1);
+		wait_for_completion(&ud->tcp_tx.thread_done);
+		udbg("tx_thread for ud %p has finished\n", ud);
+	}
+}
+EXPORT_SYMBOL_GPL(usbip_stop_threads);
+
+void usbip_task_init(struct usbip_task *ut, char *name,
+		void (*loop_ops)(struct usbip_task *))
+{
+	ut->thread = NULL;
+	init_completion(&ut->thread_done);
+	ut->name = name;
+	ut->loop_ops = loop_ops;
+}
+EXPORT_SYMBOL_GPL(usbip_task_init);
+
+
+/*-------------------------------------------------------------------------*/
+/* socket routines */
+
+ /*  Send/receive messages over TCP/IP. I refer drivers/block/nbd.c */
+int usbip_xmit(int send, struct socket *sock, char *buf,
+	       int size, int msg_flags)
+{
+	int result;
+	struct msghdr msg;
+	struct kvec iov;
+	int total = 0;
+
+	/* for blocks of if (dbg_flag_xmit) */
+	char *bp = buf;
+	int osize = size;
+
+	dbg_xmit("enter\n");
+
+	if (!sock || !buf || !size) {
+		printk(KERN_ERR "%s: invalid arg, sock %p buff %p size %d\n",
+		       __func__, sock, buf, size);
+		return -EINVAL;
+	}
+
+
+	if (dbg_flag_xmit) {
+		if (send) {
+			if (!in_interrupt())
+				printk(KERN_DEBUG "%-10s:", current->comm);
+			else
+				printk(KERN_DEBUG "interupt  :");
+
+			printk("%s: sending... , sock %p, buf %p, "
+			       "size %d, msg_flags %d\n", __func__,
+			       sock, buf, size, msg_flags);
+			usbip_dump_buffer(buf, size);
+		}
+	}
+
+
+	do {
+		sock->sk->sk_allocation = GFP_NOIO;
+		iov.iov_base    = buf;
+		iov.iov_len     = size;
+		msg.msg_name    = NULL;
+		msg.msg_namelen = 0;
+		msg.msg_control = NULL;
+		msg.msg_controllen = 0;
+		msg.msg_namelen    = 0;
+		msg.msg_flags      = msg_flags | MSG_NOSIGNAL;
+
+		if (send)
+			result = kernel_sendmsg(sock, &msg, &iov, 1, size);
+		else
+			result = kernel_recvmsg(sock, &msg, &iov, 1, size,
+								MSG_WAITALL);
+
+		if (result <= 0) {
+			udbg("usbip_xmit: %s sock %p buf %p size %u ret %d"
+					" total %d\n",
+					send ? "send" : "receive", sock, buf,
+					size, result, total);
+			goto err;
+		}
+
+		size -= result;
+		buf += result;
+		total += result;
+
+	} while (size > 0);
+
+
+	if (dbg_flag_xmit) {
+		if (!send) {
+			if (!in_interrupt())
+				printk(KERN_DEBUG "%-10s:", current->comm);
+			else
+				printk(KERN_DEBUG "interupt  :");
+
+			printk("usbip_xmit: receiving....\n");
+			usbip_dump_buffer(bp, osize);
+			printk("usbip_xmit: received, osize %d ret %d size %d "
+					"total %d\n", osize, result, size,
+					total);
+		}
+
+		if (send)
+			printk("usbip_xmit: send, total %d\n", total);
+	}
+
+	return total;
+
+err:
+	return result;
+}
+EXPORT_SYMBOL_GPL(usbip_xmit);
+
+
+/* now a usrland utility should set options. */
+#if 0
+int setquickack(struct socket *socket)
+{
+	mm_segment_t oldfs;
+	int val = 1;
+	int ret;
+
+	oldfs = get_fs();
+	set_fs(get_ds());
+	ret = socket->ops->setsockopt(socket, SOL_TCP, TCP_QUICKACK,
+			(char __user *) &val, sizeof(ret));
+	set_fs(oldfs);
+
+	return ret;
+}
+
+int setnodelay(struct socket *socket)
+{
+	mm_segment_t oldfs;
+	int val = 1;
+	int ret;
+
+	oldfs = get_fs();
+	set_fs(get_ds());
+	ret = socket->ops->setsockopt(socket, SOL_TCP, TCP_NODELAY,
+			(char __user *) &val, sizeof(ret));
+	set_fs(oldfs);
+
+	return ret;
+}
+
+int setkeepalive(struct socket *socket)
+{
+	mm_segment_t oldfs;
+	int val = 1;
+	int ret;
+
+	oldfs = get_fs();
+	set_fs(get_ds());
+	ret = socket->ops->setsockopt(socket, SOL_SOCKET, SO_KEEPALIVE,
+			(char __user *) &val, sizeof(ret));
+	set_fs(oldfs);
+
+	return ret;
+}
+
+void setreuse(struct socket *socket)
+{
+	socket->sk->sk_reuse = 1;
+}
+#endif
+
+struct socket *sockfd_to_socket(unsigned int sockfd)
+{
+	struct socket *socket;
+	struct file *file;
+	struct inode *inode;
+
+	file = fget(sockfd);
+	if (!file) {
+		printk(KERN_ERR "%s: invalid sockfd\n", __func__);
+		return NULL;
+	}
+
+	inode = file->f_dentry->d_inode;
+
+	if (!inode || !S_ISSOCK(inode->i_mode))
+		return NULL;
+
+	socket = SOCKET_I(inode);
+
+	return socket;
+}
+EXPORT_SYMBOL_GPL(sockfd_to_socket);
+
+
+
+/*-------------------------------------------------------------------------*/
+/* pdu routines */
+
+/* there may be more cases to tweak the flags. */
+static unsigned int tweak_transfer_flags(unsigned int flags)
+{
+
+	if (flags & URB_NO_TRANSFER_DMA_MAP)
+		/*
+		 * vhci_hcd does not provide DMA-mapped I/O. The upper
+		 * driver does not need to set this flag. The remote
+		 * usbip.ko does not still perform DMA-mapped I/O for
+		 * DMA-caplable host controllers. So, clear this flag.
+		 */
+		flags &= ~URB_NO_TRANSFER_DMA_MAP;
+
+	if (flags & URB_NO_SETUP_DMA_MAP)
+		flags &= ~URB_NO_SETUP_DMA_MAP;
+
+	return flags;
+}
+
+static void usbip_pack_cmd_submit(struct usbip_header *pdu, struct urb *urb,
+								int pack)
+{
+	struct usbip_header_cmd_submit *spdu = &pdu->u.cmd_submit;
+
+	/*
+	 * Some members are not still implemented in usbip. I hope this issue
+	 * will be discussed when usbip is ported to other operating systems.
+	 */
+	if (pack) {
+		/* vhci_tx.c */
+		spdu->transfer_flags =
+				tweak_transfer_flags(urb->transfer_flags);
+		spdu->transfer_buffer_length	= urb->transfer_buffer_length;
+		spdu->start_frame		= urb->start_frame;
+		spdu->number_of_packets		= urb->number_of_packets;
+		spdu->interval			= urb->interval;
+	} else  {
+		/* stub_rx.c */
+		urb->transfer_flags         = spdu->transfer_flags;
+
+		urb->transfer_buffer_length = spdu->transfer_buffer_length;
+		urb->start_frame            = spdu->start_frame;
+		urb->number_of_packets      = spdu->number_of_packets;
+		urb->interval               = spdu->interval;
+	}
+}
+
+static void usbip_pack_ret_submit(struct usbip_header *pdu, struct urb *urb,
+								int pack)
+{
+	struct usbip_header_ret_submit *rpdu = &pdu->u.ret_submit;
+
+	if (pack) {
+		/* stub_tx.c */
+
+		rpdu->status		= urb->status;
+		rpdu->actual_length	= urb->actual_length;
+		rpdu->start_frame	= urb->start_frame;
+		rpdu->error_count	= urb->error_count;
+	} else {
+		/* vhci_rx.c */
+
+		urb->status		= rpdu->status;
+		urb->actual_length	= rpdu->actual_length;
+		urb->start_frame	= rpdu->start_frame;
+		urb->error_count	= rpdu->error_count;
+	}
+}
+
+
+void usbip_pack_pdu(struct usbip_header *pdu, struct urb *urb, int cmd,
+								int pack)
+{
+	switch (cmd) {
+	case USBIP_CMD_SUBMIT:
+		usbip_pack_cmd_submit(pdu, urb, pack);
+		break;
+	case USBIP_RET_SUBMIT:
+		usbip_pack_ret_submit(pdu, urb, pack);
+		break;
+	default:
+		err("unknown command");
+		/* NOTREACHED */
+		/* BUG(); */
+	}
+}
+EXPORT_SYMBOL_GPL(usbip_pack_pdu);
+
+
+static void correct_endian_basic(struct usbip_header_basic *base, int send)
+{
+	if (send) {
+		base->command	= cpu_to_be32(base->command);
+		base->seqnum	= cpu_to_be32(base->seqnum);
+		base->devid	= cpu_to_be32(base->devid);
+		base->direction	= cpu_to_be32(base->direction);
+		base->ep	= cpu_to_be32(base->ep);
+	} else {
+		base->command	= be32_to_cpu(base->command);
+		base->seqnum	= be32_to_cpu(base->seqnum);
+		base->devid	= be32_to_cpu(base->devid);
+		base->direction	= be32_to_cpu(base->direction);
+		base->ep	= be32_to_cpu(base->ep);
+	}
+}
+
+static void correct_endian_cmd_submit(struct usbip_header_cmd_submit *pdu,
+								int send)
+{
+	if (send) {
+		pdu->transfer_flags = cpu_to_be32(pdu->transfer_flags);
+
+		cpu_to_be32s(&pdu->transfer_buffer_length);
+		cpu_to_be32s(&pdu->start_frame);
+		cpu_to_be32s(&pdu->number_of_packets);
+		cpu_to_be32s(&pdu->interval);
+	} else {
+		pdu->transfer_flags = be32_to_cpu(pdu->transfer_flags);
+
+		be32_to_cpus(&pdu->transfer_buffer_length);
+		be32_to_cpus(&pdu->start_frame);
+		be32_to_cpus(&pdu->number_of_packets);
+		be32_to_cpus(&pdu->interval);
+	}
+}
+
+static void correct_endian_ret_submit(struct usbip_header_ret_submit *pdu,
+								int send)
+{
+	if (send) {
+		cpu_to_be32s(&pdu->status);
+		cpu_to_be32s(&pdu->actual_length);
+		cpu_to_be32s(&pdu->start_frame);
+		cpu_to_be32s(&pdu->error_count);
+	} else {
+		be32_to_cpus(&pdu->status);
+		be32_to_cpus(&pdu->actual_length);
+		be32_to_cpus(&pdu->start_frame);
+		be32_to_cpus(&pdu->error_count);
+	}
+}
+
+static void correct_endian_cmd_unlink(struct usbip_header_cmd_unlink *pdu,
+								int send)
+{
+	if (send)
+		pdu->seqnum = cpu_to_be32(pdu->seqnum);
+	else
+		pdu->seqnum = be32_to_cpu(pdu->seqnum);
+}
+
+static void correct_endian_ret_unlink(struct usbip_header_ret_unlink *pdu,
+								int send)
+{
+	if (send)
+		cpu_to_be32s(&pdu->status);
+	else
+		be32_to_cpus(&pdu->status);
+}
+
+void usbip_header_correct_endian(struct usbip_header *pdu, int send)
+{
+	__u32 cmd = 0;
+
+	if (send)
+		cmd = pdu->base.command;
+
+	correct_endian_basic(&pdu->base, send);
+
+	if (!send)
+		cmd = pdu->base.command;
+
+	switch (cmd) {
+	case USBIP_CMD_SUBMIT:
+		correct_endian_cmd_submit(&pdu->u.cmd_submit, send);
+		break;
+	case USBIP_RET_SUBMIT:
+		correct_endian_ret_submit(&pdu->u.ret_submit, send);
+		break;
+	case USBIP_CMD_UNLINK:
+		correct_endian_cmd_unlink(&pdu->u.cmd_unlink, send);
+		break;
+	case USBIP_RET_UNLINK:
+		correct_endian_ret_unlink(&pdu->u.ret_unlink, send);
+		break;
+	default:
+		/* NOTREACHED */
+		err("unknown command in pdu header: %d", cmd);
+		/* BUG(); */
+	}
+}
+EXPORT_SYMBOL_GPL(usbip_header_correct_endian);
+
+static void usbip_iso_pakcet_correct_endian(
+				struct usbip_iso_packet_descriptor *iso,
+				int send)
+{
+	/* does not need all members. but copy all simply. */
+	if (send) {
+		iso->offset	= cpu_to_be32(iso->offset);
+		iso->length	= cpu_to_be32(iso->length);
+		iso->status	= cpu_to_be32(iso->status);
+		iso->actual_length = cpu_to_be32(iso->actual_length);
+	} else {
+		iso->offset	= be32_to_cpu(iso->offset);
+		iso->length	= be32_to_cpu(iso->length);
+		iso->status	= be32_to_cpu(iso->status);
+		iso->actual_length = be32_to_cpu(iso->actual_length);
+	}
+}
+
+static void usbip_pack_iso(struct usbip_iso_packet_descriptor *iso,
+		struct usb_iso_packet_descriptor *uiso, int pack)
+{
+	if (pack) {
+		iso->offset		= uiso->offset;
+		iso->length		= uiso->length;
+		iso->status		= uiso->status;
+		iso->actual_length	= uiso->actual_length;
+	} else {
+		uiso->offset		= iso->offset;
+		uiso->length		= iso->length;
+		uiso->status		= iso->status;
+		uiso->actual_le02F
+:107A3000C0001F4D106005A040001F4D7E01781052
+:107A40006F227F01E0AC10007000254D78000F4DD3
+:107A5000098140002C4DA920000178000F4D7810BD
+:107A6000394D78105E4D0920515204210920020140
+:107A70000A20912001807C00347801803678C00093
+:107A80005D4D3878367891200080447805A0C0009C
+:107A9000484D012001010180467880A000754020FA
+:107AA000042065A040005D4D246005A04000594DB4
+:107AB0000180266040008D4D0060402C78004E4DC6
+:107AC0007C00287801802A78C0008C4D2C782A7898
+:107AD000307805A0C0006B4D012000020180327893
+:107AE000038003800380038090A0005598A20200C9
+:107AF000042384A0080040008C4D90A209000422B9
+:107B000005A04000844D01801220C0008C4D04234C
+:107B100084A0F7FF85A080001A2078106F227C00D7
+:107B200069204052006805A04000974D486806ACA7
+:107B30004000D44D1B600600B46084A0003F1E606E
+:107B4000206084A0FF0085A06000226000604220C9
+:107B50001467826F7810C519186805A04000AF4DF2
+:107B600001801A68086884A0EFFF0A681068018025
+:107B7000D000B94D78108C2412682F60000033605B
+:107B80000000682C7810DC1C69204052447984A1E4
+:107B90000001012006006E68C000CF4D86690120FB
+:107BA00004006E6878106A22912001807C006920B0
+:107BB000000109204052042184A007004000304EFB
+:107BC00086A00700C000EA4D7E0D092052526C21AC
+:107BD00078101C3B7F0D7800304E092052526421F2
+:107BE000781037241B600600586884A0003F1E6090
+:107BF000206084A0FF0085A0480022602F60000064
+:107C000033600000306884A040004000244E4B6880
+:107C10000400A9201400486884A004004000114E0C
+:107C20007000114E7800084E4B680900A92014001E
+:107C3000486884A0010040001E4E70001E4E78006F
+:107C4000154EA920FA007000244E7800204E0868D6
+:107C500084A0FDFF0A681B68480009205B520B20C6
+:107C600007004C784A78912001807C0079200052EE
+:107C700078105E4E7810424E7810504E33780000E7
+:107C8000477800004B7800007C0019200300112089
+:107C90004652042286A03C0040004D4E19200200AE
+:107CA0002A7B2E7B7C0019203900112046520422A9
+:107CB00086A03C0040005B4E19202700367B3A7BB3
+:107CC0007C001920713911204652042286A03C0004
+:107CD0004000694E19202626227B267B3F78000033
+:107CE00043780A007C0020002B00000020000000E8
+:107CF0002000000020000000200000002000000004
+:107D000020000000200000002000000020000000F3
+:107D100020000000200000002000000020000000E3
+:107D200020000000200000002000000014001400CB
+:107D300049981400140014001400140014001400D6
+:107D400080000F00000001020406080C20212240E0
+:107D500080F818000B3001A2140000A2140000A249
+:107D6000140200006C0002001400CD989E009300E5
+:107D700002A2388806383988C32064088598C1284B
+:107D8000AE9C03A20C30462861816A840083561899
+:107D90003A886598F228919C58980C30E128919C7B
+:107DA000022806A2C3642E2807A2A064E06DA06783
+:107DB000C06F14183B882478C16864783E8879982D
+:107DC000768577866B20C128AE9C44200321A220B3
+:107DD0008120659809A201298D98140005A200A3AD
+:107DE00072189A873C88E21F01C60AA26E850407B2
+:107DF000919C140004A200A30930E21964F86E8576
+:107E00003F88E608919881F88C9801C81400C1F861
+:107E10001600B285F080329502FBE21D1400328517
+:107E200041F21400E21DA884A0D7E61F140008A2A6
+:107E300043600880C11D1600008360812A8441F0E0
+:107E40000830A884D6114270DD201100D520228888
+:107E50001600008047281110C098008000A002285A
+:107E60001110C69865983E281110CA980BA21700E9
+:107E70000C3000A3E21D81DB14001002D79814001F
+:107E8000E0263A8702FBF219E21F14000DA2063821
+:107E90001002B39C040700006C0002004F9814000D
+:107EA0009E00A0001700FF600C30208711A2D09C1C
+:107EB0007287378801217A98D210E278D39C59983A
+:107EC00084D9E2F0A1F0CD981400318866D13088D1
+:107ED0000F80019420B502C820887A9801237A98EF
+:107EE000D210E478D39C21882088599823F142F15C
+:107EF00001F1C698D210F670328803820C879ED9A1
+:107F000001601400456814021BA2D09C0120C59892
+:107F10000182521884D163D1348801808D98273032
+:107F2000A884561A3388140018A28169BC9C26695B
+:107F30000269341A9998141A2170140000A341613F
+:107F40006469108092852680B984E4692380E116F3
+:107F50000180F110466913A2621413A20080E11699
+:107F6000B598696914A2C2610280E1140480E11627
+:107F700001010A302788140017A2BC9C140000A33A
+:107F800081812A84A884E61C2C88160012A2D09C29
+:107F9000D210E4700400078024941ACCD39CC598B6
+:107FA00027880A3013000080A4841600C2111E2105
+:107FB0000E871DA214008E8716001CA23510919802
+:107FC00010A200A0108092853B8544D02280073803
+:107FD000BB84EA9821800738B9840C307E812B87D6
+:107FE00072879198000020002B0000002000000004
+:107FF0002000000020000000200000002000000001
+<]  é,   Ae <]  é,  ˆ}f <]  é,  }f <]  é,  ¨5f A]  é,  ˜}f S]  é,  À5f <]  é,  dpe <]  é,  ,he <]  é,  äe <]  é,  xme <]  é,   }f <]  é,  °Ge =]  é,  ¨}f <]  é,  ”‹e <]  é,  @‹e <]  é,  œ‹e <]  é,  `‹e P]  é,  °}f P]  é,  ¸}f <]  é,  H‹e <]  é,  >f <]  é,  <oe n]  é,  À}f <]  é,  @f a]  é,  È}f P]  é,  Ô}f T]  é,  Ü}f P]  é,  è}f <]  é,  [e P]  é,  ðDf <]  é,  [e <]  é,  xe <]  é,  de <]  é,  °Le <]  é,  ¨Le P]  é,  ð}f <]  é,  ø}f <]  é,   ~f <]  é,  Øpe <]  é,  „If n]  é,  ŒIf <]  é,  ~f <]  é,  ~f <]  é,  ~f <]  é,  xLe <]  é,  øŽe P]  é,   ~f <]  é,  ˜Le <]  é,  @[e <]  é,  (~f <]  é,  T[e <]  é,  Lf <]  é,  °Lf <]  é,  0Pe a]  é,  @Pe f]  é,  LPe g]  é,  0~f <]  é,  @~f P]  é,  H~f <]  é,  XNf <]  é,  P~f P]  é,  X~f <]  é,  ,’e a]  é,  lOf <]  é,  `~f <]  é,  °[e <]  é,  ¸e <]  é,  `e <]  é,  h~f <]  é,  DMe <]  é,  xPe P]  é,  ´Pf <]  é,  p~f <]  é,   “e <]  é,  ÐQf <]  é,  àQf <]  é,  ä[e <]  é,  x~f <]  é,  À’e <]  é,  ÈRf <]  é,  È’e <]  é,  àRf <]  é,  ¸e P]  é,  €~f <]  é,  ˆ~f <]  é,  Ð’e l]  é,  ~f \]  é,  œ~f <]  é,  àSf <]  é,  ¨~f <]  é,  °~f <]  é,  àpe A]  é,  ì[e <]  é,  ¸~f S]  é,  À~f <]  é,  Dbe P]  é,  Ì~f <]  é,  \e <]  é,  ø“e <]  é,  Ô~f L]  é,  Ü~f <]  é,  ¬Me <]  é,  $\e S]  é,  ä~f P]  é,  Œe <]  é,  èVf <]  é,  €be <]  é,  \\e A]  é,  d\e P]  é,  Ìne <]  é,  ð~f <]  é,  À…e a]  é,  ø~f <]  é,  ˆ\e <]  é,  @(e <]  é,  œPe >]  é,  f A]  é,  ˜\e B]  é,  °•e L]  é,  (‡e M]  é,  f P]  é,  f X]  é,   f a]  é,  Zf f]  é,  ,f P]  é,   \e P]  é,  še a]  é,  ˆZf S]  é,  8f <]  é,  à'e L]  é,  [f ]]  é,  Df <]  é,  hNe A]  é,  ¨\e B]  é,  ¬Pe L]  é,  Ì\e P]  é,  Pf P]  é,  Xf P]  é,  Ü]f P]  é,  àNe P]  é,  `f P]  é,  hf P]  é,  pf a]  é,  xf P]  é,  \_f P]  é,  „f a]  é,  Œf P]  é,  ø\e P]  é,  \he P]  é,  ¸e P]  é,   ]e P]  é,  ]e S]  é,  4{e ^]  é,  ˜f b]  é,  ¤f f]  é,  °f i]  é,  ¼f a]  é,  Ìf a]  é,  D]e P]  é,  Øf []  é,  àf n]  é,  p]e P]  é,  x]e P]  é,  ðf P]  é,  øf P]  é,  Lee <]  é,  $e <]  é,  hf <]  é,  4hf a]  é,   €f f]  é,   ue <]  é,  ôˆe a]  é,  €f <]  é,  h‰e P]  é,  àhf <]  é,  ð(e P]  é,  0œe P]  é,  €f P]  é,   €f P]  é,  (€f <]  é,  ^e <]  é,  0™e a]  é,  0€f P]  é,  ÀŒe P]  é,  <€f P]  é,  D€f P]  é,  L€f <]  é,  xIe a]  é,  T€f a]  é,  `€f P]  é,  l€f l]  é,  t€f <]  é,  D^e <]  é,  Ie <]  é,  È(e f]  é,  €€f P]  é,  ø•e P]  é,  Àbe P]  é,  °kf <]  é,  à(e P]  é,  Œ€f P]  é,  ”že P]  é,  ”€f P]  é,  œ€f <]  é,  Lmf L]  é,  Tmf <]  é,  ¤€f <]  é,  ˜(e L]  é,  Œze <]  é,  ¬€f <

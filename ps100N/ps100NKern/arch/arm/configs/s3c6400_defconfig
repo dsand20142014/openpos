@@ -1,0 +1,669 @@
+ne after lpfc_sli_hba_setup().
+	 */
+
+	fc_host_node_name(shost) = wwn_to_u64(vport->fc_nodename.u.wwn);
+	fc_host_port_name(shost) = wwn_to_u64(vport->fc_portname.u.wwn);
+	fc_host_supported_classes(shost) = FC_COS_CLASS3;
+
+	memset(fc_host_supported_fc4s(shost), 0,
+	       sizeof(fc_host_supported_fc4s(shost)));
+	fc_host_supported_fc4s(shost)[2] = 1;
+	fc_host_supported_fc4s(shost)[7] = 1;
+
+	lpfc_vport_symbolic_node_name(vport, fc_host_symbolic_name(shost),
+				 sizeof fc_host_symbolic_name(shost));
+
+	fc_host_supported_speeds(shost) = 0;
+	if (phba->lmt & LMT_10Gb)
+		fc_host_supported_speeds(shost) |= FC_PORTSPEED_10GBIT;
+	if (phba->lmt & LMT_8Gb)
+		fc_host_supported_speeds(shost) |= FC_PORTSPEED_8GBIT;
+	if (phba->lmt & LMT_4Gb)
+		fc_host_supported_speeds(shost) |= FC_PORTSPEED_4GBIT;
+	if (phba->lmt & LMT_2Gb)
+		fc_host_supported_speeds(shost) |= FC_PORTSPEED_2GBIT;
+	if (phba->lmt & LMT_1Gb)
+		fc_host_supported_speeds(shost) |= FC_PORTSPEED_1GBIT;
+
+	fc_host_maxframe_size(shost) =
+		(((uint32_t) vport->fc_sparam.cmn.bbRcvSizeMsb & 0x0F) << 8) |
+		(uint32_t) vport->fc_sparam.cmn.bbRcvSizeLsb;
+
+	/* This value is also unchanging */
+	memset(fc_host_active_fc4s(shost), 0,
+	       sizeof(fc_host_active_fc4s(shost)));
+	fc_host_active_fc4s(shost)[2] = 1;
+	fc_host_active_fc4s(shost)[7] = 1;
+
+	fc_host_max_npiv_vports(shost) = phba->max_vpi;
+	spin_lock_irq(shost->host_lock);
+	vport->load_flag &= ~FC_LOADING;
+	spin_unlock_irq(shost->host_lock);
+}
+
+/**
+ * lpfc_stop_port_s3 - Stop SLI3 device port
+ * @phba: pointer to lpfc hba data structure.
+ *
+ * This routine is invoked to stop an SLI3 device port, it stops the device
+ * from generating interrupts and stops the device driver's timers for the
+ * device.
+ **/
+static void
+lpfc_stop_port_s3(struct lpfc_hba *phba)
+{
+	/* Clear all interrupt enable conditions */
+	writel(0, phba->HCregaddr);
+	readl(phba->HCregaddr); /* flush */
+	/* Clear all pending interrupts */
+	writel(0xffffffff, phba->HAregaddr);
+	readl(phba->HAregaddr); /* flush */
+
+	/* Reset some HBA SLI setup states */
+	lpfc_stop_hba_timers(phba);
+	phba->pport->work_port_events = 0;
+}
+
+/**
+ * lpfc_stop_port_s4 - Stop SLI4 device port
+ * @phba: pointer to lpfc hba data structure.
+ *
+ * This routine is invoked to stop an SLI4 device port, it stops the device
+ * from generating interrupts and stops the device driver's timers for the
+ * device.
+ **/
+static void
+lpfc_stop_port_s4(struct lpfc_hba *phba)
+{
+	/* Reset some HBA SLI4 setup states */
+	lpfc_stop_hba_timers(phba);
+	phba->pport->work_port_events = 0;
+	phba->sli4_hba.intr_enable = 0;
+	/* Hard clear it for now, shall have more graceful way to wait later */
+	phba->sli.sli_flag &= ~LPFC_SLI_MBOX_ACTIVE;
+}
+
+/**
+ * lpfc_stop_port - Wrapper function for stopping hba port
+ * @phba: Pointer to HBA context object.
+ *
+ * This routine wraps the actual SLI3 or SLI4 hba stop port routine from
+ * the API jump table function pointer from the lpfc_hba struct.
+ **/
+void
+lpfc_stop_port(struct lpfc_hba *phba)
+{
+	phba->lpfc_stop_port(phba);
+}
+
+/**
+ * lpfc_sli4_remove_dflt_fcf - Remove the driver default fcf record from the port.
+ * @phba: pointer to lpfc hba data structure.
+ *
+ * This routine is invoked to remove the driver default fcf record from
+ * the port.  This routine currently acts on FCF Index 0.
+ *
+ **/
+void
+lpfc_sli_remove_dflt_fcf(struct lpfc_hba *phba)
+{
+	int rc = 0;
+	LPFC_MBOXQ_t *mboxq;
+	struct lpfc_mbx_del_fcf_tbl_entry *del_fcf_record;
+	uint32_t mbox_tmo, req_len;
+	uint32_t shdr_status, shdr_add_status;
+
+	mboxq = mempool_alloc(phba->mbox_mem_pool, GFP_KERNEL);
+	if (!mboxq) {
+		lpfc_printf_log(phba, KERN_ERR, LOG_INIT,
+			"2020 Failed to allocate mbox for ADD_FCF cmd\n");
+		return;
+	}
+
+	req_len = sizeof(struct lpfc_mbx_del_fcf_tbl_entry) -
+		  sizeof(struct lpfc_sli4_cfg_mhdr);
+	rc = lpfc_sli4_config(phba, mboxq, LPFC_MBOX_SUBSYSTEM_FCOE,
+			      LPFC_MBOX_OPCODE_FCOE_DELETE_FCF,
+			      req_len, LPFC_SLI4_MBX_EMBED);
+	/*
+	 * In phase 1, there is a single FCF index, 0.  In phase2, the driver
+	 * supports multiple FCF indices.
+	 */
+	del_fcf_record = &mboxq->u.mqe.un.del_fcf_entry;
+	bf_set(lpfc_mbx_del_fcf_tbl_count, del_fcf_record, 1);
+	bf_set(lpfc_mbx_del_fcf_tbl_index, del_fcf_record,
+	       phba->fcf.fcf_indx);
+
+	if (!phba->sli4_hba.intr_enable)
+		rc = lpfc_sli_issue_mbox(phba, mboxq, MBX_POLL);
+	else {
+		mbox_tmo = lpfc_mbox_tmo_val(phba, MBX_SLI4_CONFIG);
+		rc = lpfc_sli_issue_mbox_wait(phba, mboxq, mbox_tmo);
+	}
+	/* The IOCTL status is embedded in the mailbox subheader. */
+	shdr_status = bf_get(lpfc_mbox_hdr_status,
+			     &del_fcf_record->header.cfg_shdr.response);
+	shdr_add_status = bf_get(lpfc_mbox_hdr_add_status,
+				 &del_fcf_record->header.cfg_shdr.response);
+	if (shdr_status || shdr_add_status || rc != MBX_SUCCESS) {
+		lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
+				"2516 DEL FCF of default FCF Index failed "
+				"mbx status x%x, status x%x add_status x%x\n",
+				rc, shdr_status, shdr_add_status);
+	}
+	if (rc != MBX_TIMEOUT)
+		mempool_free(mboxq, phba->mbox_mem_pool);
+}
+
+/**
+ * lpfc_sli4_parse_latt_fault - Parse sli4 link-attention link fault code
+ * @phba: pointer to lpfc hba data structure.
+ * @acqe_link: pointer to the async link completion queue entry.
+ *
+ * This routine is to parse the SLI4 link-attention link fault code and
+ * translate it into the base driver's read link attention mailbox command
+ * status.
+ *
+ * Return: Link-attention status in terms of base driver's coding.
+ **/
+static uint16_t
+lpfc_sli4_parse_latt_fault(struct lpfc_hba *phba,
+			   struct lpfc_acqe_link *acqe_link)
+{
+	uint16_t latt_fault;
+
+	switch (bf_get(lpfc_acqe_link_fault, acqe_link)) {
+	case LPFC_ASYNC_LINK_FAULT_NONE:
+	case LPFC_ASYNC_LINK_FAULT_LOCAL:
+	case LPFC_ASYNC_LINK_FAULT_REMOTE:
+		latt_fault = 0;
+		break;
+	default:
+		lpfc_printf_log(phba, KERN_ERR, LOG_INIT,
+				"0398 Invalid link fault code: x%x\n",
+				bf_get(lpfc_acqe_link_fault, acqe_link));
+		latt_fault = MBXERR_ERROR;
+		break;
+	}
+	return latt_fault;
+}
+
+/**
+ * lpfc_sli4_parse_latt_type - Parse sli4 link attention type
+ * @phba: pointer to lpfc hba data structure.
+ * @acqe_link: pointer to the async link completion queue entry.
+ *
+ * This routine is to parse the SLI4 link attention type and translate it
+ * into the base driver's link attention type coding.
+ *
+ * Return: Link attention type in terms of base driver's coding.
+ **/
+static uint8_t
+lpfc_sli4_parse_latt_type(struct lpfc_hba *phba,
+			  struct lpfc_acqe_link *acqe_link)
+{
+	uint8_t att_type;
+
+	switch (bf_get(lpfc_acqe_link_status, acqe_link)) {
+	case LPFC_ASYNC_LINK_STATUS_DOWN:
+	case LPFC_ASYNC_LINK_STATUS_LOGICAL_DOWN:
+		att_type = AT_LINK_DOWN;
+		break;
+	case LPFC_ASYNC_LINK_STATUS_UP:
+		/* Ignore physical link up events - wait for logical link up */
+		att_type = AT_RESERVED;
+		break;
+	case LPFC_ASYNC_LINK_STATUS_LOGICAL_UP:
+		att_type = AT_LINK_UP;
+		break;
+	default:
+		lpfc_printf_log(phba, KERN_ERR, LOG_INIT,
+				"0399 Invalid link attention type: x%x\n",
+				bf_get(lpfc_acqe_link_status, acqe_link));
+		att_type = AT_RESERVED;
+		break;
+	}
+	return att_type;
+}
+
+/**
+ * lpfc_sli4_parse_latt_link_speed - Parse sli4 link-attention link speed
+ * @phba: pointer to lpfc hba data structure.
+ * @acqe_link: pointer to the async link completion queue entry.
+ *
+ * This routine is to parse the SLI4 link-attention link speed and translate
+ * it into the base driver's link-attention link speed coding.
+ *
+ * Return: Link-attention link speed in terms of base driver's coding.
+ **/
+static uint8_t
+lpfc_sli4_parse_latt_link_speed(struct lpfc_hba *phba,
+				struct lpfc_acqe_link *acqe_link)
+{
+	uint8_t link_speed;
+
+	switch (bf_get(lpfc_acqe_link_speed, acqe_link)) {
+	case LPFC_ASYNC_LINK_SPEED_ZERO:
+		link_speed = LA_UNKNW_LINK;
+		break;
+	case LPFC_ASYNC_LINK_SPEED_10MBPS:
+		link_speed = LA_UNKNW_LINK;
+		break;
+	case LPFC_ASYNC_LINK_SPEED_100MBPS:
+		link_speed = LA_UNKNW_LINK;
+		break;
+	case LPFC_ASYNC_LINK_SPEED_1GBPS:
+		link_speed = LA_1GHZ_LINK;
+		break;
+	case LPFC_ASYNC_LINK_SPEED_10GBPS:
+		link_speed = LA_10GHZ_LINK;
+		break;
+	default:
+		lpfc_printf_log(phba, KERN_ERR, LOG_INIT,
+				"0483 Invalid link-attention link speed: x%x\n",
+				bf_get(lpfc_acqe_link_speed, acqe_link));
+		link_speed = LA_UNKNW_LINK;
+		break;
+	}
+	return link_speed;
+}
+
+/**
+ * lpfc_sli4_async_link_evt - Process the asynchronous link event
+ * @phba: pointer to lpfc hba data structure.
+ * @acqe_link: pointer to the async link completion queue entry.
+ *
+ * This routine is to handle the SLI4 asynchronous link event.
+ **/
+static void
+lpfc_sli4_async_link_evt(struct lpfc_hba *phba,
+			 struct lpfc_acqe_link *acqe_link)
+{
+	struct lpfc_dmabuf *mp;
+	LPFC_MBOXQ_t *pmb;
+	MAILBOX_t *mb;
+	READ_LA_VAR *la;
+	uint8_t att_type;
+
+	att_type = lpfc_sli4_parse_latt_type(phba, acqe_link);
+	if (att_type != AT_LINK_DOWN && att_type != AT_LINK_UP)
+		return;
+	pmb = (LPFC_MBOXQ_t *)mempool_alloc(phba->mbox_mem_pool, GFP_KERNEL);
+	if (!pmb) {
+		lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
+				"0395 The mboxq allocation failed\n");
+		return;
+	}
+	mp = kmalloc(sizeof(struct lpfc_dmabuf), GFP_KERNEL);
+	if (!mp) {
+		lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
+				"0396 The lpfc_dmabuf allocation failed\n");
+		goto out_free_pmb;
+	}
+	mp->virt = lpfc_mbuf_alloc(phba, 0, &mp->phys);
+	if (!mp->virt) {
+		lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
+				"0397 The mbuf allocation failed\n");
+		goto out_free_dmabuf;
+	}
+
+	/* Cleanup any outstanding ELS commands */
+	lpfc_els_flush_all_cmd(phba);
+
+	/* Block ELS IOCBs until we have done process link event */
+	phba->sli.ring[LPFC_ELS_RING].flag |= LPFC_STOP_IOCB_EVENT;
+
+	/* Update link event statistics */
+	phba->sli.slistat.link_event++;
+
+	/* Create pseudo lpfc_handle_latt mailbox command from link ACQE */
+	lpfc_read_la(phba, pmb, mp);
+	pmb->vport = phba->pport;
+
+	/* Parse and translate status field */
+	mb = &pmb->u.mb;
+	mb->mbxStatus = lpfc_sli4_parse_latt_fault(phba, acqe_link);
+
+	/* Parse and translate link attention fields */
+	la = (READ_LA_VAR *) &pmb->u.mb.un.varReadLA;
+	la->eventTag = acqe_link->event_tag;
+	la->attType = att_type;
+	la->UlnkSpeed = lpfc_sli4_parse_latt_link_speed(phba, acqe_link);
+
+	/* Fake the the following irrelvant fields */
+	la->topology = TOPOLOGY_PT_PT;
+	la->granted_AL_PA = 0;
+	la->il = 0;
+	la->pb = 0;
+	la->fa = 0;
+	la->mm = 0;
+
+	/* Keep the link status for extra SLI4 state machine reference */
+	phba->sli4_hba.link_state.speed =
+				bf_get(lpfc_acqe_link_speed, acqe_link);
+	phba->sli4_hba.link_state.duplex =
+				bf_get(lpfc_acqe_link_duplex, acqe_link);
+	phba->sli4_hba.link_state.status =
+				bf_get(lpfc_acqe_link_status, acqe_link);
+	phba->sli4_hba.link_state.physical =
+				bf_get(lpfc_acqe_link_physical, acqe_link);
+	phba->sli4_hba.link_state.fault =
+				bf_get(lpfc_acqe_link_fault, acqe_link);
+
+	/* Invoke the lpfc_handle_latt mailbox command callback function */
+	lpfc_mbx_cmpl_read_la(phba, pmb);
+
+	return;
+
+out_free_dmabuf:
+	kfree(mp);
+out_free_pmb:
+	mempool_free(pmb, phba->mbox_mem_pool);
+}
+
+/**
+ * lpfc_sli4_async_fcoe_evt - Process the asynchronous fcoe event
+ * @phba: pointer to lpfc hba data structure.
+ * @acqe_link: pointer to the async fcoe completion queue entry.
+ *
+ * This routine is to handle the SLI4 asynchronous fcoe event.
+ **/
+static void
+lpfc_sli4_async_fcoe_evt(struct lpfc_hba *phba,
+			 struct lpfc_acqe_fcoe *acqe_fcoe)
+{
+	uint8_t event_type = bf_get(lpfc_acqe_fcoe_event_type, acqe_fcoe);
+	int rc;
+
+	switch (event_type) {
+	case LPFC_FCOE_EVENT_TYPE_NEW_FCF:
+		lpfc_printf_log(phba, KERN_ERR, LOG_DISCOVERY,
+			"2546 New FCF found index 0x%x tag 0x%x \n",
+			acqe_fcoe->fcf_index,
+			acqe_fcoe->event_tag);
+		/*
+		 * If the current FCF is in discovered state,
+		 * do nothing.
+		 */
+		spin_lock_irq(&phba->hbalock);
+		if (phba->fcf.fcf_flag & FCF_DISCOVERED) {
+			spin_unlock_irq(&phba->hbalock);
+			break;
+		}
+		spin_unlock_irq(&phba->hbalock);
+
+		/* Read the FCF table and re-discover SAN. */
+		rc = lpfc_sli4_read_fcf_record(phba,
+			LPFC_FCOE_FCF_GET_FIRST);
+		if (rc)
+			lpfc_printf_log(phba, KERN_ERR, LOG_DISCOVERY,
+				"2547 Read FCF record failed 0x%x\n",
+				rc);
+		break;
+
+	case LPFC_FCOE_EVENT_TYPE_FCF_TABLE_FULL:
+		lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
+			"2548 FCF Table full count 0x%x tag 0x%x \n",
+			bf_get(lpfc_acqe_fcoe_fcf_count, acqe_fcoe),
+			acqe_fcoe->event_tag);
+		break;
+
+	case LPFC_FCOE_EVENT_TYPE_FCF_DEAD:
+		lpfc_printf_log(phba, KERN_ERR, LOG_DISCOVERY,
+			"2549 FCF disconnected fron network index 0x%x"
+			" tag 0x%x \n", acqe_fcoe->fcf_index,
+			acqe_fcoe->event_tag);
+		/* If the event is not for currently used fcf do nothing */
+		if (phba->fcf.fcf_indx != acqe_fcoe->fcf_index)
+			break;
+		/*
+		 * Currently, driver support only one FCF - so treat this as
+		 * a link down.
+		 */
+		lpfc_linkdown(phba);
+		/* Unregister FCF if no devices connected to it */
+		lpfc_unregister_unused_fcf(phba);
+		break;
+
+	default:
+		lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
+			"0288 Unknown FCoE event type 0x%x event tag "
+			"0x%x\n", event_type, acqe_fcoe->event_tag);
+		break;
+	}
+}
+
+/**
+ * lpfc_sli4_async_dcbx_evt - Process the asynchronous dcbx event
+ * @phba: pointer to lpfc hba data structure.
+ * @acqe_link: pointer to the async dcbx completion queue entry.
+ *
+ * This routine is to handle the SLI4 asynchronous dcbx event.
+ **/
+static void
+lpfc_sli4_async_dcbx_evt(struct lpfc_hba *phba,
+			 struct lpfc_acqe_dcbx *acqe_dcbx)
+{
+	lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
+			"0290 The SLI4 DCBX asynchronous event is not "
+			"handled yet\n");
+}
+
+/**
+ * lpfc_sli4_async_event_proc - Process all the pending asynchronous event
+ * @phba: pointer to lpfc hba data structure.
+ *
+ * This routine is invoked by the worker thread to process all the pending
+ * SLI4 asynchronous events.
+ **/
+void lpfc_sli4_async_event_proc(struct lpfc_hba *phba)
+{
+	struct lpfc_cq_event *cq_event;
+
+	/* First, declare the async event has been handled */
+	spin_lock_irq(&phba->hbalock);
+	phba->hba_flag &= ~ASYNC_EVENT;
+	spin_unlock_irq(&phba->hbalock);
+	/* Now, handle all the async events */
+	while (!list_empty(&phba->sli4_hba.sp_asynce_work_queue)) {
+		/* Get the first event from the head of the event queue */
+		spin_lock_irq(&phba->hbalock);
+		list_remove_head(&phba->sli4_hba.sp_asynce_work_queue,
+				 cq_event, struct lpfc_cq_event, list);
+		spin_unlock_irq(&phba->hbalock);
+		/* Process the asynchronous event */
+		switch (bf_get(lpfc_trailer_code, &cq_event->cqe.mcqe_cmpl)) {
+		case LPFC_TRAILER_CODE_LINK:
+			lpfc_sli4_async_link_evt(phba,
+						 &cq_event->cqe.acqe_link);
+			break;
+		case LPFC_TRAILER_CODE_FCOE:
+			lpfc_sli4_async_fcoe_evt(phba,
+						 &cq_event->cqe.acqe_fcoe);
+			break;
+		case LPFC_TRAILER_CODE_DCBX:
+			lpfc_sli4_async_dcbx_evt(phba,
+						 &cq_event->cqe.acqe_dcbx);
+			break;
+		default:
+			lpfc_printf_log(phba, KERN_ERR, LOG_SLI,
+					"1804 Invalid asynchrous event code: "
+					"x%x\n", bf_get(lpfc_trailer_code,
+					&cq_event->cqe.mcqe_cmpl));
+			break;
+		}
+		/* Free the completion event processed to the free pool */
+		lpfc_sli4_cq_event_release(phba, cq_event);
+	}
+}
+
+/**
+ * lpfc_api_table_setup - Set up per hba pci-device group func api jump table
+ * @phba: pointer to lpfc hba data structure.
+ * @dev_grp: The HBA PCI-Device group number.
+ *
+ * This routine is invoked to set up the per HBA PCI-Device group function
+ * API jump table entries.
+ *
+ * Return: 0 if success, otherwise -ENODEV
+ **/
+int
+lpfc_api_table_setup(struct lpfc_hba *phba, uint8_t dev_grp)
+{
+	int rc;
+
+	/* Set up lpfc PCI-device group */
+	phba->pci_dev_grp = dev_grp;
+
+	/* The LPFC_PCI_DEV_OC uses SLI4 */
+	if (dev_grp == LPFC_PCI_DEV_OC)
+		phba->sli_rev = LPFC_SLI_REV4;
+
+	/* Set up device INIT API function jump table */
+	rc = lpfc_init_api_table_setup(phba, dev_grp);
+	if (rc)
+		return -ENODEV;
+	/* Set up SCSI API function jump table */
+	rc = lpfc_scsi_api_table_setup(phba, dev_grp);
+	if (rc)
+		return -ENODEV;
+	/* Set up SLI API function jump table */
+	rc = lpfc_sli_api_table_setup(phba, dev_grp);
+	if (rc)
+		return -ENODEV;
+	/* Set up MBOX API function jump table */
+	rc = lpfc_mbox_api_table_setup(phba, dev_grp);
+	if (rc)
+		return -ENODEV;
+
+	return 0;
+}
+
+/**
+ * lpfc_log_intr_mode - Log the active interrupt mode
+ * @phba: pointer to lpfc hba data structure.
+ * @intr_mode: active interrupt mode adopted.
+ *
+ * This routine it invoked to log the currently used active interrupt mode
+ * to the device.
+ **/
+static void lpfc_log_intr_mode(struct lpfc_hba *phba, uint32_t intr_mode)
+{
+	switch (inot set
+# CONFIG_AFFS_FS is not set
+# CONFIG_HFS_FS is not set
+# CONFIG_HFSPLUS_FS is not set
+# CONFIG_BEFS_FS is not set
+# CONFIG_BFS_FS is not set
+# CONFIG_EFS_FS is not set
+CONFIG_CRAMFS=y
+# CONFIG_VXFS_FS is not set
+# CONFIG_MINIX_FS is not set
+# CONFIG_OMFS_FS is not set
+# CONFIG_HPFS_FS is not set
+# CONFIG_QNX4FS_FS is not set
+CONFIG_ROMFS_FS=y
+# CONFIG_SYSV_FS is not set
+# CONFIG_UFS_FS is not set
+
+#
+# Partition Types
+#
+# CONFIG_PARTITION_ADVANCED is not set
+CONFIG_MSDOS_PARTITION=y
+# CONFIG_NLS is not set
+
+#
+# Kernel hacking
+#
+# CONFIG_PRINTK_TIME is not set
+CONFIG_ENABLE_WARN_DEPRECATED=y
+CONFIG_ENABLE_MUST_CHECK=y
+CONFIG_FRAME_WARN=1024
+CONFIG_MAGIC_SYSRQ=y
+# CONFIG_UNUSED_SYMBOLS is not set
+# CONFIG_DEBUG_FS is not set
+# CONFIG_HEADERS_CHECK is not set
+CONFIG_DEBUG_KERNEL=y
+# CONFIG_DEBUG_SHIRQ is not set
+CONFIG_DETECT_SOFTLOCKUP=y
+# CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC is not set
+CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC_VALUE=0
+CONFIG_SCHED_DEBUG=y
+# CONFIG_SCHEDSTATS is not set
+# CONFIG_TIMER_STATS is not set
+# CONFIG_DEBUG_OBJECTS is not set
+# CONFIG_SLUB_DEBUG_ON is not set
+# CONFIG_SLUB_STATS is not set
+CONFIG_DEBUG_RT_MUTEXES=y
+CONFIG_DEBUG_PI_LIST=y
+# CONFIG_RT_MUTEX_TESTER is not set
+CONFIG_DEBUG_SPINLOCK=y
+CONFIG_DEBUG_MUTEXES=y
+# CONFIG_DEBUG_LOCK_ALLOC is not set
+# CONFIG_PROVE_LOCKING is not set
+# CONFIG_LOCK_STAT is not set
+CONFIG_DEBUG_SPINLOCK_SLEEP=y
+# CONFIG_DEBUG_LOCKING_API_SELFTESTS is not set
+# CONFIG_DEBUG_KOBJECT is not set
+CONFIG_DEBUG_BUGVERBOSE=y
+CONFIG_DEBUG_INFO=y
+# CONFIG_DEBUG_VM is not set
+# CONFIG_DEBUG_WRITECOUNT is not set
+CONFIG_DEBUG_MEMORY_INIT=y
+# CONFIG_DEBUG_LIST is not set
+# CONFIG_DEBUG_SG is not set
+CONFIG_FRAME_POINTER=y
+# CONFIG_BOOT_PRINTK_DELAY is not set
+# CONFIG_RCU_TORTURE_TEST is not set
+# CONFIG_RCU_CPU_STALL_DETECTOR is not set
+# CONFIG_BACKTRACE_SELF_TEST is not set
+# CONFIG_DEBUG_BLOCK_EXT_DEVT is not set
+# CONFIG_FAULT_INJECTION is not set
+# CONFIG_LATENCYTOP is not set
+CONFIG_SYSCTL_SYSCALL_CHECK=y
+CONFIG_HAVE_FUNCTION_TRACER=y
+
+#
+# Tracers
+#
+# CONFIG_FUNCTION_TRACER is not set
+# CONFIG_SCHED_TRACER is not set
+# CONFIG_CONTEXT_SWITCH_TRACER is not set
+# CONFIG_BOOT_TRACER is not set
+# CONFIG_STACK_TRACER is not set
+# CONFIG_DYNAMIC_PRINTK_DEBUG is not set
+# CONFIG_SAMPLES is not set
+CONFIG_HAVE_ARCH_KGDB=y
+# CONFIG_KGDB is not set
+CONFIG_DEBUG_USER=y
+CONFIG_DEBUG_ERRORS=y
+# CONFIG_DEBUG_STACK_USAGE is not set
+CONFIG_DEBUG_LL=y
+# CONFIG_DEBUG_ICEDCC is not set
+CONFIG_DEBUG_S3C_UART=0
+
+#
+# Security options
+#
+# CONFIG_KEYS is not set
+# CONFIG_SECURITY is not set
+# CONFIG_SECURITYFS is not set
+# CONFIG_SECURITY_FILE_CAPABILITIES is not set
+# CONFIG_CRYPTO is not set
+
+#
+# Library routines
+#
+CONFIG_BITREVERSE=y
+# CONFIG_CRC_CCITT is not set
+# CONFIG_CRC16 is not set
+# CONFIG_CRC_T10DIF is not set
+# CONFIG_CRC_ITU_T is not set
+CONFIG_CRC32=y
+# CONFIG_CRC7 is not set
+# CONFIG_LIBCRC32C is not set
+CONFIG_ZLIB_INFLATE=y
+CONFIG_PLIST=y
+CONFIG_HAS_IOMEM=y
+CONFIG_HAS_DMA=y

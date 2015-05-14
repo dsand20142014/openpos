@@ -1,0 +1,21 @@
+#/etc/ppp/chat/cdma
+
+#this is the chat script for cdma
+
+ABORT "NO CARRIER"
+
+ABORT "NO DIALTONE"
+
+ABORT "ERROR"
+
+ABORT "NO ANSWER"
+
+ABORT "BUSY"
+
+TIMEOUT 40
+
+"" at
+
+OK atdt#777
+
+CONNECT

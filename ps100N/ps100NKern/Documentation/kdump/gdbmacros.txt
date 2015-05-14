@@ -1,0 +1,199 @@
+/*
+ * UWB reservation management.
+ *
+ * Copyright (C) 2008 Cambridge Silicon Radio Ltd.
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+#include <linux/kernel.h>
+#include <linux/uwb.h>
+#include <linux/random.h>
+
+#include "uwb-internal.h"
+
+static void uwb_rsv_timer(unsigned long arg);
+
+static const char *rsv_states[] = {
+	[UWB_RSV_STATE_NONE]                 = "none            ",
+	[UWB_RSV_STATE_O_INITIATED]          = "o initiated     ",
+	[UWB_RSV_STATE_O_PENDING]            = "o pending       ",
+	[UWB_RSV_STATE_O_MODIFIED]           = "o modified      ",
+	[UWB_RSV_STATE_O_ESTABLISHED]        = "o established   ",
+	[UWB_RSV_STATE_O_TO_BE_MOVED]        = "o to be moved   ",
+	[UWB_RSV_STATE_O_MOVE_EXPANDING]     = "o move expanding",
+	[UWB_RSV_STATE_O_MOVE_COMBINING]     = "o move combining",
+	[UWB_RSV_STATE_O_MOVE_REDUCING]      = "o move reducing ",
+	[UWB_RSV_STATE_T_ACCEPTED]           = "t accepted      ",
+	[UWB_RSV_STATE_T_CONFLICT]           = "t conflict      ",
+	[UWB_RSV_STATE_T_PENDING]            = "t pending       ",
+	[UWB_RSV_STATE_T_DENIED]             = "t denied        ",
+	[UWB_RSV_STATE_T_RESIZED]            = "t resized       ",
+	[UWB_RSV_STATE_T_EXPANDING_ACCEPTED] = "t expanding acc ",
+	[UWB_RSV_STATE_T_EXPANDING_CONFLICT] = "t expanding conf",
+	[UWB_RSV_STATE_T_EXPANDING_PENDING]  = "t expanding pend",
+	[UWB_RSV_STATE_T_EXPANDING_DENIED]   = "t expanding den ",
+};
+
+static const char *rsv_types[] = {
+	[UWB_DRP_TYPE_ALIEN_BP] = "alien-bp",
+	[UWB_DRP_TYPE_HARD]     = "hard",
+	[UWB_DRP_TYPE_SOFT]     = "soft",
+	[UWB_DRP_TYPE_PRIVATE]  = "private",
+	[UWB_DRP_TYPE_PCA]      = "pca",
+};
+
+bool uwb_rsv_has_two_drp_ies(struct uwb_rsv *rsv)
+{
+	static const bool has_two_drp_ies[] = {
+		[UWB_RSV_STATE_O_INITIATED]               = false,
+		[UWB_RSV_STATE_O_PENDING]                 = false,
+		[UWB_RSV_STATE_O_MODIFIED]                = false,
+		[UWB_RSV_STATE_O_ESTABLISHED]             = false,
+		[UWB_RSV_STATE_O_TO_BE_MOVED]             = false,
+		[UWB_RSV_STATE_O_MOVE_COMBINING]          = false,
+		[UWB_RSV_STATE_O_MOVE_REDUCING]           = false,
+		[UWB_RSV_STATE_O_MOVE_EXPANDING]          = true,
+		[UWB_RSV_STATE_T_ACCEPTED]                = false,
+		[UWB_RSV_STATE_T_CONFLICT]                = false,
+		[UWB_RSV_STATE_T_PENDING]                 = false,
+		[UWB_RSV_STATE_T_DENIED]                  = false,
+		[UWB_RSV_STATE_T_RESIZED]                 = false,
+		[UWB_RSV_STATE_T_EXPANDING_ACCEPTED]      = true,
+		[UWB_RSV_STATE_T_EXPANDING_CONFLICT]      = true,
+		[UWB_RSV_STATE_T_EXPANDING_PENDING]       = true,
+		[UWB_RSV_STATE_T_EXPANDING_DENIED]        = true,
+	};
+
+	return has_two_drp_ies[rsv->state];
+}
+
+/**
+ * uwb_rsv_state_str - return a string for a reservation state
+ * @state: the reservation state.
+ */
+const char *uwb_rsv_state_str(enum uwb_rsv_state state)
+{
+	if (state < UWB_RSV_STATE_NONE || state >= UWB_RSV_STATE_LAST)
+		return "unknown";
+	return rsv_states[state];
+}
+EXPORT_SYMBOL_GPL(uwb_rsv_state_str);
+
+/**
+ * uwb_rsv_type_str - return a string for a reservation type
+ * @type: the reservation type
+ */
+const char *uwb_rsv_type_str(enum uwb_drp_type type)
+{
+	if (type < UWB_DRP_TYPE_ALIEN_BP || type > UWB_DRP_TYPE_PCA)
+		return "invalid";
+	return rsv_types[type];
+}
+EXPORT_SYMBOL_GPL(uwb_rsv_type_str);
+
+void uwb_rsv_dump(char *text, struct uwb_rsv *rsv)
+{
+	struct device *dev = &rsv->rc->uwb_dev.dev;
+	struct uwb_dev_addr devaddr;
+	char owner[UWB_ADDR_STRSIZE], target[UWB_ADDR_STRSIZE];
+
+	uwb_dev_addr_print(owner, sizeof(owner), &rsv->owner->dev_addr);
+	if (rsv->target.type == UWB_RSV_TARGET_DEV)
+		devaddr = rsv->target.dev->dev_addr;
+	else
+		devaddr = rsv->target.devaddr;
+	uwb_dev_addr_print(target, sizeof(target), &devaddr);
+
+	dev_dbg(dev, "rsv %s %s -> %s: %s\n",
+		text, owner, target, uwb_rsv_state_str(rsv->state));
+}
+
+static void uwb_rsv_release(struct kref *kref)
+{
+	struct uwb_rsv *rsv = container_of(kref, struct uwb_rsv, kref);
+
+	kfree(rsv);
+}
+
+void uwb_rsv_get(struct uwb_rsv *rsv)
+{
+	kref_get(&rsv->kref);
+}
+
+void uwb_rsv_put(struct uwb_rsv *rsv)
+{
+	kref_put(&rsv->kref, uwb_rsv_release);
+}
+
+/*
+ * Get a free stream index for a reservation.
+ *
+ * If the target is a DevAddr (e.g., a WUSB cluster reservation) then
+ * the stream is allocated from a pool of per-RC stream indexes,
+ * otherwise a unique stream index for the target is selected.
+ */
+static int uwb_rsv_get_stream(struct uwb_rsv *rsv)
+{
+	struct uwb_rc *rc = rsv->rc;
+	struct device *dev = &rc->uwb_dev.dev;
+	unsigned long *streams_bm;
+	int stream;
+
+	switch (rsv->target.type) {
+	case UWB_RSV_TARGET_DEV:
+		streams_bm = rsv->target.dev->streams;
+		break;
+	case UWB_RSV_TARGET_DEVADDR:
+		streams_bm = rc->uwb_dev.streams;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	stream = find_first_zero_bit(streams_bm, UWB_NUM_STREAMS);
+	if (stream >= UWB_NUM_STREAMS)
+		return -EBUSY;
+
+	rsv->stream = stream;
+	set_bit(stream, streams_bm);
+
+	dev_dbg(dev, "get stream %d\n", rsv->stream);
+
+	return 0;
+}
+
+static void uwb_rsv_put_stream(struct uwb_rsv *rsv)
+{
+	struct uwb_rc *rc = rsv->rc;
+	struct device *dev = &rc->uwb_dev.dev;
+	unsigned long *streams_bm;
+
+	switch (rsv->target.type) {
+	case UWB_RSV_TARGET_DEV:
+		streams_bm = rsv->target.dev->streams;
+		break;
+	case UWB_RSV_TARGET_DEVADDR:
+		streams_bm = rc->uwb_dev.streams;
+		break;
+	default:
+		return;
+	}
+
+	clear_bit(rsv->stream, streams_bm);
+
+	dev_dbg(dev, "put stream %d\n", rsv->stream);
+}
+
+void uwb_rsv_backoff_win_timer(unsigned long arg)
+{
+	struct uwb_drp_backoff_win *bow = (struct uwb_drp_backoff_win

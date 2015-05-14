@@ -1,0 +1,760 @@
+/ Set Short Slot Time, xIFS, and RSPINF.
+        if (pDevice->uConnectionRate == RATE_AUTO) {
+            pDevice->wCurrentRate = RATE_54M;
+        } else {
+            pDevice->wCurrentRate = (WORD)pDevice->uConnectionRate;
+        }
+
+        // default G Mode
+        VNTWIFIbConfigPhyMode(pDevice->pMgmt, PHY_TYPE_11G);
+        VNTWIFIbConfigPhyMode(pDevice->pMgmt, PHY_TYPE_AUTO);
+
+        pDevice->bRadioOff = FALSE;
+
+        pDevice->byRadioCtl = SROMbyReadEmbedded(pDevice->PortOffset, EEP_OFS_RADIOCTL);
+        pDevice->bHWRadioOff = FALSE;
+
+        if (pDevice->byRadioCtl & EEP_RADIOCTL_ENABLE) {
+            // Get GPIO
+            MACvGPIOIn(pDevice->PortOffset, &pDevice->byGPIO);
+//2008-4-14 <add> by chester for led issue
+ #ifdef FOR_LED_ON_NOTEBOOK
+if (BITbIsBitOn(pDevice->byGPIO,GPIO0_DATA)){pDevice->bHWRadioOff = TRUE;}
+if (BITbIsBitOff(pDevice->byGPIO,GPIO0_DATA)){pDevice->bHWRadioOff = FALSE;}
+
+            }
+        if ( (pDevice->bRadioControlOff == TRUE)) {
+            CARDbRadioPowerOff(pDevice);
+        }
+else  CARDbRadioPowerOn(pDevice);
+#else
+            if ((BITbIsBitOn(pDevice->byGPIO,GPIO0_DATA) && BITbIsBitOff(pDevice->byRadioCtl, EEP_RADIOCTL_INV)) ||
+                (BITbIsBitOff(pDevice->byGPIO,GPIO0_DATA) && BITbIsBitOn(pDevice->byRadioCtl, EEP_RADIOCTL_INV))) {
+                pDevice->bHWRadioOff = TRUE;
+            }
+        }
+        if ((pDevice->bHWRadioOff == TRUE) || (pDevice->bRadioControlOff == TRUE)) {
+            CARDbRadioPowerOff(pDevice);
+        }
+
+#endif
+    }
+            pMgmt->eScanType = WMAC_SCAN_PASSIVE;
+    // get Permanent network address
+    SROMvReadEtherAddress(pDevice->PortOffset, pDevice->abyCurrentNetAddr);
+    DEVICE_PRT(MSG_LEVEL_DEBUG, KERN_INFO"Network address = %02x-%02x-%02x=%02x-%02x-%02x\n",
+        pDevice->abyCurrentNetAddr[0],
+        pDevice->abyCurrentNetAddr[1],
+        pDevice->abyCurrentNetAddr[2],
+        pDevice->abyCurrentNetAddr[3],
+        pDevice->abyCurrentNetAddr[4],
+        pDevice->abyCurrentNetAddr[5]);
+
+
+    // reset Tx pointer
+    CARDvSafeResetRx(pDevice);
+    // reset Rx pointer
+    CARDvSafeResetTx(pDevice);
+
+    if (pDevice->byLocalID <= REV_ID_VT3253_A1) {
+        MACvRegBitsOn(pDevice->PortOffset, MAC_REG_RCR, RCR_WPAERR);
+    }
+
+    pDevice->eEncryptionStatus = Ndis802_11EncryptionDisabled;
+
+    // Turn On Rx DMA
+    MACvReceive0(pDevice->PortOffset);
+    MACvReceive1(pDevice->PortOffset);
+
+    // start the adapter
+    MACvStart(pDevice->PortOffset);
+
+    netif_stop_queue(pDevice->dev);
+
+
+}
+
+
+
+static VOID device_init_diversity_timer(PSDevice pDevice) {
+
+    init_timer(&pDevice->TimerSQ3Tmax1);
+    pDevice->TimerSQ3Tmax1.data = (ULONG)pDevice;
+    pDevice->TimerSQ3Tmax1.function = (TimerFunction)TimerSQ3CallBack;
+    pDevice->TimerSQ3Tmax1.expires = RUN_AT(HZ);
+
+    init_timer(&pDevice->TimerSQ3Tmax2);
+    pDevice->TimerSQ3Tmax2.data = (ULONG)pDevice;
+    pDevice->TimerSQ3Tmax2.function = (TimerFunction)TimerSQ3CallBack;
+    pDevice->TimerSQ3Tmax2.expires = RUN_AT(HZ);
+
+    init_timer(&pDevice->TimerSQ3Tmax3);
+    pDevice->TimerSQ3Tmax3.data = (ULONG)pDevice;
+    pDevice->TimerSQ3Tmax3.function = (TimerFunction)TimerState1CallBack;
+    pDevice->TimerSQ3Tmax3.expires = RUN_AT(HZ);
+
+    return;
+}
+
+
+static BOOL device_release_WPADEV(PSDevice pDevice)
+{
+  viawget_wpa_header *wpahdr;
+  int ii=0;
+ // wait_queue_head_t	Set_wait;
+  //send device close to wpa_supplicnat layer
+    if (pDevice->bWPADEVUp==TRUE) {
+                 wpahdr = (viawget_wpa_header *)pDevice->skb->data;
+                 wpahdr->type = VIAWGET_DEVICECLOSE_MSG;
+                 wpahdr->resp_ie_len = 0;
+                 wpahdr->req_ie_len = 0;
+                 skb_put(pDevice->skb, sizeof(viawget_wpa_header));
+                 pDevice->skb->dev = pDevice->wpadev;
+                 pDevice->skb->mac_header = pDevice->skb->data;
+                 pDevice->skb->pkt_type = PACKET_HOST;
+                 pDevice->skb->protocol = htons(ETH_P_802_2);
+                 memset(pDevice->skb->cb, 0, sizeof(pDevice->skb->cb));
+                 netif_rx(pDevice->skb);
+                 pDevice->skb = dev_alloc_skb((int)pDevice->rx_buf_sz);
+
+ //wait release WPADEV
+              //    init_waitqueue_head(&Set_wait);
+              //    wait_event_timeout(Set_wait, ((pDevice->wpadev==NULL)&&(pDevice->skb == NULL)),5*HZ);    //1s wait
+              while((pDevice->bWPADEVUp==TRUE)) {
+	        set_current_state(TASK_UNINTERRUPTIBLE);
+                 schedule_timeout (HZ/20);          //wait 50ms
+                 ii++;
+	        if(ii>20)
+		  break;
+              }
+           };
+    return TRUE;
+}
+
+
+static const struct net_device_ops device_netdev_ops = {
+    .ndo_open               = device_open,
+    .ndo_stop               = device_close,
+    .ndo_do_ioctl           = device_ioctl,
+    .ndo_get_stats          = device_get_stats,
+    .ndo_start_xmit         = device_xmit,
+    .ndo_set_multicast_list = device_set_multi,
+};
+
+
+#ifndef PRIVATE_OBJ
+
+static int
+device_found1(struct pci_dev *pcid, const struct pci_device_id *ent)
+{
+    static BOOL bFirst = TRUE;
+    struct net_device*  dev = NULL;
+    PCHIP_INFO  pChip_info = (PCHIP_INFO)ent->driver_data;
+    PSDevice    pDevice;
+    int         rc;
+    if (device_nics ++>= MAX_UINTS) {
+        printk(KERN_NOTICE DEVICE_NAME ": already found %d NICs\n", device_nics);
+        return -ENODEV;
+    }
+
+
+    dev = alloc_etherdev(sizeof(DEVICE_INFO));
+
+    pDevice = (PSDevice) netdev_priv(dev);
+
+    if (dev == NULL) {
+        printk(KERN_ERR DEVICE_NAME ": allocate net device failed \n");
+        return -ENODEV;
+    }
+
+    // Chain it all together
+   // SET_MODULE_OWNER(dev);
+    SET_NETDEV_DEV(dev, &pcid->dev);
+
+    if (bFirst) {
+        printk(KERN_NOTICE "%s Ver. %s\n",DEVICE_FULL_DRV_NAM, DEVICE_VERSION);
+        printk(KERN_NOTICE "Copyright (c) 2003 VIA Networking Technologies, Inc.\n");
+        bFirst=FALSE;
+    }
+
+    if (!device_init_info(pcid, &pDevice, pChip_info)) {
+        return -ENOMEM;
+    }
+    pDevice->dev = dev;
+    pDevice->next_module = root_device_dev;
+    root_device_dev = dev;
+    dev->irq = pcid->irq;
+
+    if (pci_enable_device(pcid)) {
+        device_free_info(pDevice);
+        return -ENODEV;
+    }
+#ifdef	DEBUG
+	printk("Before get pci_info memaddr is %x\n",pDevice->memaddr);
+#endif
+    if (device_get_pci_info(pDevice,pcid) == FALSE) {
+        printk(KERN_ERR DEVICE_NAME ": Failed to find PCI device.\n");
+        device_free_info(pDevice);
+        return -ENODEV;
+    }
+
+#if 1
+
+#ifdef	DEBUG
+
+	//pci_read_config_byte(pcid, PCI_BASE_ADDRESS_0, &pDevice->byRevId);
+	printk("after get pci_info memaddr is %x, io addr is %x,io_size is %d\n",pDevice->memaddr,pDevice->ioaddr,pDevice->io_size);
+	{
+		int i;
+		U32			bar,len;
+		u32 address[] = {
+		PCI_BASE_ADDRESS_0,
+		PCI_BASE_ADDRESS_1,
+		PCI_BASE_ADDRESS_2,
+		PCI_BASE_ADDRESS_3,
+		PCI_BASE_ADDRESS_4,
+		PCI_BASE_ADDRESS_5,
+		0};
+		for (i=0;address[i];i++)
+		{
+			//pci_write_config_dword(pcid,address[i], 0xFFFFFFFF);
+			pci_read_config_dword(pcid, address[i], &bar);
+			printk("bar %d is %x\n",i,bar);
+			if (!bar)
+			{
+				printk("bar %d not implemented\n",i);
+				continue;
+			}
+			if (bar & PCI_BASE_ADDRESS_SPACE_IO) {
+			/* This is IO */
+
+			len = bar & (PCI_BASE_ADDRESS_IO_MASK & 0xFFFF);
+			len = len & ~(len - 1);
+
+			printk("IO space:  len in IO %x, BAR %d\n", len, i);
+			}
+			else
+			{
+				len = bar & 0xFFFFFFF0;
+				len = ~len + 1;
+
+				printk("len in MEM %x, BAR %d\n", len, i);
+			}
+		}
+	}
+#endif
+
+
+#endif
+
+#ifdef	DEBUG
+	//return  0  ;
+#endif
+    pDevice->PortOffset = (DWORD)ioremap(pDevice->memaddr & PCI_BASE_ADDRESS_MEM_MASK, pDevice->io_size);
+	//pDevice->PortOffset = (DWORD)ioremap(pDevice->ioaddr & PCI_BASE_ADDRESS_IO_MASK, pDevice->io_size);
+
+	if(pDevice->PortOffset == 0) {
+       printk(KERN_ERR DEVICE_NAME ": Failed to IO remapping ..\n");
+       device_free_info(pDevice);
+        return -ENODEV;
+    }
+
+
+
+
+    rc = pci_request_regions(pcid, DEVICE_NAME);
+    if (rc) {
+        printk(KERN_ERR DEVICE_NAME ": Failed to find PCI device\n");
+        device_free_info(pDevice);
+        return -ENODEV;
+    }
+
+    dev->base_addr = pDevice->ioaddr;
+#ifdef	PLICE_DEBUG
+	BYTE	value;
+
+	VNSvInPortB(pDevice->PortOffset+0x4F, &value);
+	printk("Before write: value is %x\n",value);
+	//VNSvInPortB(pDevice->PortOffset+0x3F, 0x00);
+	VNSvOutPortB(pDevice->PortOffset,value);
+	VNSvInPortB(pDevice->PortOffset+0x4F, &value);
+	printk("After write: value is %x\n",value);
+#endif
+
+
+
+#ifdef IO_MAP
+    pDevice->PortOffset = pDevice->ioaddr;
+#endif
+    // do reset
+    if (!MACbSoftwareReset(pDevice->PortOffset)) {
+        printk(KERN_ERR DEVICE_NAME ": Failed to access MAC hardware..\n");
+        device_free_info(pDevice);
+        return -ENODEV;
+    }
+    // initial to reload eeprom
+    MACvInitialize(pDevice->PortOffset);
+    MACvReadEtherAddress(pDevice->PortOffset, dev->dev_addr);
+
+    device_get_options(pDevice, device_nics-1, dev->name);
+    device_set_options(pDevice);
+    //Mask out the options cannot be set to the chip
+    pDevice->sOpts.flags &= pChip_info->flags;
+
+    //Enable the chip specified capbilities
+    pDevice->flags = pDevice->sOpts.flags | (pChip_info->flags & 0xFF000000UL);
+    pDevice->tx_80211 = device_dma0_tx_80211;
+    pDevice->sMgmtObj.pAdapter = (PVOID)pDevice;
+    pDevice->pMgmt = &(pDevice->sMgmtObj);
+
+    dev->irq                = pcid->irq;
+    dev->netdev_ops         = &device_netdev_ops;
+
+#ifdef WIRELESS_EXT
+//Einsn Modify for ubuntu-7.04
+//	dev->wireless_handlers->get_wireless_stats = iwctl_get_wireless_stats;
+#if WIRELESS_EXT > 12
+	dev->wireless_handlers = (struct iw_handler_def *)&iwctl_handler_def;
+//	netdev->wireless_handlers = NULL;
+#endif /* WIRELESS_EXT > 12 */
+#endif /* WIRELESS_EXT */
+
+    rc = register_netdev(dev);
+    if (rc)
+    {
+        printk(KERN_ERR DEVICE_NAME " Failed to register netdev\n");
+        device_free_info(pDevice);
+        return -ENODEV;
+    }
+//2008-07-21-01<Add>by MikeLiu
+//register wpadev
+   if(wpa_set_wpadev(pDevice, 1)!=0) {
+     printk("Fail to Register WPADEV?\n");
+        unregister_netdev(pDevice->dev);
+        free_netdev(dev);
+   }
+    device_print_info(pDevice);
+    pci_set_drvdata(pcid, pDevice);
+    return 0;
+
+}
+
+static void device_print_info(PSDevice pDevice)
+{
+    struct net_device* dev=pDevice->dev;
+
+    DEVICE_PRT(MSG_LEVEL_INFO, KERN_INFO "%s: %s\n",dev->name, get_chip_name(pDevice->chip_id));
+    DEVICE_PRT(MSG_LEVEL_INFO, KERN_INFO "%s: MAC=%2.2X:%2.2X:%2.2X:%2.2X:%2.2X:%2.2X",
+        dev->name,
+        dev->dev_addr[0],dev->dev_addr[1],dev->dev_addr[2],
+        dev->dev_addr[3],dev->dev_addr[4],dev->dev_addr[5]);
+#ifdef IO_MAP
+    DEVICE_PRT(MSG_LEVEL_INFO, KERN_INFO" IO=0x%lx  ",(ULONG) pDevice->ioaddr);
+    DEVICE_PRT(MSG_LEVEL_INFO, KERN_INFO" IRQ=%d \n", pDevice->dev->irq);
+#else
+    DEVICE_PRT(MSG_LEVEL_INFO, KERN_INFO" IO=0x%lx Mem=0x%lx ",(ULONG) pDevice->ioaddr,(ULONG) pDevice->PortOffset);
+    DEVICE_PRT(MSG_LEVEL_INFO, KERN_INFO" IRQ=%d \n", pDevice->dev->irq);
+#endif
+
+}
+
+static BOOL device_init_info(struct pci_dev* pcid, PSDevice* ppDevice,
+    PCHIP_INFO pChip_info) {
+
+    PSDevice p;
+
+    memset(*ppDevice,0,sizeof(DEVICE_INFO));
+
+    if (pDevice_Infos == NULL) {
+        pDevice_Infos =*ppDevice;
+    }
+    else {
+        for (p=pDevice_Infos;p->next!=NULL;p=p->next)
+            do {} while (0);
+        p->next = *ppDevice;
+        (*ppDevice)->prev = p;
+    }
+
+    (*ppDevice)->pcid = pcid;
+    (*ppDevice)->chip_id = pChip_info->chip_id;
+    (*ppDevice)->io_size = pChip_info->io_size;
+    (*ppDevice)->nTxQueues = pChip_info->nTxQueue;
+    (*ppDevice)->multicast_limit =32;
+
+    spin_lock_init(&((*ppDevice)->lock));
+
+    return TRUE;
+}
+
+static BOOL device_get_pci_info(PSDevice pDevice, struct pci_dev* pcid) {
+
+    U16 pci_cmd;
+    U8  b;
+    UINT cis_addr;
+#ifdef	PLICE_DEBUG
+	BYTE       pci_config[256];
+	BYTE	value =0x00;
+	int		ii,j;
+	U16	max_lat=0x0000;
+	memset(pci_config,0x00,256);
+#endif
+
+    pci_read_config_byte(pcid, PCI_REVISION_ID, &pDevice->byRevId);
+    pci_read_config_word(pcid, PCI_SUBSYSTEM_ID,&pDevice->SubSystemID);
+    pci_read_config_word(pcid, PCI_SUBSYSTEM_VENDOR_ID, &pDevice->SubVendorID);
+    pci_read_config_word(pcid, PCI_COMMAND, (u16 *) & (pci_cmd));
+
+    pci_set_master(pcid);
+
+    pDevice->memaddr = pci_resource_start(pcid,0);
+    pDevice->ioaddr = pci_resource_start(pcid,1);
+
+#ifdef	DEBUG
+//	pDevice->ioaddr = pci_resource_start(pcid, 0);
+//	pDevice->memaddr = pci_resource_start(pcid,1);
+#endif
+
+    cis_addr = pci_resource_start(pcid,2);
+
+    pDevice->pcid = pcid;
+
+    pci_read_config_byte(pcid, PCI_REG_COMMAND, &b);
+    pci_write_config_byte(pcid, PCI_REG_COMMAND, (b|COMMAND_BUSM));
+
+#ifdef	PLICE_DEBUG
+   	//pci_read_config_word(pcid,PCI_REG_MAX_LAT,&max_lat);
+	//printk("max lat is %x,SubSystemID is %x\n",max_lat,pDevice->SubSystemID);
+	//for (ii=0;ii<0xFF;ii++)
+	//pci_read_config_word(pcid,PCI_REG_MAX_LAT,&max_lat);
+	//max_lat  = 0x20;
+	//pci_write_config_word(pcid,PCI_REG_MAX_LAT,max_lat);
+	//pci_read_config_word(pcid,PCI_REG_MAX_LAT,&max_lat);
+	//printk("max lat is %x\n",max_lat);
+
+	for (ii=0;ii<0xFF;ii++)
+	{
+		pci_read_config_byte(pcid,ii,&value);
+		pci_config[ii] = value;
+	}
+	for (ii=0,j=1;ii<0x100;ii++,j++)
+	{
+		if (j %16 == 0)
+		{
+			printk("%x:",pci_config[ii]);
+			printk("\n");
+		}
+		else
+		{
+			printk("%x:",pci_config[ii]);
+		}
+	}
+#endif
+    return TRUE;
+}
+
+static void device_free_info(PSDevice pDevice) {
+    PSDevice         ptr;
+    struct net_device*  dev=pDevice->dev;
+
+    ASSERT(pDevice);
+//2008-0714-01<Add>by chester
+device_release_WPADEV(pDevice);
+
+//2008-07-21-01<Add>by MikeLiu
+//unregister wpadev
+   if(wpa_set_wpadev(pDevice, 0)!=0)
+     printk("unregister wpadev fail?\n");
+
+    if (pDevice_Infos==NULL)
+        return;
+
+    for (ptr=pDevice_Infos;ptr && (ptr!=pDevice);ptr=ptr->next)
+            do {} while (0);
+
+    if (ptr==pDevice) {
+        if (ptr==pDevice_Infos)
+            pDevice_Infos=ptr->next;
+        else
+            ptr->prev->next=ptr->next;
+    }
+    else {
+        DEVICE_PRT(MSG_LEVEL_ERR, KERN_ERR "info struct not found\n");
+        return;
+    }
+#ifdef HOSTAP
+    if (dev)
+        hostap_set_hostapd(pDevice, 0, 0);
+#endif
+    if (dev)
+        unregister_netdev(dev);
+
+    if (pDevice->PortOffset)
+        iounmap((PVOID)pDevice->PortOffset);
+
+    if (pDevice->pcid)
+        pci_release_regions(pDevice->pcid);
+    if (dev)
+        free_netdev(dev);
+
+    if (pDevice->pcid) {
+        pci_set_drvdata(pDevice->pcid,NULL);
+    }
+}
+#endif// ifndef PRIVATE_OBJ
+
+static BOOL device_init_rings(PSDevice pDevice) {
+    void*   vir_pool;
+
+
+    /*allocate all RD/TD rings a single pool*/
+    vir_pool = pci_alloc_consistent(pDevice->pcid,
+                    pDevice->sOpts.nRxDescs0 * sizeof(SRxDesc) +
+                    pDevice->sOpts.nRxDescs1 * sizeof(SRxDesc) +
+                    pDevice->sOpts.nTxDescs[0] * sizeof(STxDesc) +
+                    pDevice->sOpts.nTxDescs[1] * sizeof(STxDesc),
+                    &pDevice->pool_dma);
+
+    if (vir_pool == NULL) {
+        DEVICE_PRT(MSG_LEVEL_ERR,KERN_ERR "%s : allocate desc dma memory failed\n", pDevice->dev->name);
+        return FALSE;
+    }
+
+    memset(vir_pool, 0,
+            pDevice->sOpts.nRxDescs0 * sizeof(SRxDesc) +
+            pDevice->sOpts.nRxDescs1 * sizeof(SRxDesc) +
+            pDevice->sOpts.nTxDescs[0] * sizeof(STxDesc) +
+            pDevice->sOpts.nTxDescs[1] * sizeof(STxDesc)
+          );
+
+    pDevice->aRD0Ring = vir_pool;
+    pDevice->aRD1Ring = vir_pool +
+                        pDevice->sOpts.nRxDescs0 * sizeof(SRxDesc);
+
+
+    pDevice->rd0_pool_dma = pDevice->pool_dma;
+    pDevice->rd1_pool_dma = pDevice->rd0_pool_dma +
+                            pDevice->sOpts.nRxDescs0 * sizeof(SRxDesc);
+
+    pDevice->tx0_bufs = pci_alloc_consistent(pDevice->pcid,
+                    pDevice->sOpts.nTxDescs[0] * PKT_BUF_SZ +
+                    pDevice->sOpts.nTxDescs[1] * PKT_BUF_SZ +
+                    CB_BEACON_BUF_SIZE +
+                    CB_MAX_BUF_SIZE,
+                    &pDevice->tx_bufs_dma0);
+
+    if (pDevice->tx0_bufs == NULL) {
+        DEVICE_PRT(MSG_LEVEL_ERR,KERN_ERR "%s: allocate buf dma memory failed\n", pDevice->dev->name);
+        pci_free_consistent(pDevice->pcid,
+            pDevice->sOpts.nRxDescs0 * sizeof(SRxDesc) +
+            pDevice->sOpts.nRxDescs1 * sizeof(SRxDesc) +
+            pDevice->sOpts.nTxDescs[0] * sizeof(STxDesc) +
+            pDevice->sOpts.nTxDescs[1] * sizeof(STxDesc),
+            vir_pool, pDevice->pool_dma
+            );
+        return FALSE;
+    }
+
+    memset(pDevice->tx0_bufs, 0,
+           pDevice->sOpts.nTxDescs[0] * PKT_BUF_SZ +
+           pDevice->sOpts.nTxDescs[1] * PKT_BUF_SZ +
+           CB_BEACON_BUF_SIZE +
+           CB_MAX_BUF_SIZE
+          );
+
+    pDevice->td0_pool_dma = pDevice->rd1_pool_dma +
+            pDevice->sOpts.nRxDescs1 * sizeof(SRxDesc);
+
+    pDevice->td1_pool_dma = pDevice->td0_pool_dma +
+            pDevice->sOpts.nTxDescs[0] * sizeof(STxDesc);
+
+
+    // vir_pool: pvoid type
+    pDevice->apTD0Rings = vir_pool
+                          + pDevice->sOpts.nRxDescs0 * sizeof(SRxDesc)
+                          + pDevice->sOpts.nRxDescs1 * sizeof(SRxDesc);
+
+    pDevice->apTD1Rings = vir_pool
+            + pDevice->sOpts.nRxDescs0 * sizeof(SRxDesc)
+            + pDevice->sOpts.nRxDescs1 * sizeof(SRxDesc)
+            + pDevice->sOpts.nTxDescs[0] * sizeof(STxDesc);
+
+
+    pDevice->tx1_bufs = pDevice->tx0_bufs +
+            pDevice->sOpts.nTxDescs[0] * PKT_BUF_SZ;
+
+
+    pDevice->tx_beacon_bufs = pDevice->tx1_bufs +
+            pDevice->sOpts.nTxDescs[1] * PKT_BUF_SZ;
+
+    pDevice->pbyTmpBuff = pDevice->tx_beacon_bufs +
+            CB_BEACON_BUF_SIZE;
+
+    pDevice->tx_bufs_dma1 = pDevice->tx_bufs_dma0 +
+            pDevice->sOpts.nTxDescs[0] * PKT_BUF_SZ;
+
+
+    pDevice->tx_beacon_dma = pDevice->tx_bufs_dma1 +
+            pDevice->sOpts.nTxDescs[1] * PKT_BUF_SZ;
+
+
+    return TRUE;
+}
+
+static void device_free_rings(PSDevice pDevice) {
+
+    pci_free_consistent(pDevice->pcid,
+            pDevice->sOpts.nRxDescs0 * sizeof(SRxDesc) +
+            pDevice->sOpts.nRxDescs1 * sizeof(SRxDesc) +
+            pDevice->sOpts.nTxDescs[0] * sizeof(STxDesc) +
+            pDevice->sOpts.nTxDescs[1] * sizeof(STxDesc)
+            ,
+            pDevice->aRD0Ring, pDevice->pool_dma
+        );
+
+    if (pDevice->tx0_bufs)
+        pci_free_consistent(pDevice->pcid,
+           pDevice->sOpts.nTxDescs[0] * PKT_BUF_SZ +
+           pDevice->sOpts.nTxDescs[1] * PKT_BUF_SZ +
+           CB_BEACON_BUF_SIZE +
+           CB_MAX_BUF_SIZE,
+           pDevice->tx0_bufs, pDevice->tx_bufs_dma0
+        );
+}
+
+static void device_init_rd0_ring(PSDevice pDevice) {
+    int i;
+    dma_addr_t      curr = pDevice->rd0_pool_dma;
+    PSRxDesc        pDesc;
+
+    /* Init the RD0 ring entries */
+    for (i = 0; i < pDevice->sOpts.nRxDescs0; i ++, curr += sizeof(SRxDesc)) {
+        pDesc = &(pDevice->aRD0Ring[i]);
+        pDesc->pRDInfo = alloc_rd_info();
+        ASSERT(pDesc->pRDInfo);
+        if (!device_alloc_rx_buf(pDevice, pDesc)) {
+            DEVICE_PRT(MSG_LEVEL_ERR,KERN_ERR "%s: can not alloc rx bufs\n",
+            pDevice->dev->name);
+        }
+        pDesc->next = &(pDevice->aRD0Ring[(i+1) % pDevice->sOpts.nRxDescs0]);
+        pDesc->pRDInfo->curr_desc = cpu_to_le32(curr);
+        pDesc->next_desc = cpu_to_le32(curr + sizeof(SRxDesc));
+    }
+
+    pDevice->aRD0Ring[i-1].next_desc = cpu_to_le32(pDevice->rd0_pool_dma);
+    pDevice->pCurrRD[0] = &(pDevice->aRD0Ring[0]);
+}
+
+
+static void device_init_rd1_ring(PSDevice pDevice) {
+    int i;
+    dma_addr_t      curr = pDevice->rd1_pool_dma;
+    PSRxDesc        pDesc;
+
+    /* Init the RD1 ring entries */
+    for (i = 0; i < pDevice->sOpts.nRxDescs1; i ++, curr += sizeof(SRxDesc)) {
+        pDesc = &(pDevice->aRD1Ring[i]);
+        pDesc->pRDInfo = alloc_rd_info();
+        ASSERT(pDesc->pRDInfo);
+        if (!device_alloc_rx_buf(pDevice, pDesc)) {
+            DEVICE_PRT(MSG_LEVEL_ERR,KERN_ERR "%s: can not alloc rx bufs\n",
+            pDevice->dev->name);
+        }
+        pDesc->next = &(pDevice->aRD1Ring[(i+1) % pDevice->sOpts.nRxDescs1]);
+        pDesc->pRDInfo->curr_desc = cpu_to_le32(curr);
+        pDesc->next_desc = cpu_to_le32(curr + sizeof(SRxDesc));
+    }
+
+    pDevice->aRD1Ring[i-1].next_desc = cpu_to_le32(pDevice->rd1_pool_dma);
+    pDevice->pCurrRD[1] = &(pDevice->aRD1Ring[0]);
+}
+
+
+static void device_init_defrag_cb(PSDevice pDevice) {
+    int i;
+    PSDeFragControlBlock pDeF;
+
+    /* Init the fragment ctl entries */
+    for (i = 0; i < CB_MAX_RX_FRAG; i++) {
+        pDeF = &(pDevice->sRxDFCB[i]);
+        if (!device_alloc_frag_buf(pDevice, pDeF)) {
+            DEVICE_PRT(MSG_LEVEL_ERR,KERN_ERR "%s: can not alloc frag bufs\n",
+                pDevice->dev->name);
+        };
+    }
+    pDevice->cbDFCB = CB_MAX_RX_FRAG;
+    pDevice->cbFreeDFCB = pDevice->cbDFCB;
+}
+
+
+
+
+static void device_free_rd0_ring(PSDevice pDevice) {
+    int i;
+
+    for (i = 0; i < pDevice->sOpts.nRxDescs0; i++) {
+        PSRxDesc        pDesc =&(pDevice->aRD0Ring[i]);
+        PDEVICE_RD_INFO  pRDInfo =pDesc->pRDInfo;
+
+        pci_unmap_single(pDevice->pcid,pRDInfo->skb_dma,
+           pDevice->rx_buf_sz, PCI_DMA_FROMDEVICE);
+
+        dev_kfree_skb(pRDInfo->skb);
+
+        kfree((PVOID)pDesc->pRDInfo);
+    }
+
+}
+
+static void device_free_rd1_ring(PSDevice pDevice) {
+    int i;
+
+
+    for (i = 0; i < pDevice->sOpts.nRxDescs1; i++) {
+        PSRxDesc        pDesc=&(pDevice->aRD1Ring[i]);
+        PDEVICE_RD_INFO  pRDInfo=pDesc->pRDInfo;
+
+        pci_unmap_single(pDevice->pcid,pRDInfo->skb_dma,
+           pDevice->rx_buf_sz, PCI_DMA_FROMDEVICE);
+
+        dev_kfree_skb(pRDInfo->skb);
+
+        kfree((PVOID)pDesc->pRDInfo);
+    }
+
+}
+
+static void device_free_frag_buf(PSDevice pDevice) {
+    PSDeFragControlBlock pDeF;
+    int i;
+
+    for (i = 0; i < CB_MAX_RX_FRAG; i++) {
+
+        pDeF = &(pDevice->sRxDFCB[i]);
+
+        if (pDeF->skb)
+            dev_kfree_skb(pDeF->skb);
+
+    }
+
+}
+
+static void device_init_td0_ring(PSDevice pDevice) {
+    int i;
+    dma_addr_t  curr;
+    PSTxDesc        pDesc;
+
+    curr = pDevice->td0_pool_dma;
+    for (i = 0; i < pDevice->sOpts.nTxDescs[0]; i++, curr += sizeof(STxDesc)) {
+        pDesc = &(pDevice->apTD0Rings[i]);
+        pDesc->pTDInfo = alloc_td_info();
+        ASSERT(pDesc->pTDInfo);
+        if (pDevice->flags & DEVICE_FLAGS_TX_ALIGN) {
+            pDesc->pTDInfo->buf = pDevice->tx0_bufs + (i)*PKT_BUF_SZ;
+            pDesc->pTDInfo->buf_dma = pDevice->tx_bufs_dma0 + (i)*PKT_BUF_SZ;
+        }
+        pDesc->next =&(pDevice->apTD0Rings[(i+1) % pDevice->sOpts.nTxDescs[0]]);
+        pDesc->pTDInfo->curr_desc = cpu_to_le32(curr);
+        pDesc->next_desc = cpu_to_le32(curr+sizeof(STxDesc));
+    }
+
+    pDevice->apTD0Rings[i-1].next_desc = cpu_to_le32(pDevice->td0_pool_

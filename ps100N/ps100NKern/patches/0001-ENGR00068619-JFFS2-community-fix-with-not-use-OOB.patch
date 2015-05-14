@@ -1,0 +1,100 @@
+b_adapter *adapter,
+				    struct igb_ring *tx_ring,
+				    int tx_flags, int count, u32 paylen,
+				    u8 hdr_len)
+{
+	union e1000_adv_tx_desc *tx_desc = NULL;
+	struct igb_buffer *buffer_info;
+	u32 olinfo_status = 0, cmd_type_len;
+	unsigned int i;
+
+	cmd_type_len = (E1000_ADVTXD_DTYP_DATA | E1000_ADVTXD_DCMD_IFCS |
+			E1000_ADVTXD_DCMD_DEXT);
+
+	if (tx_flags & IGB_TX_FLAGS_VLAN)
+		cmd_type_len |= E1000_ADVTXD_DCMD_VLE;
+
+	if (tx_flags & IGB_TX_FLAGS_TSTAMP)
+		cmd_type_len |= E1000_ADVTXD_MAC_TSTAMP;
+
+	if (tx_flags & IGB_TX_FLAGS_TSO) {
+		cmd_type_len |= E1000_ADVTXD_DCMD_TSE;
+
+		/* insert tcp checksum */
+		olinfo_status |= E1000_TXD_POPTS_TXSM << 8;
+
+		/* insert ip checksum */
+		if (tx_flags & IGB_TX_FLAGS_IPV4)
+			olinfo_status |= E1000_TXD_POPTS_IXSM << 8;
+
+	} else if (tx_flags & IGB_TX_FLAGS_CSUM) {
+		olinfo_status |= E1000_TXD_POPTS_TXSM << 8;
+	}
+
+	if ((adapter->flags & IGB_FLAG_NEED_CTX_IDX) &&
+	    (tx_flags & (IGB_TX_FLAGS_CSUM | IGB_TX_FLAGS_TSO |
+			 IGB_TX_FLAGS_VLAN)))
+		olinfo_status |= tx_ring->queue_index << 4;
+
+	olinfo_status |= ((paylen - hdr_len) << E1000_ADVTXD_PAYLEN_SHIFT);
+
+	i = tx_ring->next_to_use;
+	while (count--) {
+		buffer_info = &tx_ring->buffer_info[i];
+		tx_desc = E1000_TX_DESC_ADV(*tx_ring, i);
+		tx_desc->read.buffer_addr = cpu_to_le64(buffer_info->dma);
+		tx_desc->read.cmd_type_len =
+			cpu_to_le32(cmd_type_len | buffer_info->length);
+		tx_desc->read.olinfo_status = cpu_to_le32(olinfo_status);
+		i++;
+		if (i == tx_ring->count)
+			i = 0;
+	}
+
+	tx_desc->read.cmd_type_len |= cpu_to_le32(adapter->txd_cmd);
+	/* Force memory writes to complete before letting h/w
+	 * know there are new descriptors to fetch.  (Only
+	 * applicable for weak-ordered memory model archs,
+	 * such as IA-64). */
+	wmb();
+
+	tx_ring->next_to_use = i;
+	writel(i, adapter->hw.hw_addr + tx_ring->tail);
+	/* we need this if more than one processor can write to our tail
+	 * at a time, it syncronizes IO on IA64/Altix systems */
+	mmiowb();
+}
+
+static int __igb_maybe_stop_tx(struct net_device *netdev,
+			       struct igb_ring *tx_ring, int size)
+{
+	struct igb_adapter *adapter = netdev_priv(netdev);
+
+	netif_stop_subqueue(netdev, tx_ring->queue_index);
+
+	/* Herbert's original patch had:
+	 *  smp_mb__after_netif_stop_queue();
+	 * but since that doesn't exist yet, just open code it. */
+	smp_mb();
+
+	/* We need to check again in a case another CPU has just
+	 * made room available. */
+	if (igb_desc_unused(tx_ring) < size)
+		return -EBUSY;
+
+	/* A reprieve! */
+	netif_wake_subqueue(netdev, tx_ring->queue_index);
+	++adapter->restart_queue;
+	return 0;
+}
+
+static int igb_maybe_stop_tx(struct net_device *netdev,
+			     struct igb_ring *tx_ring, int size)
+{
+	if (igb_desc_unused(tx_ring) >= size)
+		return 0;
+	return __igb_maybe_stop_tx(netdev, tx_ring, size);
+}
+
+static int igb_xmit_frame_ring_adv(struct sk_buff *skb,
+				   str

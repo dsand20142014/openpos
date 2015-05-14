@@ -1,0 +1,86 @@
+/*
+ * Copyright 2004-2009 Freescale Semiconductor, Inc. All Rights Reserved.
+ */
+
+/*
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+
+/*!
+ * @file mc13783/pmic_light.c
+ * @brief This is the main file of PMIC(mc13783) Light and Backlight driver.
+ *
+ * @ingroup PMIC_LIGHT
+ */
+
+/*
+ * Includes
+ */
+#include <linux/platform_device.h>
+#include <linux/delay.h>
+#include <linux/fs.h>
+#include <linux/sched.h>
+#include <linux/pmic_light.h>
+#include <linux/pmic_status.h>
+#include "pmic_light_defs.h"
+
+#define NB_LIGHT_REG      6
+
+static int pmic_light_major;
+
+/*!
+ * Number of users waiting in suspendq
+ */
+static int swait = 0;
+
+/*!
+ * To indicate whether any of the light devices are suspending
+ */
+static int suspend_flag = 0;
+
+/*!
+ * The suspendq is used to block application calls
+ */
+static wait_queue_head_t suspendq;
+
+static struct class *pmic_light_class;
+
+/* EXPORTED FUNCTIONS */
+EXPORT_SYMBOL(pmic_bklit_tcled_master_enable);
+EXPORT_SYMBOL(pmic_bklit_tcled_master_disable);
+EXPORT_SYMBOL(pmic_bklit_master_enable);
+EXPORT_SYMBOL(pmic_bklit_master_disable);
+EXPORT_SYMBOL(pmic_bklit_set_current);
+EXPORT_SYMBOL(pmic_bklit_get_current);
+EXPORT_SYMBOL(pmic_bklit_set_dutycycle);
+EXPORT_SYMBOL(pmic_bklit_get_dutycycle);
+EXPORT_SYMBOL(pmic_bklit_set_cycle_time);
+EXPORT_SYMBOL(pmic_bklit_get_cycle_time);
+EXPORT_SYMBOL(pmic_bklit_set_mode);
+EXPORT_SYMBOL(pmic_bklit_get_mode);
+EXPORT_SYMBOL(pmic_bklit_rampup);
+EXPORT_SYMBOL(pmic_bklit_off_rampup);
+EXPORT_SYMBOL(pmic_bklit_rampdown);
+EXPORT_SYMBOL(pmic_bklit_off_rampdown);
+EXPORT_SYMBOL(pmic_bklit_enable_edge_slow);
+EXPORT_SYMBOL(pmic_bklit_disable_edge_slow);
+EXPORT_SYMBOL(pmic_bklit_get_edge_slow);
+EXPORT_SYMBOL(pmic_bklit_set_strobemode);
+EXPORT_SYMBOL(pmic_tcled_enable);
+EXPORT_SYMBOL(pmic_tcled_disable);
+EXPORT_SYMBOL(pmic_tcled_get_mode);
+EXPORT_SYMBOL(pmic_tcled_ind_set_current);
+EXPORT_SYMBOL(pmic_tcled_ind_get_current);
+EXPORT_SYMBOL(pmic_tcled_ind_set_blink_pattern);
+EXPORT_SYMBOL(pmic_tcled_ind_get_blink_pattern);
+EXPORT_SYMBOL(pmic_tcled_fun_set_current);
+EXPORT_SYMBOL(pmic_tcled_fun_get_current);
+EXPORT_SYMBOL(pmic_tcled_fun_set_cycletime);
+EXPORT_SYMBOL(pmic_tcled_fun_get_cycletime);
+EXPORT_SYMBOL(pmic_tcled_fun_set_dutycycle);
+EXPORT_SYMBOL(

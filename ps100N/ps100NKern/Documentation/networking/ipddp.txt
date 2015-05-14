@@ -1,0 +1,70 @@
+/*
+ * linux/drivers/video/pnx4008/dum.h
+ *
+ * Internal header for SDUM
+ *
+ * 2005 (c) Koninklijke Philips N.V. This file is licensed under
+ * the terms of the GNU General Public License version 2. This program
+ * is licensed "as is" without any warranty of any kind, whether express
+ * or implied.
+ */
+
+#ifndef __PNX008_DUM_H__
+#define __PNX008_DUM_H__
+
+#include <mach/platform.h>
+
+#define PNX4008_DUMCONF_VA_BASE		IO_ADDRESS(PNX4008_DUMCONF_BASE)
+#define PNX4008_DUM_MAIN_VA_BASE	IO_ADDRESS(PNX4008_DUM_MAINCFG_BASE)
+
+/* DUM CFG ADDRESSES */
+#define DUM_CH_BASE_ADR		(PNX4008_DUMCONF_VA_BASE + 0x00)
+#define DUM_CH_MIN_ADR		(PNX4008_DUMCONF_VA_BASE + 0x00)
+#define DUM_CH_MAX_ADR		(PNX4008_DUMCONF_VA_BASE + 0x04)
+#define DUM_CH_CONF_ADR		(PNX4008_DUMCONF_VA_BASE + 0x08)
+#define DUM_CH_STAT_ADR		(PNX4008_DUMCONF_VA_BASE + 0x0C)
+#define DUM_CH_CTRL_ADR		(PNX4008_DUMCONF_VA_BASE + 0x10)
+
+#define CH_MARG		(0x100 / sizeof(u32))
+#define DUM_CH_MIN(i)	(*((volatile u32 *)DUM_CH_MIN_ADR + (i) * CH_MARG))
+#define DUM_CH_MAX(i)	(*((volatile u32 *)DUM_CH_MAX_ADR + (i) * CH_MARG))
+#define DUM_CH_CONF(i)	(*((volatile u32 *)DUM_CH_CONF_ADR + (i) * CH_MARG))
+#define DUM_CH_STAT(i)	(*((volatile u32 *)DUM_CH_STAT_ADR + (i) * CH_MARG))
+#define DUM_CH_CTRL(i)	(*((volatile u32 *)DUM_CH_CTRL_ADR + (i) * CH_MARG))
+
+#define DUM_CONF_ADR          (PNX4008_DUM_MAIN_VA_BASE + 0x00)
+#define DUM_CTRL_ADR          (PNX4008_DUM_MAIN_VA_BASE + 0x04)
+#define DUM_STAT_ADR          (PNX4008_DUM_MAIN_VA_BASE + 0x08)
+#define DUM_DECODE_ADR        (PNX4008_DUM_MAIN_VA_BASE + 0x0C)
+#define DUM_COM_BASE_ADR      (PNX4008_DUM_MAIN_VA_BASE + 0x10)
+#define DUM_SYNC_C_ADR        (PNX4008_DUM_MAIN_VA_BASE + 0x14)
+#define DUM_CLK_DIV_ADR       (PNX4008_DUM_MAIN_VA_BASE + 0x18)
+#define DUM_DIRTY_LOW_ADR     (PNX4008_DUM_MAIN_VA_BASE + 0x20)
+#define DUM_DIRTY_HIGH_ADR    (PNX4008_DUM_MAIN_VA_BASE + 0x24)
+#define DUM_FORMAT_ADR        (PNX4008_DUM_MAIN_VA_BASE + 0x28)
+#define DUM_WTCFG1_ADR        (PNX4008_DUM_MAIN_VA_BASE + 0x30)
+#define DUM_RTCFG1_ADR        (PNX4008_DUM_MAIN_VA_BASE + 0x34)
+#define DUM_WTCFG2_ADR        (PNX4008_DUM_MAIN_VA_BASE + 0x38)
+#define DUM_RTCFG2_ADR        (PNX4008_DUM_MAIN_VA_BASE + 0x3C)
+#define DUM_TCFG_ADR          (PNX4008_DUM_MAIN_VA_BASE + 0x40)
+#define DUM_OUTP_FORMAT1_ADR  (PNX4008_DUM_MAIN_VA_BASE + 0x44)
+#define DUM_OUTP_FORMAT2_ADR  (PNX4008_DUM_MAIN_VA_BASE + 0x48)
+#define DUM_SYNC_MODE_ADR     (PNX4008_DUM_MAIN_VA_BASE + 0x4C)
+#define DUM_SYNC_OUT_C_ADR    (PNX4008_DUM_MAIN_VA_BASE + 0x50)
+
+#define DUM_CONF              (*(volatile u32 *)(DUM_CONF_ADR))
+#define DUM_CTRL              (*(volatile u32 *)(DUM_CTRL_ADR))
+#define DUM_STAT              (*(volatile u32 *)(DUM_STAT_ADR))
+#define DUM_DECODE            (*(volatile u32 *)(DUM_DECODE_ADR))
+#define DUM_COM_BASE          (*(volatile u32 *)(DUM_COM_BASE_ADR))
+#define DUM_SYNC_C            (*(volatile u32 *)(DUM_SYNC_C_ADR))
+#define DUM_CLK_DIV           (*(volatile u32 *)(DUM_CLK_DIV_ADR))
+#define DUM_DIRTY_LOW         (*(volatile u32 *)(DUM_DIRTY_LOW_ADR))
+#define DUM_DIRTY_HIGH        (*(volatile u32 *)(DUM_DIRTY_HIGH_ADR))
+#define DUM_FORMAT            (*(volatile u32 *)(DUM_FORMAT_ADR))
+#define DUM_WTCFG1            (*(volatile u32 *)(DUM_WTCFG1_ADR))
+#define DUM_RTCFG1            (*(volatile u32 *)(DUM_RTCFG1_ADR))
+#define DUM_WTCFG2            (*(volatile u32 *)(DUM_WTCFG2_ADR))
+#define DUM_RTCFG2            (*(volatile u32 *)(DUM_RTCFG2_ADR))
+#define DUM_TCFG              (*(volatile u32 *)(DUM_TCFG_ADR))
+#de

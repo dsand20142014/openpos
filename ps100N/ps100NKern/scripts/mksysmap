@@ -1,0 +1,65 @@
+er_device(old_dev);
+	}
+	return count;
+}
+
+
+static ssize_t atkbd_show_softraw(struct atkbd *atkbd, char *buf)
+{
+	return sprintf(buf, "%d\n", atkbd->softraw ? 1 : 0);
+}
+
+static ssize_t atkbd_set_softraw(struct atkbd *atkbd, const char *buf, size_t count)
+{
+	struct input_dev *old_dev, *new_dev;
+	unsigned long value;
+	int err;
+	unsigned char old_softraw;
+
+	if (strict_strtoul(buf, 10, &value) || value > 1)
+		return -EINVAL;
+
+	if (atkbd->softraw != value) {
+		old_dev = atkbd->dev;
+		old_softraw = atkbd->softraw;
+
+		new_dev = input_allocate_device();
+		if (!new_dev)
+			return -ENOMEM;
+
+		atkbd->dev = new_dev;
+		atkbd->softraw = value;
+		atkbd_set_device_attrs(atkbd);
+
+		err = input_register_device(atkbd->dev);
+		if (err) {
+			input_free_device(new_dev);
+
+			atkbd->dev = old_dev;
+			atkbd->softraw = old_softraw;
+			atkbd_set_device_attrs(atkbd);
+
+			return err;
+		}
+		input_unregister_device(old_dev);
+	}
+	return count;
+}
+
+static ssize_t atkbd_show_err_count(struct atkbd *atkbd, char *buf)
+{
+	return sprintf(buf, "%lu\n", atkbd->err_count);
+}
+
+static int __init atkbd_setup_forced_release(const struct dmi_system_id *id)
+{
+	atkbd_platform_fixup = atkbd_apply_forced_release_keylist;
+	atkbd_platform_fixup_data = id->driver_data;
+
+	return 0;
+}
+
+static struct dmi_system_id atkbd_dmi_quirk_table[] __initdata = {
+	{
+		.ident = "Dell Laptop",
+		.mat

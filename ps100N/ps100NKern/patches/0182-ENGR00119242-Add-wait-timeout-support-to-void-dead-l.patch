@@ -1,0 +1,155 @@
+/*
+ * NES, SNES, N64, MultiSystem, PSX gamepad driver for Linux
+ *
+ *  Copyright (c) 1999-2004	Vojtech Pavlik <vojtech@suse.cz>
+ *  Copyright (c) 2004		Peter Nelson <rufus-kernel@hackish.org>
+ *
+ *  Based on the work of:
+ *	Andree Borrmann		John Dahlstrom
+ *	David Kuder		Nathan Hand
+ *	Raphael Assenat
+ */
+
+/*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ *
+ * Should you need to contact me, the author, you can do so either by
+ * e-mail - mail your message to <vojtech@ucw.cz>, or by paper mail:
+ * Vojtech Pavlik, Simunkova 1594, Prague 8, 182 00 Czech Republic
+ */
+
+#include <linux/kernel.h>
+#include <linux/delay.h>
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/parport.h>
+#include <linux/input.h>
+#include <linux/mutex.h>
+
+MODULE_AUTHOR("Vojtech Pavlik <vojtech@ucw.cz>");
+MODULE_DESCRIPTION("NES, SNES, N64, MultiSystem, PSX gamepad driver");
+MODULE_LICENSE("GPL");
+
+#define GC_MAX_PORTS		3
+#define GC_MAX_DEVICES		5
+
+struct gc_config {
+	int args[GC_MAX_DEVICES + 1];
+	unsigned int nargs;
+};
+
+static struct gc_config gc_cfg[GC_MAX_PORTS] __initdata;
+
+module_param_array_named(map, gc_cfg[0].args, int, &gc_cfg[0].nargs, 0);
+MODULE_PARM_DESC(map, "Describes first set of devices (<parport#>,<pad1>,<pad2>,..<pad5>)");
+module_param_array_named(map2, gc_cfg[1].args, int, &gc_cfg[1].nargs, 0);
+MODULE_PARM_DESC(map2, "Describes second set of devices");
+module_param_array_named(map3, gc_cfg[2].args, int, &gc_cfg[2].nargs, 0);
+MODULE_PARM_DESC(map3, "Describes third set of devices");
+
+/* see also gs_psx_delay parameter in PSX support section */
+
+#define GC_SNES		1
+#define GC_NES		2
+#define GC_NES4		3
+#define GC_MULTI	4
+#define GC_MULTI2	5
+#define GC_N64		6
+#define GC_PSX		7
+#define GC_DDR		8
+#define GC_SNESMOUSE	9
+
+#define GC_MAX		9
+
+#define GC_REFRESH_TIME	HZ/100
+
+struct gc {
+	struct pardevice *pd;
+	struct input_dev *dev[GC_MAX_DEVICES];
+	struct timer_list timer;
+	unsigned char pads[GC_MAX + 1];
+	int used;
+	struct mutex mutex;
+	char phys[GC_MAX_DEVICES][32];
+};
+
+static struct gc *gc_base[3];
+
+static int gc_status_bit[] = { 0x40, 0x80, 0x20, 0x10, 0x08 };
+
+static char *gc_names[] = { NULL, "SNES pad", "NES pad", "NES FourPort", "Multisystem joystick",
+				"Multisystem 2-button joystick", "N64 controller", "PSX controller",
+				"PSX DDR controller", "SNES mouse" };
+/*
+ * N64 support.
+ */
+
+static unsigned char gc_n64_bytes[] = { 0, 1, 13, 15, 14, 12, 10, 11, 2, 3 };
+static short gc_n64_btn[] = { BTN_A, BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z, BTN_TL, BTN_TR, BTN_TRIGGER, BTN_START };
+
+#define GC_N64_LENGTH		32		/* N64 bit length, not including stop bit */
+#define GC_N64_REQUEST_LENGTH	37		/* transmit request sequence is 9 bits long */
+#define GC_N64_DELAY		133		/* delay between transmit request, and response ready (us) */
+#define GC_N64_REQUEST		0x1dd1111111ULL /* the request data command (encoded for 000000011) */
+#define GC_N64_DWS		3		/* delay between write segments (required for sound playback because of ISA DMA) */
+						/* GC_N64_DWS > 24 is known to fail */
+#define GC_N64_POWER_W		0xe2		/* power during write (transmit request) */
+#define GC_N64_POWER_R		0xfd		/* power during read */
+#define GC_N64_OUT		0x1d		/* output bits to the 4 pads */
+						/* Reading the main axes of any N64 pad is known to fail if the corresponding bit */
+						/* in GC_N64_OUT is pulled low on the output port (by any routine) for more */
+						/* than 123 us */
+#define GC_N64_CLOCK		0x02		/* clock bits for read */
+
+/*
+ * gc_n64_read_packet() reads an N64 packet.
+ * Each pad uses one bit per byte. So all pads connected to this port are read in parallel.
+ */
+
+static void gc_n64_read_packet(struct gc *gc, unsigned char *data)
+{
+	int i;
+	unsigned long flags;
+
+/*
+ * Request the pad to transmit data
+ */
+
+	local_irq_save(flags);
+	for (i = 0; i < GC_N64_REQUEST_LENGTH; i++) {
+		parport_write_data(gc->pd->port, GC_N64_POWER_W | ((GC_N64_REQUEST >> i) & 1 ? GC_N64_OUT : 0));
+		udelay(GC_N64_DWS);
+	}
+	local_irq_restore(flags);
+
+/*
+ * Wait for the pad response to be loaded into the 33-bit register of the adapter
+ */
+
+	udelay(GC_N64_DELAY);
+
+/*
+ * Grab data (ignoring the last bit, which is a stop bit)
+ */
+
+	for (i = 0; i < GC_N64_LENGTH; i++) {
+		parport_write_data(gc->pd->port, GC_N64_POWER_R);
+		data[i] = parport_read_status(gc->pd->port);
+		parport_write_data(gc->pd->port, GC_N64_POWER_R | GC_N64_CLOCK);
+	 }
+
+/*
+ * We must wait 200 ms here for the controller to reinitialize before the next read request.
+ * No worries as long as gc_read is polled less fr

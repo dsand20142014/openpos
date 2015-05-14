@@ -1,0 +1,44 @@
+_LEN, 0},	 
+	{0x3406,0x01,BYTE_LEN, 0},	 
+	{0x3400,0x07,BYTE_LEN, 0},	 
+	{0x3401,0x02,BYTE_LEN, 0},	 
+	{0x3402,0x04,BYTE_LEN, 0},	 
+	{0x3403,0x00,BYTE_LEN, 0}, 
+	{0x3404,0x05,BYTE_LEN, 0}, 
+	{0x3405,0x15,BYTE_LEN, 0}
+
+};
+
+static const struct ov2659_i2c_reg_conf const mwb_incandescent_tbl[] = {
+	{0x3406,0x01,BYTE_LEN, 0},
+	{0x3406,0x01,BYTE_LEN, 0},
+	{0x3400,0x04,BYTE_LEN, 0},
+	{0x3401,0x58,BYTE_LEN, 0},
+	{0x3402,0x04,BYTE_LEN, 0},
+	{0x3403,0x00,BYTE_LEN, 0},
+	{0x3404,0x08,BYTE_LEN, 0},
+	{0x3405,0x40,BYTE_LEN, 0}
+
+};
+
+static const struct ov2659_i2c_reg_conf const size_320x240_tbl[] = {
+	{0x3808,0x01,BYTE_LEN, 0},
+	{0x3809,0x40,BYTE_LEN, 0},
+	{0x380A,0x00,BYTE_LEN, 0},
+	{0x380B,0xF0,BYTE_LEN, 0},
+};
+
+struct ov2659_reg ov2659_regs = {
+	.init_tbl = init_tbl,
+	.init_tbl_size = ARRAY_SIZE(init_tbl),
+	.preview_tbl = preview_tbl,
+	.preview_tbl_size = ARRAY_SIZE(preview_tbl),
+	.snapshot_tbl = snapshot_tbl,
+	.snapshot_tbl_size = ARRAY_SIZE(snapshot_tbl),
+
+	.awb_tbl = awb_tbl,//add by lijiankun 2010-9-3 auto whitebalance
+	.awb_tbl_size = ARRAY_SIZE(awb_tbl),
+	.mwb_cloudy_tbl = mwb_cloudy_tbl,//add by lijiankun 2010-9-3 cloudy
+	.mwb_cloudy_tbl_size = ARRAY_SIZE(mwb_cloudy_tbl),
+	.mwb_day_light_tbl = mwb_day_light_tbl,//add by lijiankun 2010-9-3 Day_light
+	.mwb_day_light_tbl_

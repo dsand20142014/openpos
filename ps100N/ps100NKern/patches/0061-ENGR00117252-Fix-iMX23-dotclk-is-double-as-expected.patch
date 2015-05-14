@@ -1,0 +1,24 @@
+if (next_loop) {
+				reg = stb0899_read_reg(state, STB0899_CFD);
+				STB0899_SETFIELD_VAL(CFD_ON, reg, 1);
+				stb0899_write_reg(state, STB0899_CFD, reg);
+
+				STB0899_SETFIELD_VAL(CFRM, cfr[0], MSB(state->config->inversion * derot_freq));
+				STB0899_SETFIELD_VAL(CFRL, cfr[1], LSB(state->config->inversion * derot_freq));
+				stb0899_write_regs(state, STB0899_CFRM, cfr, 2); /* derotator frequency	*/
+			}
+		}
+
+		internal->direction = -internal->direction; /* Change zigzag direction */
+	} while ((internal->status != CARRIEROK) && next_loop);
+
+	if (internal->status == CARRIEROK) {
+		stb0899_read_regs(state, STB0899_CFRM, cfr, 2); /* get derotator frequency */
+		internal->derot_freq = state->config->inversion * MAKEWORD16(cfr[0], cfr[1]);
+		dprintk(state->verbose, FE_DEBUG, 1, "----> CARRIER OK !, Derot Freq=%d", internal->derot_freq);
+	} else {
+		internal->derot_freq = last_derot_freq;
+	}
+
+	return internal->status;
+}

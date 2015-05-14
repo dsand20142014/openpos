@@ -1,0 +1,1699 @@
+/proc/sys/net/ipv4/* Variables:
+
+ip_forward - BOOLEAN
+	0 - disabled (default)
+	not 0 - enabled
+
+	Forward Packets between interfaces.
+
+	This variable is special, its change resets all configuration
+	parameters to their default state (RFC1122 for hosts, RFC1812
+	for routers)
+
+ip_default_ttl - INTEGER
+	default 64
+
+ip_no_pmtu_disc - BOOLEAN
+	Disable Path MTU Discovery.
+	default FALSE
+
+min_pmtu - INTEGER
+	default 562 - minimum discovered Path MTU
+
+mtu_expires - INTEGER
+	Time, in seconds, that cached PMTU information is kept.
+
+min_adv_mss - INTEGER
+	The advertised MSS depends on the first hop route MTU, but will
+	never be lower than this setting.
+
+rt_cache_rebuild_count - INTEGER
+	The per net-namespace route cache emergency rebuild threshold.
+	Any net-namespace having its route cache rebuilt due to
+	a hash bucket chain being too long more than this many times
+	will have its route caching disabled
+
+IP Fragmentation:
+
+ipfrag_high_thresh - INTEGER
+	Maximum memory used to reassemble IP fragments. When
+	ipfrag_high_thresh bytes of memory is allocated for this purpose,
+	the fragment handler will toss packets until ipfrag_low_thresh
+	is reached.
+
+ipfrag_low_thresh - INTEGER
+	See ipfrag_high_thresh
+
+ipfrag_time - INTEGER
+	Time in seconds to keep an IP fragment in memory.
+
+ipfrag_secret_interval - INTEGER
+	Regeneration interval (in seconds) of the hash secret (or lifetime
+	for the hash secret) for IP fragments.
+	Default: 600
+
+ipfrag_max_dist - INTEGER
+	ipfrag_max_dist is a non-negative integer value which defines the
+	maximum "disorder" which is allowed among fragments which share a
+	common IP source address. Note that reordering of packets is
+	not unusual, but if a large number of fragments arrive from a source
+	IP address while a particular fragment queue remains incomplete, it
+	probably indicates that one or more fragments belonging to that queue
+	have been lost. When ipfrag_max_dist is positive, an additional check
+	is done on fragments before they are added to a reassembly queue - if
+	ipfrag_max_dist (or more) fragments have arrived from a particular IP
+	address between additions to any IP fragment queue using that source
+	address, it's presumed that one or more fragments in the queue are
+	lost. The existing fragment queue will be dropped, and a new one
+	started. An ipfrag_max_dist value of zero disables this check.
+
+	Using a very small value, e.g. 1 or 2, for ipfrag_max_dist can
+	result in unnecessarily dropping fragment queues when normal
+	reordering of packets occurs, which could lead to poor application
+	performance. Using a very large value, e.g. 50000, increases the
+	likelihood of incorrectly reassembling IP fragments that originate
+	from different IP datagrams, which could result in data corruption.
+	Default: 64
+
+INET peer storage:
+
+inet_peer_threshold - INTEGER
+	The approximate size of the storage.  Starting from this threshold
+	entries will be thrown aggressively.  This threshold also determines
+	entries' time-to-live and time intervals between garbage collection
+	passes.  More entries, less time-to-live, less GC interval.
+
+inet_peer_minttl - INTEGER
+	Minimum time-to-live of entries.  Should be enough to cover fragment
+	time-to-live on the reassembling side.  This minimum time-to-live  is
+	guaranteed if the pool size is less than inet_peer_threshold.
+	Measured in seconds.
+
+inet_peer_maxttl - INTEGER
+	Maximum time-to-live of entries.  Unused entries will expire after
+	this period of time if there is no memory pressure on the pool (i.e.
+	when the number of entries in the pool is very small).
+	Measured in seconds.
+
+inet_peer_gc_mintime - INTEGER
+	Minimum interval between garbage collection passes.  This interval is
+	in effect under high memory pressure on the pool.
+	Measured in seconds.
+
+inet_peer_gc_maxtime - INTEGER
+	Minimum interval between garbage collection passes.  This interval is
+	in effect under low (or absent) memory pressure on the pool.
+	Measured in seconds.
+
+TCP variables:
+
+somaxconn - INTEGER
+	Limit of socket listen() backlog, known in userspace as SOMAXCONN.
+	Defaults to 128.  See also tcp_max_syn_backlog for additional tuning
+	for TCP sockets.
+
+tcp_abc - INTEGER
+	Controls Appropriate Byte Count (ABC) defined in RFC3465.
+	ABC is a way of increasing congestion window (cwnd) more slowly
+	in response to partial acknowledgments.
+	Possible values are:
+		0 increase cwnd once per acknowledgment (no ABC)
+		1 increase cwnd once per acknowledgment of full sized segment
+		2 allow increase cwnd by two if acknowledgment is
+		  of two segments to compensate for delayed acknowledgments.
+	Default: 0 (off)
+
+tcp_abort_on_overflow - BOOLEAN
+	If listening service is too slow to accept new connections,
+	reset them. Default state is FALSE. It means that if overflow
+	occurred due to a burst, connection will recover. Enable this
+	option _only_ if you are really sure that listening daemon
+	cannot be tuned to accept connections faster. Enabling this
+	option can harm clients of your server.
+
+tcp_adv_win_scale - INTEGER
+	Count buffering overhead as bytes/2^tcp_adv_win_scale
+	(if tcp_adv_win_scale > 0) or bytes-bytes/2^(-tcp_adv_win_scale),
+	if it is <= 0.
+	Default: 2
+
+tcp_allowed_congestion_control - STRING
+	Show/set the congestion control choices available to non-privileged
+	processes. The list is a subset of those listed in
+	tcp_available_congestion_control.
+	Default is "reno" and the default setting (tcp_congestion_control).
+
+tcp_app_win - INTEGER
+	Reserve max(window/2^tcp_app_win, mss) of window for application
+	buffer. Value 0 is special, it means that nothing is reserved.
+	Default: 31
+
+tcp_available_congestion_control - STRING
+	Shows the available congestion control choices that are registered.
+	More congestion control algorithms may be available as modules,
+	but not loaded.
+
+tcp_base_mss - INTEGER
+	The initial value of search_low to be used by the packetization layer
+	Path MTU discovery (MTU probing).  If MTU probing is enabled,
+	this is the initial MSS used by the connection.
+
+tcp_congestion_control - STRING
+	Set the congestion control algorithm to be used for new
+	connections. The algorithm "reno" is always available, but
+	additional choices may be available based on kernel configuration.
+	Default is set as part of kernel configuration.
+
+tcp_dsack - BOOLEAN
+	Allows TCP to send "duplicate" SACKs.
+
+tcp_ecn - BOOLEAN
+	Enable Explicit Congestion Notification (ECN) in TCP. ECN is only
+	used when both ends of the TCP flow support it. It is useful to
+	avoid losses due to congestion (when the bottleneck router supports
+	ECN).
+	Possible values are:
+		0 disable ECN
+		1 ECN enabled
+		2 Only server-side ECN enabled. If the other end does
+		  not support ECN, behavior is like with ECN disabled.
+	Default: 2
+
+tcp_fack - BOOLEAN
+	Enable FACK congestion avoidance and fast retransmission.
+	The value is not used, if tcp_sack is not enabled.
+
+tcp_fin_timeout - INTEGER
+	Time to hold socket in state FIN-WAIT-2, if it was closed
+	by our side. Peer can be broken and never close its side,
+	or even died unexpectedly. Default value is 60sec.
+	Usual value used in 2.2 was 180 seconds, you may restore
+	it, but remember that if your machine is even underloaded WEB server,
+	you risk to overflow memory with kilotons of dead sockets,
+	FIN-WAIT-2 sockets are less dangerous than FIN-WAIT-1,
+	because they eat maximum 1.5K of memory, but they tend
+	to live longer.	Cf. tcp_max_orphans.
+
+tcp_frto - INTEGER
+	Enables Forward RTO-Recovery (F-RTO) defined in RFC4138.
+	F-RTO is an enhanced recovery algorithm for TCP retransmission
+	timeouts.  It is particularly beneficial in wireless environments
+	where packet loss is typically due to random radio interference
+	rather than intermediate router congestion.  F-RTO is sender-side
+	only modification. Therefore it does not require any support from
+	the peer.
+
+	If set to 1, basic version is enabled.  2 enables SACK enhanced
+	F-RTO if flow uses SACK.  The basic version can be used also when
+	SACK is in use though scenario(s) with it exists where F-RTO
+	interacts badly with the packet counting of the SACK enabled TCP
+	flow.
+
+tcp_frto_response - INTEGER
+	When F-RTO has detected that a TCP retransmission timeout was
+	spurious (i.e, the timeout would have been avoided had TCP set a
+	longer retransmission timeout), TCP has several options what to do
+	next. Possible values are:
+		0 Rate halving based; a smooth and conservative response,
+		  results in halved cwnd and ssthresh after one RTT
+		1 Very conservative response; not recommended because even
+		  though being valid, it interacts poorly with the rest of
+		  Linux TCP, halves cwnd and ssthresh immediately
+		2 Aggressive response; undoes congestion control measures
+		  that are now known to be unnecessary (ignoring the
+		  possibility of a lost retransmission that would require
+		  TCP to be more cautious), cwnd and ssthresh are restored
+		  to the values prior timeout
+	Default: 0 (rate halving based)
+
+tcp_keepalive_time - INTEGER
+	How often TCP sends out keepalive messages when keepalive is enabled.
+	Default: 2hours.
+
+tcp_keepalive_probes - INTEGER
+	How many keepalive probes TCP sends out, until it decides that the
+	connection is broken. Default value: 9.
+
+tcp_keepalive_intvl - INTEGER
+	How frequently the probes are send out. Multiplied by
+	tcp_keepalive_probes it is time to kill not responding connection,
+	after probes started. Default value: 75sec i.e. connection
+	will be aborted after ~11 minutes of retries.
+
+tcp_low_latency - BOOLEAN
+	If set, the TCP stack makes decisions that prefer lower
+	latency as opposed to higher throughput.  By default, this
+	option is not set meaning that higher throughput is preferred.
+	An example of an application where this default should be
+	changed would be a Beowulf compute cluster.
+	Default: 0
+
+tcp_max_orphans - INTEGER
+	Maximal number of TCP sockets not attached to any user file handle,
+	held by system.	If this number is exceeded orphaned connections are
+	reset immediately and warning is printed. This limit exists
+	only to prevent simple DoS attacks, you _must_ not rely on this
+	or lower the limit artificially, but rather increase it
+	(probably, after increasing installed memory),
+	if network conditions require more than default value,
+	and tune network services to linger and kill such states
+	more aggressively. Let me to remind again: each orphan eats
+	up to ~64K of unswappable memory.
+
+tcp_max_syn_backlog - INTEGER
+	Maximal number of remembered connection requests, which are
+	still did not receive an acknowledgment from connecting client.
+	Default value is 1024 for systems with more than 128Mb of memory,
+	and 128 for low memory machines. If server suffers of overload,
+	try to increase this number.
+
+tcp_max_tw_buckets - INTEGER
+	Maximal number of timewait sockets held by system simultaneously.
+	If this number is exceeded time-wait socket is immediately destroyed
+	and warning is printed. This limit exists only to prevent
+	simple DoS attacks, you _must_ not lower the limit artificially,
+	but rather increase it (probably, after increasing installed memory),
+	if network conditions require more than default value.
+
+tcp_mem - vector of 3 INTEGERs: min, pressure, max
+	min: below this number of pages TCP is not bothered about its
+	memory appetite.
+
+	pressure: when amount of memory allocated by TCP exceeds this number
+	of pages, TCP moderates its memory consumption and enters memory
+	pressure mode, which is exited when memory consumption falls
+	under "min".
+
+	max: number of pages allowed for queueing by all TCP sockets.
+
+	Defaults are calculated at boot time from amount of available
+	memory.
+
+tcp_moderate_rcvbuf - BOOLEAN
+	If set, TCP performs receive buffer auto-tuning, attempting to
+	automatically size the buffer (no greater than tcp_rmem[2]) to
+	match the size required by the path for full throughput.  Enabled by
+	default.
+
+tcp_mtu_probing - INTEGER
+	Controls TCP Packetization-Layer Path MTU Discovery.  Takes three
+	values:
+	  0 - Disabled
+	  1 - Disabled by default, enabled when an ICMP black hole detected
+	  2 - Always enabled, use initial MSS of tcp_base_mss.
+
+tcp_no_metrics_save - BOOLEAN
+	By default, TCP saves various connection metrics in the route cache
+	when the connection closes, so that connections established in the
+	near future can use these to set initial conditions.  Usually, this
+	increases overall performance, but may sometimes cause performance
+	degradation.  If set, TCP will not cache metrics on closing
+	connections.
+
+tcp_orphan_retries - INTEGER
+	How may times to retry before killing TCP connection, closed
+	by our side. Default value 7 corresponds to ~50sec-16min
+	depending on RTO. If you machine is loaded WEB server,
+	you should think about lowering this value, such sockets
+	may consume significant resources. Cf. tcp_max_orphans.
+
+tcp_reordering - INTEGER
+	Maximal reordering of packets in a TCP stream.
+	Default: 3
+
+tcp_retrans_collapse - BOOLEAN
+	Bug-to-bug compatibility with some broken printers.
+	On retransmit try to send bigger packets to work around bugs in
+	certain TCP stacks.
+
+tcp_retries1 - INTEGER
+	How many times to retry before deciding that something is wrong
+	and it is necessary to report this suspicion to network layer.
+	Minimal RFC value is 3, it is default, which corresponds
+	to ~3sec-8min depending on RTO.
+
+tcp_retries2 - INTEGER
+	How may times to retry before killing alive TCP connection.
+	RFC1122 says that the limit should be longer than 100 sec.
+	It is too small number.	Default value 15 corresponds to ~13-30min
+	depending on RTO.
+
+tcp_rfc1337 - BOOLEAN
+	If set, the TCP stack behaves conforming to RFC1337. If unset,
+	we are not conforming to RFC, but prevent TCP TIME_WAIT
+	assassination.
+	Default: 0
+
+tcp_rmem - vector of 3 INTEGERs: min, default, max
+	min: Minimal size of receive buffer used by TCP sockets.
+	It is guaranteed to each TCP socket, even under moderate memory
+	pressure.
+	Default: 8K
+
+	default: initial size of receive buffer used by TCP sockets.
+	This value overrides net.core.rmem_default used by other protocols.
+	Default: 87380 bytes. This value results in window of 65535 with
+	default setting of tcp_adv_win_scale and tcp_app_win:0 and a bit
+	less for default tcp_app_win. See below about these variables.
+
+	max: maximal size of receive buffer allowed for automatically
+	selected receiver buffers for TCP socket. This value does not override
+	net.core.rmem_max.  Calling setsockopt() with SO_RCVBUF disables
+	automatic tuning of that socket's receive buffer size, in which
+	case this value is ignored.
+	Default: between 87380B and 4MB, depending on RAM size.
+
+tcp_sack - BOOLEAN
+	Enable select acknowledgments (SACKS).
+
+tcp_slow_start_after_idle - BOOLEAN
+	If set, provide RFC2861 behavior and time out the congestion
+	window after an idle period.  An idle period is defined at
+	the current RTO.  If unset, the congestion window will not
+	be timed out after an idle period.
+	Default: 1
+
+tcp_stdurg - BOOLEAN
+	Use the Host requirements interpretation of the TCP urgent pointer field.
+	Most hosts use the older BSD interpretation, so if you turn this on
+	Linux might not communicate correctly with them.
+	Default: FALSE
+
+tcp_synack_retries - INTEGER
+	Number of times SYNACKs for a passive TCP connection attempt will
+	be retransmitted. Should not be higher than 255. Default value
+	is 5, which corresponds to ~180seconds.
+
+tcp_syncookies - BOOLEAN
+	Only valid when the kernel was compiled with CONFIG_SYNCOOKIES
+	Send out syncookies when the syn backlog queue of a socket
+	overflows. This is to prevent against the common 'SYN flood attack'
+	Default: FALSE
+
+	Note, that syncookies is fallback facility.
+	It MUST NOT be used to help highly loaded servers to stand
+	against legal connection rate. If you see SYN flood warnings
+	in your logs, but investigation	shows that they occur
+	because of overload with legal connections, you should tune
+	another parameters until this warning disappear.
+	See: tcp_max_syn_backlog, tcp_synack_retries, tcp_abort_on_overflow.
+
+	syncookies seriously violate TCP protocol, do not allow
+	to use TCP extensions, can result in serious degradation
+	of some services (f.e. SMTP relaying), visible not by you,
+	but your clients and relays, contacting you. While you see
+	SYN flood warnings in logs not being really flooded, your server
+	is seriously misconfigured.
+
+tcp_syn_retries - INTEGER
+	Number of times initial SYNs for an active TCP connection attempt
+	will be bute_list:
+	reg_attribute
+|	reg_attribute_list reg_attribute
+;
+
+reg_attribute:
+	reg_address
+|	size
+|	count
+|	access_mode
+|	dont_generate_debug_code
+|	modes
+|	field_defn
+|	enum_defn
+|	mask_defn
+|	alias
+|	accumulator
+|	mode_pointer
+|	allones
+|	allzeros
+|	none
+|	sindex
+;
+
+reg_address:
+	T_ADDRESS T_NUMBER
+	{
+		cur_symbol->info.rinfo->address = $2;
+	}
+;
+
+size:
+	T_SIZE T_NUMBER
+	{
+		cur_symbol->info.rinfo->size = $2;
+		if (scb_or_sram_symbol != NULL) {
+			u_int max_addr;
+			u_int sym_max_addr;
+
+			max_addr = scb_or_sram_symbol->info.rinfo->address
+				 + scb_or_sram_symbol->info.rinfo->size;
+			sym_max_addr = cur_symbol->info.rinfo->address
+				     + cur_symbol->info.rinfo->size;
+
+			if (sym_max_addr > max_addr)
+				stop("SCB or SRAM space exhausted", EX_DATAERR);
+		}
+	}
+;
+
+count:
+	T_COUNT T_NUMBER
+	{
+		cur_symbol->count += $2;
+	}
+;
+
+access_mode:
+	T_ACCESS_MODE T_MODE
+	{
+		cur_symbol->info.rinfo->mode = $2;
+	}
+;
+
+dont_generate_debug_code:
+	T_DONT_GENERATE_DEBUG_CODE
+	{
+		cur_symbol->dont_generate_debug_code = 1;
+	}
+;
+
+modes:
+	T_MODES mode_list
+	{
+		cur_symbol->info.rinfo->modes = $2;
+	}
+;
+
+mode_list:
+	mode_value
+	{
+		$$ = $1;
+	}
+|	mode_list ',' mode_value
+	{
+		$$ = $1 | $3;
+	}
+;
+
+mode_value:
+	T_NUMBER
+	{
+		if ($1 > 4) {
+			stop("Valid register modes range between 0 and 4.",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+
+		$$ = (0x1 << $1);
+	}
+|	T_SYMBOL
+	{
+		symbol_t *symbol;
+
+		symbol = $1;
+		if (symbol->type != CONST) {
+			stop("Only \"const\" symbols allowed in "
+			     "mode definitions.", EX_DATAERR);
+			/* NOTREACHED */
+		}
+		if (symbol->info.cinfo->value > 4) {
+			stop("Valid register modes range between 0 and 4.",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		$$ = (0x1 << symbol->info.cinfo->value);
+	}
+;
+
+field_defn:
+	T_FIELD
+		{
+			field_symbol = NULL;
+			enum_next_value = 0;
+			enum_increment = 1;
+		}
+	'{' enum_entry_list '}'
+|	T_FIELD T_SYMBOL expression
+		{
+			process_field(FIELD, $2, $3.value);
+			field_symbol = $2;
+			enum_next_value = 0;
+			enum_increment = 0x01 << (ffs($3.value) - 1);
+		}
+	'{' enum_entry_list '}'
+|	T_FIELD T_SYMBOL expression
+	{
+		process_field(FIELD, $2, $3.value);
+	}
+;
+
+enum_defn:
+	T_ENUM
+		{
+			field_symbol = NULL;
+			enum_next_value = 0;
+			enum_increment = 1;
+		}
+	'{' enum_entry_list '}'
+|	T_ENUM T_SYMBOL expression
+		{
+			process_field(ENUM, $2, $3.value);
+			field_symbol = $2;
+			enum_next_value = 0;
+			enum_increment = 0x01 << (ffs($3.value) - 1);
+		}
+	'{' enum_entry_list '}'
+;
+
+enum_entry_list:
+	enum_entry
+|	enum_entry_list ',' enum_entry
+;
+
+enum_entry:
+	T_SYMBOL
+	{
+		process_field(ENUM_ENTRY, $1, enum_next_value);
+		enum_next_value += enum_increment;
+	}
+|	T_SYMBOL expression
+	{
+		process_field(ENUM_ENTRY, $1, $2.value);
+		enum_next_value = $2.value + enum_increment;
+	}
+;
+
+mask_defn:
+	T_MASK T_SYMBOL expression
+	{
+		process_field(MASK, $2, $3.value);
+	}
+;
+
+alias:
+	T_ALIAS	T_SYMBOL
+	{
+		if ($2->type != UNINITIALIZED) {
+			stop("Re-definition of register alias",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		$2->type = ALIAS;
+		initialize_symbol($2);
+		$2->info.ainfo->parent = cur_symbol;
+	}
+;
+
+accumulator:
+	T_ACCUM
+	{
+		if (accumulator.symbol != NULL) {
+			stop("Only one accumulator definition allowed",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		accumulator.symbol = cur_symbol;
+	}
+;
+
+mode_pointer:
+	T_MODE_PTR
+	{
+		if (mode_ptr.symbol != NULL) {
+			stop("Only one mode pointer definition allowed",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		mode_ptr.symbol = cur_symbol;
+	}
+;
+
+allones:
+	T_ALLONES
+	{
+		if (allones.symbol != NULL) {
+			stop("Only one definition of allones allowed",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		allones.symbol = cur_symbol;
+	}
+;
+
+allzeros:
+	T_ALLZEROS
+	{
+		if (allzeros.symbol != NULL) {
+			stop("Only one definition of allzeros allowed",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		allzeros.symbol = cur_symbol;
+	}
+;
+
+none:
+	T_NONE
+	{
+		if (none.symbol != NULL) {
+			stop("Only one definition of none allowed",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		none.symbol = cur_symbol;
+	}
+;
+
+sindex:
+	T_SINDEX
+	{
+		if (sindex.symbol != NULL) {
+			stop("Only one definition of sindex allowed",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		sindex.symbol = cur_symbol;
+	}
+;
+
+expression:
+	expression '|' expression
+	{
+		 $$.value = $1.value | $3.value;
+		 symlist_merge(&$$.referenced_syms,
+			       &$1.referenced_syms,
+			       &$3.referenced_syms);
+	}
+|	expression '&' expression
+	{
+		$$.value = $1.value & $3.value;
+		symlist_merge(&$$.referenced_syms,
+			       &$1.referenced_syms,
+			       &$3.referenced_syms);
+	}
+|	expression '+' expression
+	{
+		$$.value = $1.value + $3.value;
+		symlist_merge(&$$.referenced_syms,
+			       &$1.referenced_syms,
+			       &$3.referenced_syms);
+	}
+|	expression '-' expression
+	{
+		$$.value = $1.value - $3.value;
+		symlist_merge(&($$.referenced_syms),
+			       &($1.referenced_syms),
+			       &($3.referenced_syms));
+	}
+|	expression '*' expression
+	{
+		$$.value = $1.value * $3.value;
+		symlist_merge(&($$.referenced_syms),
+			       &($1.referenced_syms),
+			       &($3.referenced_syms));
+	}
+|	expression '/' expression
+	{
+		$$.value = $1.value / $3.value;
+		symlist_merge(&($$.referenced_syms),
+			       &($1.referenced_syms),
+			       &($3.referenced_syms));
+	}
+|	expression T_EXPR_LSHIFT expression
+	{
+		$$.value = $1.value << $3.value;
+		symlist_merge(&$$.referenced_syms,
+			       &$1.referenced_syms,
+			       &$3.referenced_syms);
+	}
+|	expression T_EXPR_RSHIFT expression
+	{
+		$$.value = $1.value >> $3.value;
+		symlist_merge(&$$.referenced_syms,
+			       &$1.referenced_syms,
+			       &$3.referenced_syms);
+	}
+|	'(' expression ')'
+	{
+		$$ = $2;
+	}
+|	'~' expression
+	{
+		$$ = $2;
+		$$.value = (~$$.value) & 0xFF;
+	}
+|	'-' expression %prec UMINUS
+	{
+		$$ = $2;
+		$$.value = -$$.value;
+	}
+|	T_NUMBER
+	{
+		$$.value = $1;
+		SLIST_INIT(&$$.referenced_syms);
+	}
+|	T_SYMBOL
+	{
+		symbol_t *symbol;
+
+		symbol = $1;
+		switch (symbol->type) {
+		case ALIAS:
+			symbol = $1->info.ainfo->parent;
+		case REGISTER:
+		case SCBLOC:
+		case SRAMLOC:
+			$$.value = symbol->info.rinfo->address;
+			break;
+		case MASK:
+		case FIELD:
+		case ENUM:
+		case ENUM_ENTRY:
+			$$.value = symbol->info.finfo->value;
+			break;
+		case DOWNLOAD_CONST:
+		case CONST:
+			$$.value = symbol->info.cinfo->value;
+			break;
+		case UNINITIALIZED:
+		default:
+		{
+			snprintf(errbuf, sizeof(errbuf),
+				 "Undefined symbol %s referenced",
+				 symbol->name);
+			stop(errbuf, EX_DATAERR);
+			/* NOTREACHED */
+			break;
+		}
+		}
+		SLIST_INIT(&$$.referenced_syms);
+		symlist_add(&$$.referenced_syms, symbol, SYMLIST_INSERT_HEAD);
+	}
+;
+
+constant:
+	T_CONST T_SYMBOL expression
+	{
+		if ($2->type != UNINITIALIZED) {
+			stop("Re-definition of symbol as a constant",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		$2->type = CONST;
+		initialize_symbol($2);
+		$2->info.cinfo->value = $3.value;
+	}
+|	T_CONST T_SYMBOL T_DOWNLOAD
+	{
+		if ($1) {
+			stop("Invalid downloaded constant declaration",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		if ($2->type != UNINITIALIZED) {
+			stop("Re-definition of symbol as a downloaded constant",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		$2->type = DOWNLOAD_CONST;
+		initialize_symbol($2);
+		$2->info.cinfo->value = download_constant_count++;
+	}
+;
+
+macrodefn_prologue:
+	T_DEFINE T_SYMBOL
+	{
+		if ($2->type != UNINITIALIZED) {
+			stop("Re-definition of symbol as a macro",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		cur_symbol = $2;
+		cur_symbol->type = MACRO;
+		initialize_symbol(cur_symbol);
+	}
+;
+
+macrodefn:
+	macrodefn_prologue T_MACROBODY
+	{
+		add_macro_body($2);
+	}
+|	macrodefn_prologue '(' macro_arglist ')' T_MACROBODY
+	{
+		add_macro_body($5);
+		cur_symbol->info.macroinfo->narg = $3;
+	}
+;
+
+macro_arglist:
+	{
+		/* Macros can take no arguments */
+		$$ = 0;
+	}
+|	T_ARG
+	{
+		$$ = 1;
+		add_macro_arg($1, 0);
+	}
+|	macro_arglist ',' T_ARG
+	{
+		if ($1 == 0) {
+			stop("Comma without preceeding argument in arg list",
+			     EX_DATAERR);
+			/* NOTREACHED */
+		}
+		$$ = $1 + 1;
+		add_macro_arg($3, $1);
+	}
+;
+
+scratch_ram:
+	T_SRAM '{'
+		{
+			snprintf(errbuf, sizeof(errbuf), "%s%d", SRAM_SYMNAME,
+				 num_srams);
+			cur_symbol = symtable_get(SRAM_SYMNAME);
+			cur_symtype = SRAMLOC;
+			cur_symbol->type = be disabled otherwise
+
+accept_redirects - BOOLEAN
+	Accept ICMP redirect messages.
+	accept_redirects for the interface will be enabled if:
+	- both conf/{all,interface}/accept_redirects are TRUE in the case
+	  forwarding for the interface is enabled
+	or
+	- at least one of conf/{all,interface}/accept_redirects is TRUE in the
+	  case forwarding for the interface is disabled
+	accept_redirects for the interface will be disabled otherwise
+	default TRUE (host)
+		FALSE (router)
+
+forwarding - BOOLEAN
+	Enable IP forwarding on this interface.
+
+mc_forwarding - BOOLEAN
+	Do multicast routing. The kernel needs to be compiled with CONFIG_MROUTE
+	and a multicast routing daemon is required.
+	conf/all/mc_forwarding must also be set to TRUE to enable multicast
+	routing	for the interface
+
+medium_id - INTEGER
+	Integer value used to differentiate the devices by the medium they
+	are attached to. Two devices can have different id values when
+	the broadcast packets are received only on one of them.
+	The default value 0 means that the device is the only interface
+	to its medium, value of -1 means that medium is not known.
+
+	Currently, it is used to change the proxy_arp behavior:
+	the proxy_arp feature is enabled for packets forwarded between
+	two devices attached to different media.
+
+proxy_arp - BOOLEAN
+	Do proxy arp.
+	proxy_arp for the interface will be enabled if at least one of
+	conf/{all,interface}/proxy_arp is set to TRUE,
+	it will be disabled otherwise
+
+shared_media - BOOLEAN
+	Send(router) or accept(host) RFC1620 shared media redirects.
+	Overrides ip_secure_redirects.
+	shared_media for the interface will be enabled if at least one of
+	conf/{all,interface}/shared_media is set to TRUE,
+	it will be disabled otherwise
+	default TRUE
+
+secure_redirects - BOOLEAN
+	Accept ICMP redirect messages only for gateways,
+	listed in default gateway list.
+	secure_redirects for the interface will be enabled if at least one of
+	conf/{all,interface}/secure_redirects is set to TRUE,
+	it will be disabled otherwise
+	default TRUE
+
+send_redirects - BOOLEAN
+	Send redirects, if router.
+	send_redirects for the interface will be enabled if at least one of
+	conf/{all,interface}/send_redirects is set to TRUE,
+	it will be disabled otherwise
+	Default: TRUE
+
+bootp_relay - BOOLEAN
+	Accept packets with source address 0.b.c.d destined
+	not to this host as local ones. It is supposed, that
+	BOOTP relay daemon will catch and forward such packets.
+	conf/all/bootp_relay must also be set to TRUE to enable BOOTP relay
+	for the interface
+	default FALSE
+	Not Implemented Yet.
+
+accept_source_route - BOOLEAN
+	Accept packets with SRR option.
+	conf/all/accept_source_route must also be set to TRUE to accept packets
+	with SRR option on the interface
+	default TRUE (router)
+		FALSE (host)
+
+rp_filter - INTEGER
+	0 - No source validation.
+	1 - Strict mode as defined in RFC3704 Strict Reverse Path
+	    Each incoming packet is tested against the FIB and if the interface
+	    is not the best reverse path the packet check will fail.
+	    By default failed packets are discarded.
+	2 - Loose mode as defined in RFC3704 Loose Reverse Path
+	    Each incoming packet's source address is also tested against the FIB
+	    and if the source address is not reachable via any interface
+	    the packet check will fail.
+
+	Current recommended practice in RFC3704 is to enable strict mode
+	to prevent IP spoofing from DDos attacks. If using asymmetric routing
+	or other complicated routing, then loose mode is recommended.
+
+	conf/all/rp_filter must also be set to non-zero to do source validation
+	on the interface
+
+	Default value is 0. Note that some distributions enable it
+	in startup scripts.
+
+arp_filter - BOOLEAN
+	1 - Allows you to have multiple network interfaces on the same
+	subnet, and have the ARPs for each interface be answered
+	based on whether or not the kernel would route a packet from
+	the ARP'd IP out that interface (therefore you must use source
+	based routing for this to work). In other words it allows control
+	of which cards (usually 1) will respond to an arp request.
+
+	0 - (default) The kernel can respond to arbol = NULL;
+		$$.offset = $3;
+	}
+|	'.' '-' T_NUMBER
+	{
+		$$.symbol = NULL;
+		$$.offset = -$3;
+	}
+;
+
+conditional:
+	T_IF T_CEXPR '{'
+	{
+		scope_t *new_scope;
+
+		add_conditional($2);
+		new_scope = scope_alloc();
+		new_scope->type = SCOPE_IF;
+		new_scope->begin_addr = instruction_ptr;
+		new_scope->func_num = $2->info.condinfo->func_num;
+	}
+|	T_ELSE T_IF T_CEXPR '{'
+	{
+		scope_t *new_scope;
+		scope_t *scope_context;
+		scope_t *last_scope;
+
+		/*
+		 * Ensure that the previous scope is either an
+		 * if or and else if.
+		 */
+		scope_context = SLIST_FIRST(&scope_stack);
+		last_scope = TAILQ_LAST(&scope_context->inner_scope,
+					scope_tailq);
+		if (last_scope == NULL
+		 || last_scope->type == T_ELSE) {
+
+			stop("'else if' without leading 'if'", EX_DATAERR);
+			/* NOTREACHED */
+		}
+		add_conditional($3);
+		new_scope = scope_alloc();
+		new_scope->type = SCOPE_ELSE_IF;
+		new_scope->begin_addr = instruction_ptr;
+		new_scope->func_num = $3->info.condinfo->func_num;
+	}
+|	T_ELSE '{'
+	{
+		scope_t *new_scope;
+		scope_t *scope_context;
+		scope_t *last_scope;
+
+		/*
+		 * Ensure that the previous scope is either an
+		 * if or and else if.
+		 */
+		scope_context = SLIST_FIRST(&scope_stack);
+		last_scope = TAILQ_LAST(&scope_context->inner_scope,
+					scope_tailq);
+		if (last_scope == NULL
+		 || last_scope->type == SCOPE_ELSE) {
+
+			stop("'else' without leading 'if'", EX_DATAERR);
+			/* NOTREACHED */
+		}
+		new_scope = scope_alloc();
+		new_scope->type = SCOPE_ELSE;
+		new_scope->begin_addr = instruction_ptr;
+	}
+;
+
+conditional:
+	'}'
+	{
+		scope_t *scope_context;
+
+		scope_context = SLIST_FIRST(&scope_stack);
+		if (scope_context->type == SCOPE_ROOT) {
+			stop("Unexpected '}' encountered", EX_DATAERR);
+			/* NOTREACHED */
+		}
+
+		scope_context->end_addr = instruction_ptr;
+
+		/* Pop the scope */
+		SLIST_REMOVE_HEAD(&scope_stack, scope_stack_links);
+
+		process_scope(scope_context);
+
+		if (SLIST_FIRST(&scope_stack) == NULL) {
+			stop("Unexpected '}' encountered", EX_DATAERR);
+			/* NOTREACHED */
+		}
+	}
+;
+
+f1_opcode:
+	T_AND { $$ = AIC_OP_AND; }
+|	T_XOR { $$ = AIC_OP_XOR; }
+|	T_ADD { $$ = AIC_OP_ADD; }
+|	T_ADC { $$ = AIC_OP_ADC; }
+;
+
+code:
+	f1_opcode destination ',' immediate_or_a opt_source ret ';'
+	{
+		format_1_instr($1, &$2, &$4, &$5, $6);
+	}
+;
+
+code:
+	T_OR reg_symbol ',' immediate_or_a opt_source ret ';'
+	{
+		format_1_instr(AIC_OP_OR, &$2, &$4, &$5, $6);
+	}
+;
+
+code:
+	T_INC destination opt_source ret ';'
+	{
+		expression_t immed;
+
+		make_expression(&immed, 1);
+		format_1_instr(AIC_OP_ADD, &$2, &immed, &$3, $4);
+	}
+;
+
+code:
+	T_DEC destination opt_source ret ';'
+	{
+		expression_t immed;
+
+		make_expression(&immed, -1);
+		format_1_instr(AIC_OP_ADD, &$2, &immed, &$3, $4);
+	}
+;
+
+code:
+	T_CLC ret ';'
+	{
+		expression_t immed;
+
+		make_expression(&immed, -1);
+		format_1_instr(AIC_OP_ADD, &none, &immed, &allzeros, $2);
+	}
+|	T_CLC T_MVI destination ',' immediate_or_a ret ';'
+	{
+		format_1_instr(AIC_OP_ADD, &$3, &$5, &allzeros, $6);
+	}
+;
+
+code:
+	T_STC ret ';'
+	{
+		expression_t immed;
+
+		make_expression(&immed, 1);
+		format_1_instr(AIC_OP_ADD, &none, &immed, &allones, $2);
+	}
+|	T_STC destination ret ';'
+	{
+		expression_t immed;
+
+		make_expression(&immed, 1);
+		format_1_instr(AIC_OP_ADD, &$2, &immed, &allones, $3);
+	}
+;
+
+code:
+	T_BMOV destination ',' source ',' immediate ret ';'
+	{
+		format_1_instr(AIC_OP_BMOV, &$2, &$6, &$4, $7);
+	}
+;
+
+code:
+	T_MOV destination ',' source ret ';'
+	{
+		expression_t immed;
+
+		make_expression(&immed, 1);
+		format_1_instr(AIC_OP_BMOV, &$2, &immed, &$4, $5);
+	}
+;
+
+code:
+	T_MVI destination ',' immediate ret ';'
+	{
+		if ($4.value == 0
+		 && is_download_const(&$4) == 0) {
+			expression_t immed;
+
+			/*
+			 * Allow move immediates of 0 so that macros,
+			 * that can't know the immediate's value and
+			 * otherwise compensate, still work.
+			 */
+			make_expression(&immed, 1);
+			format_1_instr(AIC_OP_BMOV, &$2, &immed, &allzeros, $5);
+		} else {
+			format_1_instr(AIC_OP_OR, &$2, &$4, &allzeros, $5);
+		}
+	}
+;
+
+code:
+	T_NOT destination opt_source ret ';'
+	{
+		expression_t immed;
+
+		make_expression(&immed, 0xff);
+		format_1_instr(AIC_OP_XOR, &$2, &imme enable IPv4-mapped address feature
+
+	Default: FALSE (as specified in RFC2553bis)
+
+IPv6 Fragmentation:
+
+ip6frag_high_thresh - INTEGER
+	Maximum memory used to reassemble IPv6 fragments. When
+	ip6frag_high_thresh bytes of memory is allocated for this purpose,
+	the fragment handler will toss packets until ip6frag_low_thresh
+	is reached.
+
+ip6frag_low_thresh - INTEGER
+	See ip6frag_high_thresh
+
+ip6frag_time - INTEGER
+	Time in seconds to keep an IPv6 fragment in memory.
+
+ip6frag_secret_interval - INTEGER
+	Regeneration interval (in seconds) of the hash secret (or lifetime
+	for the hash secret) for IPv6 fragments.
+	Default: 600
+
+conf/default/*:
+	Change the interface-specific default settings.
+
+
+conf/all/*:
+	Change all the interface-specific settings.
+
+	[XXX:  Other special features than forwarding?]
+
+conf/all/forwarding - BOOLEAN
+	Enable global IPv6 forwarding between all interfaces.
+
+	IPv4 and IPv6 work differently here; e.g. netfilter must be used
+	to control which interfaces may forward packets and which not.
+
+	This also sets all interfaces' Host/Router setting
+	'forwarding' to the specified value.  See below for details.
+
+	This referred to as global forwarding.
+
+proxy_ndp - BOOLEAN
+	Do proxy ndp.
+
+conf/interface/*:
+	Change special settings per interface.
+
+	The functional behaviour for certain settings is different
+	depending on whether local forwarding is enabled or not.
+
+accept_ra - BOOLEAN
+	Accept Router Advertisements; autoconfigure using them.
+
+	Functional default: enabled if local forwarding is disabled.
+			    disabled if local forwarding is enabled.
+
+accept_ra_defrtr - BOOLEAN
+	Learn default router in Router Advertisement.
+
+	Functional default: enabled if accept_ra is enabled.
+			    disabled if accept_ra is disabled.
+
+accept_ra_pinfo - BOOLEAN
+	Learn Prefix Information in Router Advertisement.
+
+	Functional default: enabled if accept_ra is enabled.
+			    disabled if accept_ra is disabled.
+
+accept_ra_rt_info_max_plen - INTEGER
+	Maximum prefix length of Route Information in RA.
+
+	Route Information w/ prefix larger than or equal to this
+	variable shall be ignored.
+
+	Functional default: 0 if accept_ra_rtr_pref is enabled.
+			    -1 if accept_ra_rtr_pref is disabled.
+
+accept_ra_rtr_pref - BOOLEAN
+	Accept Router Preference in RA.
+
+	Functional default: enabled if accept_ra is enabled.
+			    disabled if accept_ra is disabled.
+
+accept_redirects - BOOLEAN
+	Accept Redirects.
+
+	Functional default: enabled if local forwarding is disabled.
+			    disabled if local forwarding is enabled.
+
+accept_source_route - INTEGER
+	Accept source routing (routing extension header).
+
+	>= 0: Accept only routing header type 2.
+	< 0: Do not accept routing header.
+
+	Default: 0
+
+autoconf - BOOLEAN
+	Autoconfigure addresses using Prefix Information in Router
+	Advertisements.
+
+	Functional default: enabled if accept_ra_pinfo is enabled.
+			    disabled if accept_ra_pinfo is disabled.
+
+dad_transmits - INTEGER
+	The amount of Duplicate Address Detection probes to send.
+	Default: 1
+
+forwarding - BOOLEAN
+	Configure interface-specific Host/Router behaviour.
+
+	Note: It is recommended to have the same setting on all
+	interfaces; mixed router/host scenarios are rather uncommon.
+
+	FALSE:
+
+	By default, Host behaviour is assumed.  This means:
+
+	1. IsRouter flag is not set in Neighbour Advertisements.
+	2. Router Solicitations are being sent when necessary.
+	3. If accept_ra is TRUE (default), accept Router
+	   Advertisements (and do autoconfiguration).
+	4. If accept_redirects is TRUE (default), accept Redirects.
+
+	TRUE:
+
+	If local forwarding is enabled, Router behaviour is assumed.
+	This means exactly the reverse from the above:
+
+	1. IsRouter flag is set in Neighbour Advertisements.
+	2. Router Solicitations are not sent.
+	3. Router Advertisements are ignored.
+	4. Redirects are ignored.
+
+	Default: FALSE if global forwarding is disabled (default),
+		 otherwise TRUE.
+
+hop_limit - INTEGER
+	Default Hop Limit to set.
+	Default: 64
+
+mtu - INTEGER
+	Default Maximum Transfer Unit
+	Default: 1280 (IPv6 required minimum)
+
+router_probe_interval - INTEGER
+	Minimum interval (in secondst reg_info *)malloc(sizeof(struct reg_info));
+		if (symbol->info.rinfo == NULL) {
+			stop("Can't create register info", EX_SOFTWARE);
+			/* NOTREACHED */
+		}
+		memset(symbol->info.rinfo, 0,
+		       sizeof(struct reg_info));
+		SLIST_INIT(&(symbol->info.rinfo->fields));
+		/*
+		 * Default to allowing access in all register modes
+		 * or to the mode specified by the SCB or SRAM space
+		 * we are in.
+		 */
+		if (scb_or_sram_symbol != NULL)
+			symbol->info.rinfo->modes =
+			    scb_or_sram_symbol->info.rinfo->modes;
+		else
+			symbol->info.rinfo->modes = ~0;
+		break;
+	case ALIAS:
+		symbol->info.ainfo =
+		    (struct alias_info *)malloc(sizeof(struct alias_info));
+		if (symbol->info.ainfo == NULL) {
+			stop("Can't create alias info", EX_SOFTWARE);
+			/* NOTREACHED */
+		}
+		memset(symbol->info.ainfo, 0,
+		       sizeof(struct alias_info));
+		break;
+	case MASK:
+	case FIELD:
+	case ENUM:
+	case ENUM_ENTRY:
+		symbol->info.finfo =
+		    (struct field_info *)malloc(sizeof(struct field_info));
+		if (symbol->info.finfo == NULL) {
+			stop("Can't create field info", EX_SOFTWARE);
+			/* NOTREACHED */
+		}
+		memset(symbol->info.finfo, 0, sizeof(struct field_info));
+		SLIST_INIT(&(symbol->info.finfo->symrefs));
+		break;
+	case CONST:
+	case DOWNLOAD_CONST:
+		symbol->info.cinfo =
+		    (struct const_info *)malloc(sizeof(struct const_info));
+		if (symbol->info.cinfo == NULL) {
+			stop("Can't create alias info", EX_SOFTWARE);
+			/* NOTREACHED */
+		}
+		memset(symbol->info.cinfo, 0,
+		       sizeof(struct const_info));
+		break;
+	case LABEL:
+		symbol->info.linfo =
+		    (struct label_info *)malloc(sizeof(struct label_info));
+		if (symbol->info.linfo == NULL) {
+			stop("Can't create label info", EX_SOFTWARE);
+			/* NOTREACHED */
+		}
+		memset(symbol->info.linfo, 0,
+		       sizeof(struct label_info));
+		break;
+	case CONDITIONAL:
+		symbol->info.condinfo =
+		    (struct cond_info *)malloc(sizeof(struct cond_info));
+		if (symbol->info.condinfo == NULL) {
+			stop("Can't create conditional info", EX_SOFTWARE);
+			/* NOTREACHED */
+		}
+		memset(symbol->info.condinfo, 0,
+		       sizeof(struct cond_info));
+		break;
+	case MACRO:
+		symbol->info.macroinfo =
+		    (struct macro_info *)malloc(sizeof(struct macro_info));
+		if (symbol->info.macroinfo == NULL) {
+			stop("Can't create macro info", EX_SOFTWARE);
+			/* NOTREACHED */
+		}
+		memset(symbol->info.macroinfo, 0,
+		       sizeof(struct macro_info));
+		STAILQ_INIT(&symbol->info.macroinfo->args);
+		break;
+	default:
+		stop("Call to initialize_symbol with invalid symbol type",
+		     EX_SOFTWARE);
+		/* NOTREACHED */
+		break;
+	}
+}
+
+static void
+add_macro_arg(const char *argtext, int argnum)
+{
+	struct macro_arg *marg;
+	int i;
+	int retval;
+
+	if (cur_symbol == NULL || cur_symbol->type != MACRO) {
+		stop("Invalid current symbol for adding macro arg",
+		     EX_SOFTWARE);
+		/* NOTREACHED */
+	}
+
+	marg = (struct macro_arg *)malloc(sizeof(*marg));
+	if (marg == NULL) {
+		stop("Can't create macro_arg structure", EX_SOFTWARE);
+		/* NOTREACHED */
+	}
+	marg->replacement_text = NULL;
+	retval = snprintf(regex_pattern, sizeof(regex_pattern),
+			  "[^-/A-Za-z0-9_](%s)([^-/A-Za-z0-9_]|$)",
+			  argtext);
+	if (retval >= sizeof(regex_pattern)) {
+		stop("Regex text buffer too small for arg",
+		     EX_SOFTWARE);
+		/* NOTREACHED */
+	}
+	retval = regcomp(&marg->arg_regex, regex_pattern, REG_EXTENDED);
+	if (retval != 0) {
+		stop("Regex compilation failed", EX_SOFTWARE);
+		/* NOTREACHED */
+	}
+	STAILQ_INSERT_TAIL(&cur_symbol->info.macroinfo->args, marg, links);
+}
+
+static void
+add_macro_body(const char *bodytext)
+{
+	if (cur_symbol == NULL || cur_symbol->type != MACRO) {
+		stop("Invalid current symbol for adding macro arg",
+		     EX_SOFTWARE);
+		/* NOTREACHED */
+	}
+	cur_symbol->info.macroinfo->body = strdup(bodytext);
+	if (cur_symbol->info.macroinfo->body == NULL) {
+		stop("Can't duplicate macro body text", EX_SOFTWARE);
+		/* NOTREACHED */
+	}
+}
+
+static void
+process_register(symbol_t **p_symbol)
+{
+	symbol_t *symbol = *p_symbol;
+
+	if (symbol->type == UNINITIALIZED) {
+		snprintf(errbuf, sizeof(errbuf), "Undefined register %s",
+			 symbol->name);
+		stop(errbuf, EX_DATAERR);
+		/* NOTREACHED */
+	} else if (symbol->type == ALIAS) {
+		*p_symbol = symbol->info.ainfo->parent;
+	} else if ((symbol->type != REGISTER)
+		&& (symbol->type != SCBLOC)
+		&& (symbol->type != SRAMLOC)) {
+		snprintf(errbuf, sizeof(errbuf),
+			 "Specified symbol %s is not a register",
+			 symbol->name);
+		stop(errbuf, EX_DATAERR);
+	}
+}
+
+static void
+format_1_instr(int opcode, symbol_ref_t *dest, expression_t *immed,
+	       symbol_ref_t *src, int ret)
+{
+	struct instruction *instr;
+	struct ins_format1 *f1_instr;
+
+	if (src->symbol == NULL)
+		src = dest;
+
+	/* Test register permissions */
+	test_writable_symbol(dest->symbol);
+	test_readable_symbol(src->symbol);
+
+	if (!is_location_address(dest->symbol)) {
+		/* Ensure that immediate makes sense for this destination */
+		type_check(dest, immed, opcode);
+	}
+
+	/* Allocate sequencer space for the instruction and fill it out */
+	instr = seq_alloc();
+	f1_instr = &instr->format.format1;
+	f1_instr->ret = ret ? 1 : 0;
+	f1_instr->opcode = opcode;
+	f1_instr->destination = dest->symbol->info.rinfo->address
+			      + dest->offset;
+	f1_instr->source = src->symbol->info.rinfo->address
+			 + src->offset;
+	f1_instr->immediate = immed->value;
+
+	if (is_download_const(immed))
+		f1_instr->parity = 1;
+	else if (dest->symbol == mode_ptr.symbol) {
+		u_int src_value;
+		u_int dst_value;
+
+		/*
+		 * Attempt to update mode information if
+		 * we are operating on the mode register.
+		 */
+		if (src->symbol == allones.symbol)
+			src_value = 0xFF;
+		else if (src->symbol == allzeros.symbol)
+			src_value = 0;
+		else if (src->symbol == mode_ptr.symbol)
+			src_value = (dst_mode << 4) | src_mode;
+		else
+			goto cant_update;
+
+		switch (opcode) {
+		case AIC_OP_AND:
+			dst_value = src_value & immed->value;
+			break;
+		case AIC_OP_XOR:
+			dst_value = src_value ^ immed->value;
+			break;
+		case AIC_OP_ADD:
+			dst_value = (src_value + immed->value) & 0xFF;
+			break;
+		case AIC_OP_OR:
+			dst_value = src_value | immed->value;
+			break;
+		case AIC_OP_BMOV:
+			dst_value = src_value;
+			break;
+		default:
+			goto cant_update;
+		}
+		src_mode = dst_value & 0xF;
+		dst_mode = (dst_value >> 4) & 0xF;
+	}
+
+cant_update:
+	symlist_free(&immed->referenced_syms);
+	instruction_ptr++;
+}
+
+static void
+format_2_instr(int opcode, symbol_ref_t *dest, expression_t *places,
+	       symbol_ref_t *src, int ret)
+{
+	struct instruction *instr;
+	struct ins_format2 *f2_instr;
+	uint8_t shift_control;
+
+	if (src->symbol == NULL)
+		src = dest;
+
+	/* Test register permissions */
+	test_writable_symbol(dest->symbol);
+	test_readable_symbol(src->symbol);
+
+	/* Allocate sequencer space for the instruction and fill it out */
+	instr = seq_alloc();
+	f2_instr = &instr->format.format2;
+	f2_instr->ret = ret ? 1 : 0;
+	f2_instr->opcode = AIC_OP_ROL;
+	f2_instr->destination = dest->symbol->info.rinfo->address
+			      + dest->offset;
+	f2_instr->source = src->symbol->info.rinfo->address
+			 + src->offset;
+	if (places->value > 8 || places->value <= 0) {
+		stop("illegal shift value", EX_DATAERR);
+		/* NOTREACHED */
+	}
+	switch (opcode) {
+	case AIC_OP_SHL:
+		if (places->value == 8)
+			shift_control = 0xf0;
+		else
+			shift_control = (places->value << 4) | places->value;
+		break;
+	case AIC_OP_SHR:
+		if (places->value == 8) {
+			shift_control = 0xf8;
+		} else {
+			shift_control = (places->value << 4)
+				      | (8 - places->value)
+				      | 0x08;
+		}
+		break;
+	case AIC_OP_ROL:
+		shift_control = places->value & 0x7;
+		break;
+	case AIC_OP_ROR:
+		shift_control = (8 - places->value) | 0x08;
+		break;
+	default:
+		shift_control = 0; /* Quiet Compiler */
+		stop("Invalid shift operation specified", EX_SOFTWARE);
+		/* NOTREACHED */
+		break;
+	};
+	f2_instr->shift_control = shift_control;
+	symlist_free(&places->referenced_syms);
+	instruction_ptr++;
+}
+
+static void
+format_3_instr(int opcode, symbol_ref_t *src,
+	       expression_t *immed, symbol_ref_t *address)
+{
+	struct instruction *instr;
+	struct ins_format3 *f3_instr;
+	int addr;
+
+	/* Test register permissions */
+	test_readable_symbol(src->symbol);
+
+	/* Allocate sequencer space for the instruction and fill it out */
+	instr = seq_alloc();
+	f3_instr = &instr->format.format3;
+	if (address->symbol == NULL) {
+		/* 'dot' referrence.  Use the current instruction pointer */
+		addr = instruction_ptr + address->offset;
+	} else if (address->symbol->type == UNINITIALIZED) {
+		/* forward reference */
+		addr = address->offset;
+		instr->patch_label = address->symbol;
+	} else
+		addr = address->symbol->info.linfo->address + address->offset;
+	f3_instr->opcode = opcode;
+	f3_instr->address = addr;
+	f3_instr->source = src->symbol->info.rinfo->address
+			 + src->offset;
+	f3_instr->immediate = immed->value;
+
+	if (is_download_const(immed))
+		f3_instr->parity = 1;
+
+	symlist_free(&immed->referenced_syms);
+	instruction_ptr++;
+}
+
+static void
+test_readable_symbol(symbol_t *symbol)
+{
+	if ((symbol->info.rinfo->modes & (0x1 << src_mode)) == 0) {
+		snprintf(errbuf, sizeof(errbuf),
+			"Register %s unavailable in source reg mode %d",
+			symbol->name, src_mode);
+		stop(errbuf, EX_DATAERR);
+	}
+
+	if (symbol->info.rinfo->mode == WO) {
+		stop("Write Only register specified as source",
+		     EX_DATAERR);
+		/* NOTREACHED */
+	}

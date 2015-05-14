@@ -1,0 +1,294 @@
+election;
+idle_loop_checkbus:
+	test	SSTAT0, SELDO jnz select_out;
+END_CRITICAL;
+	test	SSTAT0, SELDI jnz select_in;
+	test	SCSIPHASE, ~DATA_PHASE_MASK jz idle_loop_check_nonpackreq;
+	test	SCSISIGO, ATNO jz idle_loop_check_nonpackreq;
+	call	unexpected_nonpkt_phase_find_ctxt;
+idle_loop_check_nonpackreq:
+	test	SSTAT2, NONPACKREQ jz . + 2;
+	call	unexpected_nonpkt_phase_find_ctxt;
+	if ((ahd->bugs & AHD_FAINT_LED_BUG) != 0) {
+		/*
+		 * On Rev A. hardware, the busy LED is only
+		 * turned on automaically during selections
+		 * and re-selections.  Make the LED status
+		 * more useful by forcing it to be on so
+		 * long as one of our data FIFOs is active.
+		 */
+		and	A, FIFO0FREE|FIFO1FREE, DFFSTAT;
+		cmp	A, FIFO0FREE|FIFO1FREE jne . + 3;
+		and	SBLKCTL, ~DIAGLEDEN|DIAGLEDON;
+		jmp	. + 2;
+		or	SBLKCTL, DIAGLEDEN|DIAGLEDON;
+	}
+	call	idle_loop_gsfifo_in_scsi_mode;
+	call	idle_loop_service_fifos;
+	call	idle_loop_cchan;
+	jmp	idle_loop;
+
+idle_loop_gsfifo:
+	SET_MODE(M_SCSI, M_SCSI)
+BEGIN_CRITICAL;
+idle_loop_gsfifo_in_scsi_mode:
+	test	LQISTAT2, LQIGSAVAIL jz return;
+	/*
+	 * We have received good status for this transaction.  There may
+	 * still be data in our FIFOs draining to the host.  Complete
+	 * the SCB only if all data has transferred to the host.
+	 */
+good_status_IU_done:
+	bmov	SCBPTR, GSFIFO, 2;
+	clr	SCB_SCSI_STATUS;
+	/*
+	 * If a command completed before an attempted task management
+	 * function completed, notify the host after disabling any
+	 * pending select-outs.
+	 */
+	test	SCB_TASK_MANAGEMENT, 0xFF jz gsfifo_complete_normally;
+	test	SSTAT0, SELDO|SELINGO jnz . + 2;
+	and	SCSISEQ0, ~ENSELO;
+	SET_SEQINTCODE(TASKMGMT_CMD_CMPLT_OKAY)
+gsfifo_complete_normally:
+	or	SCB_CONTROL, STATUS_RCVD;
+
+	/*
+	 * Since this status did not consume a FIFO, we have to
+	 * be a bit more dilligent in how we check for FIFOs pertaining
+	 * to this transaction.  There are two states that a FIFO still
+	 * transferring data may be in.
+	 *
+	 * 1) Configured and draining to the host, with a FIFO handler.
+	 * 2) Pending cfg4data, fifo not empty.
+	 *
+	 * Case 1 can be detected by noticing a non-zero FIFO active
+	 * count in the SCB.  In this case, we allow the routine servicing
+	 * the FIFO to complete the SCB.
+	 * 
+	 * Case 2 implies either a pending or yet to occur save data
+	 * pointers for this same context in the other FIFO.  So, if
+	 * we detect case 1, we will properly defer the post of the SCB
+	 * and achieve the desired result.  The pending cfg4data will
+	 * notice that status has been received and complete the SCB.
+	 */
+	test	SCB_FIFO_USE_COUNT, 0xFF jnz idle_loop_gsfifo_in_scsi_mode;
+	call	complete;
+END_CRITICAL;
+	jmp	idle_loop_gsfifo_in_scsi_mode;
+
+idle_loop_service_fifos:
+	SET_MODE(M_DFF0, M_DFF0)
+BEGIN_CRITICAL;
+	test	LONGJMP_ADDR[1], INVALID_ADDR jnz idle_loop_next_fifo;
+	call	longjmp;
+END_CRITICAL;
+idle_loop_next_fifo:
+	SET_MODE(M_DFF1, M_DFF1)
+BEGIN_CRITICAL;
+	test	LONGJMP_ADDR[1], INVALID_ADDR jz longjmp;
+END_CRITICAL;
+return:
+	ret;
+
+idle_loop_cchan:
+	SET_MODE(M_CCHAN, M_CCHAN)
+	test	QOFF_CTLSTA, HS_MAILBOX_ACT jz	hs_mailbox_empty;
+	or	QOFF_CTLSTA, HS_MAILBOX_ACT;
+	mov	LOCAL_HS_MAILBOX, HS_MAILBOX;
+hs_mailbox_empty:
+BEGIN_CRITICAL;
+	test	CCSCBCTL, CCARREN|CCSCBEN jz scbdma_idle;
+	test	CCSCBCTL, CCSCBDIR jnz fetch_new_scb_inprog;
+	test	CCSCBCTL, CCSCBDONE jz return;
+	/* FALLTHROUGH */
+scbdma_tohost_done:
+	test	CCSCBCTL, CCARREN jz fill_qoutfifo_dmadone;
+	/*
+	 * An SCB has been succesfully uploaded to the host.
+	 * If the SCB was uploaded for some reason other than
+	 * bad SCSI status (currently only for underruns), we
+	 * queue the SCB for normal completion.  Otherwise, we
+	 * wait until any select-out activity has halted, and
+	 * then queue the completion.
+	 */
+	and	CCSCBCTL, ~(CCARREN|CCSCBEN);
+	bmov	COMPLETE_DMA_SCB_HEAD, SCB_NEXT_COMPLETE, 2;
+	cmp	SCB_NEXT_COMPLETE[1], SCB_LIST_NULL jne . + 2;
+	mvi	COMPLETE_DMA_SCB_TAIL[1], SCB_LIST_NULL;
+	test	SCB_SCSI_STATUS, 0xff jz scbdma_queue_completion;
+	bmov	SCB_NEXT_COMPLETE, COMPLETE_ON_QFREEZE_HEAD, 2;
+	bmov	COMPLETE_ON_QFREEZE_HEAD, SCBPTR, 2 ret;
+scbdma_queue_completion:
+	bmov	SCB_NEXT_COMPLETE, COMPLETE_SCB_HEAD, 2;
+	bmov	COMPLETE_SCB_HEAD, SCBPTR, 2 ret;
+fill_qoutfifo_dmadone:
+	and	CCSCBCTL, ~(CCARREN|CCSCBEN);
+	call	qoutfifo_updated;
+	mvi	COMPLETE_SCB_DMAINPROG_HEAD[1], SCB_LIST_NULL;
+	bmov	QOUTFIFO_NEXT_ADDR, SCBHADDR, 4;
+	test	QOFF_CTLSTA, SDSCB_ROLLOVR jz return;
+	bmov	QOUTFIFO_NEXT_ADDR, SHARED_DATA_ADDR, 4;
+	xor	QOUTFIFO_ENTRY_VALID_TAG, QOUTFIFO_ENTRY_VALID_TOGGLE ret;
+END_CRITICAL;
+
+qoutfifo_updated:
+	/*
+	 * If there are more commands waiting to be dma'ed
+	 * to the host, always coalesce.  Otherwise honor the
+	 * host's wishes.
+	 */
+	cmp	COMPLETE_DMA_SCB_HEAD[1], SCB_LIST_NULL jne coalesce_by_count;
+	cmp	COMPLETE_SCB_HEAD[1], SCB_LIST_NULL jne coalesce_by_count;
+	test	LOCAL_HS_MAILBOX, ENINT_COALESCE jz issue_cmdcmplt;
+
+	/*
+	 * If we have relatively few commands outstanding, don't
+	 * bother waiting for another command to complete.
+	 */
+	test	CMDS_PENDING[1], 0xFF jnz coalesce_by_count;
+	/* Add -1 so that jnc means <= not just < */
+	add	A, -1, INT_COALESCING_MINCMDS;
+	add	NONE, A, CMDS_PENDING;
+	jnc	issue_cmdcmplt;
+	
+	/*
+	 * If coalescing, only coalesce up to the limit
+	 * provided by the host driver.
+	 */
+coalesce_by_count:
+	mov	A, INT_COALESCING_MAXCMDS;
+	add	NONE, A, INT_COALESCING_CMDCOUNT;
+	jc	issue_cmdcmplt;
+	/*
+	 * If the timer is not currently active,
+	 * fire it up.
+	 */
+	test	INTCTL, SWTMINTMASK jz return;
+	bmov	SWTIMER, INT_COALESCING_TIMER, 2;
+	mvi	CLRSEQINTSTAT, CLRSEQ_SWTMRTO;
+	or	INTCTL, SWTMINTEN|SWTIMER_START;
+	and	INTCTL, ~SWTMINTMASK ret;
+
+issue_cmdcmplt:
+	mvi	INTSTAT, CMDCMPLT;
+	clr	INT_COALESCING_CMDCOUNT;
+	or	INTCTL, SWTMINTMASK ret;
+
+BEGIN_CRITICAL;
+fetch_new_scb_inprog:
+	test	CCSCBCTL, ARRDONE jz return;
+fetch_new_scb_done:
+	and	CCSCBCTL, ~(CCARREN|CCSCBEN);
+	clr	A;
+	add	CMDS_PENDING, 1;
+	adc	CMDS_PENDING[1], A;
+	if ((ahd->bugs & AHD_PKT_LUN_BUG) != 0) {
+		/*
+		 * "Short Luns" are not placed into outgoing LQ
+		 * packets in the correct byte order.  Use a full
+		 * sized lun field instead and fill it with the
+		 * one byte of lun information we support.
+		 */
+		mov	SCB_PKT_LUN[6], SCB_LUN;
+	}
+	/*
+	 * The FIFO use count field is shared with the
+	 * tag set by the host so that our SCB dma engine
+	 * knows the correct location to store the SCB.
+	 * Set it to zero before processing the SCB.
+	 */
+	clr	SCB_FIFO_USE_COUNT;
+	/* Update the next SCB address to download. */
+	bmov	NEXT_QUEUED_SCB_ADDR, SCB_NEXT_SCB_BUSADDR, 4;
+	/*
+	 * NULL out the SCB links since these fields
+	 * occupy the same location as SCB_NEXT_SCB_BUSADDR.
+	 */
+	mvi	SCB_NEXT[1], SCB_LIST_NULL;
+	mvi	SCB_NEXT2[1], SCB_LIST_NULL;
+	/* Increment our position in the QINFIFO. */
+	mov	NONE, SNSCB_QOFF;
+
+	/*
+	 * Save SCBID of this SCB in REG0 since
+	 * SCBPTR will be clobbered during target
+	 * list updates.  We also record the SCB's
+	 * flags so that we can refer to them even
+	 * after SCBPTR has been changed.
+	 */
+	bmov	REG0, SCBPTR, 2;
+	mov	A, SCB_CONTROL;
+
+	/*
+	 * Find the tail SCB of the execution queue
+	 * for this target.
+	 */
+	shr	SINDEX, 3, SCB_SCSIID;
+	and	SINDEX, ~0x1;
+	mvi	SINDEX[1], (WAITING_SCB_TAILS >> 8);
+	bmov	DINDEX, SINDEX, 2;
+	bmov	SCBPTR, SINDIR, 2;
+
+	/*
+	 * Update the tail to point to the new SCB.
+	 */
+	bmov	DINDIR, REG0, 2;
+
+	/*
+	 * If the queue was empty, queue this SCB as
+	 * the first for this target.
+	 */
+	cmp	SCBPTR[1], SCB_LIST_NULL je first_new_target_scb;
+
+	/*
+	 * SCBs that want to send messages must always be
+	 * at the head of their per-target queue so that
+	 * ATN can be asserted even if the current
+	 * negotiation agreement is packetized.  If the
+	 * target queue is empty, the SCB can be queued
+	 * immediately.  If the queue is not empty, we must
+	 * wait for it to empty before entering this SCB
+	 * into the waiting for selection queue.  Otherwise
+	 * our batching and round-robin selection scheme 
+	 * could allow commands to be queued out of order.
+	 * To simplify the implementation, we stop pulling
+	 * new commands from the host until the MK_MESSAGE
+	 * SCB can be queued to the waiting for selection
+	 * list.
+	 */
+	test	A, MK_MESSAGE jz batch_scb; 
+
+	/*
+	 * If the last SCB is also a MK_MESSAGE SCB, then
+	 * order is preserved even if we batch.
+	 */
+	test	SCB_CONTROL, MK_MESSAGE jz batch_scb; 
+
+	/*
+	 * Defer this SCB and stop fetching new SCBs until
+	 * it can be queued.  Since the SCB_SCSIID of the
+	 * tail SCB must be the same as that of the newly
+	 * queued SCB, there is no need to restore the SCBID
+	 * here.
+	 */
+	or	SEQ_FLAGS2, PENDING_MK_MESSAGE;
+	bmov	MK_MESSAGE_SCB, REG0, 2;
+	mov	MK_MESSAGE_SCSIID, SCB_SCSIID ret;
+
+batch_scb:
+	/*
+	 * Otherwise just update the previous tail SCB to
+	 * point to the new tail.
+	 */
+	bmov	SCB_NEXT, REG0, 2 ret;
+
+first_new_target_scb:
+	/*
+	 * Append SCB to the tail of the waiting for
+	 * selection list.
+	 */
+	cmp	WAITING_TID_HEAD[1], SCB_LIST_NULL je first_new_scb;
+	bmov	SCBPTR, WAITING_TID_TAIL, 2;
+	bmov	SCB_NEXT2, REG0, 2;
+	bmov	WAITING_TID_TAIL, REG0, 

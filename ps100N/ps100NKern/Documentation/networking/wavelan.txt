@@ -1,0 +1,135 @@
+dev_to_hdlc(dev);
+	hdlc->attach = hdlcdev_attach;
+	hdlc->xmit   = hdlcdev_xmit;
+
+	/* register objects with HDLC layer */
+	if ((rc = register_hdlc_device(dev))) {
+		printk(KERN_WARNING "%s:unable to register hdlc device\n",__FILE__);
+		free_netdev(dev);
+		return rc;
+	}
+
+	info->netdev = dev;
+	return 0;
+}
+
+/**
+ * called by device driver when removing device instance
+ * do generic HDLC cleanup
+ *
+ * info  pointer to device instance information
+ */
+static void hdlcdev_exit(SLMP_INFO *info)
+{
+	unregister_hdlc_device(info->netdev);
+	free_netdev(info->netdev);
+	info->netdev = NULL;
+}
+
+#endif /* CONFIG_HDLC */
+
+
+/* Return next bottom half action to perform.
+ * Return Value:	BH action code or 0 if nothing to do.
+ */
+static int bh_action(SLMP_INFO *info)
+{
+	unsigned long flags;
+	int rc = 0;
+
+	spin_lock_irqsave(&info->lock,flags);
+
+	if (info->pending_bh & BH_RECEIVE) {
+		info->pending_bh &= ~BH_RECEIVE;
+		rc = BH_RECEIVE;
+	} else if (info->pending_bh & BH_TRANSMIT) {
+		info->pending_bh &= ~BH_TRANSMIT;
+		rc = BH_TRANSMIT;
+	} else if (info->pending_bh & BH_STATUS) {
+		info->pending_bh &= ~BH_STATUS;
+		rc = BH_STATUS;
+	}
+
+	if (!rc) {
+		/* Mark BH routine as complete */
+		info->bh_running = false;
+		info->bh_requested = false;
+	}
+
+	spin_unlock_irqrestore(&info->lock,flags);
+
+	return rc;
+}
+
+/* Perform bottom half processing of work items queued by ISR.
+ */
+static void bh_handler(struct work_struct *work)
+{
+	SLMP_INFO *info = container_of(work, SLMP_INFO, task);
+	int action;
+
+	if (!info)
+		return;
+
+	if ( debug_level >= DEBUG_LEVEL_BH )
+		printk( "%s(%d):%s bh_handler() entry\n",
+			__FILE__,__LINE__,info->device_name);
+
+	info->bh_running = true;
+
+	while((action = bh_action(info)) != 0) {
+
+		/* Process work item */
+		if ( debug_level >= DEBUG_LEVEL_BH )
+			printk( "%s(%d):%s bh_handler() work item action=%d\n",
+				__FILE__,__LINE__,info->device_name, action);
+
+		switch (action) {
+
+		case BH_RECEIVE:
+			bh_receive(info);
+			break;
+		case BH_TRANSMIT:
+			bh_transmit(info);
+			break;
+		case BH_STATUS:
+			bh_status(info);
+			break;
+		default:
+			/* unknown work item ID */
+			printk("%s(%d):%s Unknown work item ID=%08X!\n",
+				__FILE__,__LINE__,info->device_name,action);
+			break;
+		}
+	}
+
+	if ( debug_level >= DEBUG_LEVEL_BH )
+		printk( "%s(%d):%s bh_handler() exit\n",
+			__FILE__,__LINE__,info->device_name);
+}
+
+static void bh_receive(SLMP_INFO *info)
+{
+	if ( debug_level >= DEBUG_LEVEL_BH )
+		printk( "%s(%d):%s bh_receive()\n",
+			__FILE__,__LINE__,info->device_name);
+
+	while( rx_get_frame(info) );
+}
+
+static void bh_transmit(SLMP_INFO *info)
+{
+	struct tty_struct *tty = info->port.tty;
+
+	if ( debug_level >= DEBUG_LEVEL_BH )
+		printk( "%s(%d):%s bh_transmit() entry\n",
+			__FILE__,__LINE__,info->device_name);
+
+	if (tty)
+		tty_wakeup(tty);
+}
+
+static void bh_status(SLMP_INFO *info)
+{
+	if ( debug_level >= DEBUG_LEVEL_BH )
+		printk( "%s(%d):%s bh_status() entry

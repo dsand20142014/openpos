@@ -1,0 +1,592 @@
+;
+			pHTTXContext->CurWriteRealPos = pHTTXContext->CurWritePosition;
+
+			pWirelessPacket = &pHTTXContext->TransferBuffer->field.WirelessPacket[fillOffset];
+
+			//
+			// Copy TXINFO + TXWI + WLAN Header + LLC into DMA Header Buffer
+			//
+			if (pTxBlk->TxFrameType == TX_AMSDU_FRAME)
+				//hwHdrLen = ROUND_UP(pTxBlk->MpduHeaderLen-LENGTH_AMSDU_SUBFRAMEHEAD, 4)+LENGTH_AMSDU_SUBFRAMEHEAD;
+				hwHdrLen = pTxBlk->MpduHeaderLen-LENGTH_AMSDU_SUBFRAMEHEAD + pTxBlk->HdrPadLen + LENGTH_AMSDU_SUBFRAMEHEAD;
+			else if (pTxBlk->TxFrameType == TX_RALINK_FRAME)
+				//hwHdrLen = ROUND_UP(pTxBlk->MpduHeaderLen-LENGTH_ARALINK_HEADER_FIELD, 4)+LENGTH_ARALINK_HEADER_FIELD;
+				hwHdrLen = pTxBlk->MpduHeaderLen-LENGTH_ARALINK_HEADER_FIELD + pTxBlk->HdrPadLen + LENGTH_ARALINK_HEADER_FIELD;
+			else
+				//hwHdrLen = ROUND_UP(pTxBlk->MpduHeaderLen, 4);
+				hwHdrLen = pTxBlk->MpduHeaderLen + pTxBlk->HdrPadLen;
+
+			// Update the pTxBlk->Priv.
+			pTxBlk->Priv = TXINFO_SIZE + TXWI_SIZE + hwHdrLen;
+
+			//	pTxInfo->USBDMApktLen now just a temp value and will to correct latter.
+			RTMPWriteTxInfo(pAd, pTxInfo, (USHORT)(pTxBlk->Priv), FALSE, FIFO_EDCA, FALSE /*NextValid*/,  FALSE);
+
+			// Copy it.
+			NdisMoveMemory(pWirelessPacket, pTxBlk->HeaderBuf, pTxBlk->Priv);
+			pHTTXContext->CurWriteRealPos += pTxBlk->Priv;
+			pWirelessPacket += pTxBlk->Priv;
+		}
+	}
+	else
+	{	// For sub-sequent frames of this bulk-out batch. Just copy it to our bulk-out buffer.
+
+		Status = ((pHTTXContext->bCurWriting == TRUE) ? NDIS_STATUS_SUCCESS : NDIS_STATUS_FAILURE);
+		if (Status == NDIS_STATUS_SUCCESS)
+		{
+			fillOffset =  (pHTTXContext->CurWritePosition + pTxBlk->Priv);
+			pWirelessPacket = &pHTTXContext->TransferBuffer->field.WirelessPacket[fillOffset];
+
+			//hwHdrLen = pTxBlk->MpduHeaderLen;
+			NdisMoveMemory(pWirelessPacket, pTxBlk->HeaderBuf, pTxBlk->MpduHeaderLen);
+			pWirelessPacket += (pTxBlk->MpduHeaderLen);
+			pTxBlk->Priv += pTxBlk->MpduHeaderLen;
+		}
+		else
+		{	// It should not happened now unless we are going to shutdown.
+			DBGPRINT(RT_DEBUG_ERROR, ("WriteMultiTxResource():bCurWriting is FALSE when handle sub-sequent frames.\n"));
+			Status = NDIS_STATUS_FAILURE;
+		}
+	}
+
+
+	// We unlock it here to prevent the first 8 bytes maybe over-write issue.
+	//	1. First we got CurWritePosition but the first 8 bytes still not write to the pTxContext.
+	//	2. An interrupt break our routine and handle bulk-out complete.
+	//	3. In the bulk-out compllete, it need to do another bulk-out,
+	//			if the ENextBulkOutPosition is just the same as CurWritePosition, it will save the first 8 bytes from CurWritePosition,
+	//			but the payload still not copyed. the pTxContext->SavedPad[] will save as allzero. and set the bCopyPad = TRUE.
+	//	4. Interrupt complete.
+	//  5. Our interrupted routine go back and fill the first 8 bytes to pTxContext.
+	//	6. Next time when do bulk-out, it found the bCopyPad==TRUE and will copy the SavedPad[] to pTxContext->NextBulkOutPosition.
+	//		and the packet will wrong.
+	RTMP_IRQ_UNLOCK(&pAd->TxContextQueueLock[QueIdx], IrqFlags);
+
+	if (Status != NDIS_STATUS_SUCCESS)
+	{
+		DBGPRINT(RT_DEBUG_ERROR,("WriteMultiTxResource: CWPos = %ld, NBOutPos = %ld.\n", pHTTXContext->CurWritePosition, pHTTXContext->NextBulkOutPosition));
+		goto done;
+	}
+
+	// Copy the frame content into DMA buffer and update the pTxBlk->Priv
+	NdisMoveMemory(pWirelessPacket, pTxBlk->pSrcBufData, pTxBlk->SrcBufLen);
+	pWirelessPacket += pTxBlk->SrcBufLen;
+	pTxBlk->Priv += pTxBlk->SrcBufLen;
+
+done:
+	// Release the skb buffer here
+	RELEASE_NDIS_PACKET(pAd, pTxBlk->pPacket, NDIS_STATUS_SUCCESS);
+
+	return(Status);
+
+}
+
+
+VOID RtmpUSB_FinalWriteTxResource(
+	IN	PRTMP_ADAPTER	pAd,
+	IN	TX_BLK			*pTxBlk,
+	IN	USHORT			totalMPDUSize,
+	IN	USHORT			TxIdx)
+{
+	UCHAR			QueIdx;
+	HT_TX_CONTEXT	*pHTTXContext;
+	UINT32			fillOffset;
+	TXINFO_STRUC	*pTxInfo;
+	TXWI_STRUC		*pTxWI;
+	UINT32			USBDMApktLen, padding;
+	unsigned long	IrqFlags;
+	PUCHAR			pWirelessPacket;
+
+	QueIdx = pTxBlk->QueIdx;
+	pHTTXContext  = &pAd->TxContext[QueIdx];
+
+	RTMP_IRQ_LOCK(&pAd->TxContextQueueLock[QueIdx], IrqFlags);
+
+	if (pHTTXContext->bCurWriting == TRUE)
+	{
+		fillOffset = pHTTXContext->CurWritePosition;
+		if (((pHTTXContext->ENextBulkOutPosition == pHTTXContext->CurWritePosition) || ((pHTTXContext->ENextBulkOutPosition-8) == pHTTXContext->CurWritePosition))
+			&& (pHTTXContext->bCopySavePad == TRUE))
+			pWirelessPacket = (PUCHAR)(&pHTTXContext->SavedPad[0]);
+		else
+			pWirelessPacket = (PUCHAR)(&pHTTXContext->TransferBuffer->field.WirelessPacket[fillOffset]);
+
+		//
+		// Update TxInfo->USBDMApktLen ,
+		//		the length = TXWI_SIZE + 802.11_hdr + 802.11_hdr_pad + payload_of_all_batch_frames + Bulk-Out-padding
+		//
+		pTxInfo = (PTXINFO_STRUC)(pWirelessPacket);
+
+		// Calculate the bulk-out padding
+		USBDMApktLen = pTxBlk->Priv - TXINFO_SIZE;
+		padding = (4 - (USBDMApktLen % 4)) & 0x03;	// round up to 4 byte alignment
+		USBDMApktLen += padding;
+
+		pTxInfo->USBDMATxPktLen = USBDMApktLen;
+
+		//
+		// Update TXWI->MPDUtotalByteCount ,
+		//		the length = 802.11 header + payload_of_all_batch_frames
+		pTxWI= (PTXWI_STRUC)(pWirelessPacket + TXINFO_SIZE);
+		pTxWI->MPDUtotalByteCount = totalMPDUSize;
+
+		//
+		// Update the pHTTXContext->CurWritePosition
+		//
+		pHTTXContext->CurWritePosition += (TXINFO_SIZE + USBDMApktLen);
+		if ((pHTTXContext->CurWritePosition + 3906)> MAX_TXBULK_LIMIT)
+		{	// Add 3906 for prevent the NextBulkOut packet size is a A-RALINK/A-MSDU Frame.
+			pHTTXContext->CurWritePosition = 8;
+			pTxInfo->SwUseLastRound = 1;
+		}
+		pHTTXContext->CurWriteRealPos = pHTTXContext->CurWritePosition;
+
+
+		//
+		//	Zero the last padding.
+		//
+		pWirelessPacket = (&pHTTXContext->TransferBuffer->field.WirelessPacket[fillOffset + pTxBlk->Priv]);
+		NdisZeroMemory(pWirelessPacket, padding + 8);
+
+		// Finally, set bCurWriting as FALSE
+		pHTTXContext->bCurWriting = FALSE;
+
+	}
+	else
+	{	// It should not happened now unless we are going to shutdown.
+		DBGPRINT(RT_DEBUG_ERROR, ("FinalWriteTxResource():bCurWriting is FALSE when handle last frames.\n"));
+	}
+
+	RTMP_IRQ_UNLOCK(&pAd->TxContextQueueLock[QueIdx], IrqFlags);
+
+}
+
+
+VOID RtmpUSBDataLastTxIdx(
+	IN	PRTMP_ADAPTER	pAd,
+	IN	UCHAR			QueIdx,
+	IN	USHORT			TxIdx)
+{
+	// DO nothing for USB.
+}
+
+
+/*
+	When can do bulk-out:
+		1. TxSwFreeIdx < TX_RING_SIZE;
+			It means has at least one Ring entity is ready for bulk-out, kick it out.
+		2. If TxSwFreeIdx == TX_RING_SIZE
+			Check if the CurWriting flag is FALSE, if it's FALSE, we can do kick out.
+
+*/
+VOID RtmpUSBDataKickOut(
+	IN	PRTMP_ADAPTER	pAd,
+	IN	TX_BLK			*pTxBlk,
+	IN	UCHAR			QueIdx)
+{
+	RTUSB_SET_BULK_FLAG(pAd, (fRTUSB_BULK_OUT_DATA_NORMAL << QueIdx));
+	RTUSBKickBulkOut(pAd);
+
+}
+
+
+/*
+	Must be run in Interrupt context
+	This function handle RT2870 specific TxDesc and cpu index update and kick the packet out.
+ */
+int RtmpUSBMgmtKickOut(
+	IN RTMP_ADAPTER 	*pAd,
+	IN UCHAR 			QueIdx,
+	IN PNDIS_PACKET		pPacket,
+	IN PUCHAR			pSrcBufVA,
+	IN UINT 			SrcBufLen)
+{
+	PTXINFO_STRUC	pTxInfo;
+	ULONG			BulkOutSize;
+	UCHAR			padLen;
+	PUCHAR			pDest;
+	ULONG			SwIdx = pAd->MgmtRing.TxCpuIdx;
+	PTX_CONTEXT		pMLMEContext = (PTX_CONTEXT)pAd->MgmtRing.Cell[SwIdx].AllocVa;
+	unsigned long	IrqFlags;
+
+
+	pTxInfo = (PTXINFO_STRUC)(pSrcBufVA);
+
+	// Build our URB for USBD
+	BulkOutSize = SrcBufLen;
+	BulkOutSize = (BulkOutSize + 3) & (~3);
+	RTMPWriteTxInfo(pAd, pTxInfo, (USHORT)(BulkOutSize - TXINFO_SIZE), TRUE, EpToQueue[MGMTPIPEIDX], FALSE,  FALSE);
+
+	BulkOutSize += 4; // Always add 4 extra bytes at every packet.
+
+	// If BulkOutSize is multiple of BulkOutMaxPacketSize, add extra 4 bytes again.
+	if ((BulkOutSize % pAd->BulkOutMaxPacketSize) == 0)
+		BulkOutSize += 4;
+
+	padLen = BulkOutSize - SrcBufLen;
+	ASSERT((padLen <= RTMP_PKT_TAIL_PADDING));
+
+	// Now memzero all extra padding bytes.
+	pDest = (PUCHAR)(pSrcBufVA + SrcBufLen);
+	skb_put(GET_OS_PKT_TYPE(pPacket), padLen);
+	NdisZeroMemory(pDest, padLen);
+
+	RTMP_IRQ_LOCK(&pAd->MLMEBulkOutLock, IrqFlags);
+
+	pAd->MgmtRing.Cell[pAd->MgmtRing.TxCpuIdx].pNdisPacket = pPacket;
+	pMLMEContext->TransferBuffer = (PTX_BUFFER)(GET_OS_PKT_DATAPTR(pPacket));
+
+	// Length in TxInfo should be 8 less than bulkout size.
+	pMLMEContext->BulkOutSize = BulkOutSize;
+	pMLMEContext->InUse = TRUE;
+	pMLMEContext->bWaitingBulkOut = TRUE;
+
+
+	//for debug
+	//hex_dump("RtmpUSBMgmtKickOut", &pMLMEContext->TransferBuffer->field.WirelessPacket[0], (pMLMEContext->BulkOutSize > 16 ? 16 : pMLMEContext->BulkOutSize));
+
+	//pAd->RalinkCounters.KickTxCount++;
+	//pAd->RalinkCounters.OneSecTxDoneCount++;
+
+	//if (pAd->MgmtRing.TxSwFreeIdx == MGMT_RING_SIZE)
+	//	needKickOut = TRUE;
+
+	// Decrease the TxSwFreeIdx and Increase the TX_CTX_IDX
+	pAd->MgmtRing.TxSwFreeIdx--;
+	INC_RING_INDEX(pAd->MgmtRing.TxCpuIdx, MGMT_RING_SIZE);
+
+	RTMP_IRQ_UNLOCK(&pAd->MLMEBulkOutLock, IrqFlags);
+
+	RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_MLME);
+	//if (needKickOut)
+	RTUSBKickBulkOut(pAd);
+
+	return 0;
+}
+
+
+VOID RtmpUSBNullFrameKickOut(
+	IN RTMP_ADAPTER *pAd,
+	IN UCHAR		QueIdx,
+	IN UCHAR		*pNullFrame,
+	IN UINT32		frameLen)
+{
+	if (pAd->NullContext.InUse == FALSE)
+	{
+		PTX_CONTEXT		pNullContext;
+		PTXINFO_STRUC	pTxInfo;
+		PTXWI_STRUC		pTxWI;
+		PUCHAR			pWirelessPkt;
+
+		pNullContext = &(pAd->NullContext);
+
+		// Set the in use bit
+		pNullContext->InUse = TRUE;
+		pWirelessPkt = (PUCHAR)&pNullContext->TransferBuffer->field.WirelessPacket[0];
+
+		RTMPZeroMemory(&pWirelessPkt[0], 100);
+		pTxInfo = (PTXINFO_STRUC)&pWirelessPkt[0];
+		RTMPWriteTxInfo(pAd, pTxInfo, (USHORT)(sizeof(HEADER_802_11)+TXWI_SIZE), TRUE, EpToQueue[MGMTPIPEIDX], FALSE,  FALSE);
+		pTxInfo->QSEL = FIFO_EDCA;
+		pTxWI = (PTXWI_STRUC)&pWirelessPkt[TXINFO_SIZE];
+		RTMPWriteTxWI(pAd, pTxWI,  FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, 0, BSSID_WCID, (sizeof(HEADER_802_11)),
+			0, 0, (UCHAR)pAd->CommonCfg.MlmeTransmit.field.MCS, IFS_HTTXOP, FALSE, &pAd->CommonCfg.MlmeTransmit);
+		RTMPMoveMemory(&pWirelessPkt[TXWI_SIZE+TXINFO_SIZE], &pAd->NullFrame, sizeof(HEADER_802_11));
+		pAd->NullContext.BulkOutSize =  TXINFO_SIZE + TXWI_SIZE + sizeof(pAd->NullFrame) + 4;
+
+		// Fill out frame length information for global Bulk out arbitor
+		//pNullContext->BulkOutSize = TransferBufferLength;
+		DBGPRINT(RT_DEBUG_TRACE, ("SYNC - send NULL Frame @%d Mbps...\n", RateIdToMbps[pAd->CommonCfg.TxRate]));
+		RTUSB_SET_BULK_FLAG(pAd, fRTUSB_BULK_OUT_DATA_NULL);
+
+		// Kick bulk out
+		RTUSBKickBulkOut(pAd);
+	}
+
+}
+
+/*
+	========================================================================
+
+	Routine	Description:
+		Check Rx descriptor, return NDIS_STATUS_FAILURE if any error dound
+
+	Arguments:
+		pRxD		Pointer	to the Rx descriptor
+
+	Return Value:
+		NDIS_STATUS_SUCCESS		No err
+		NDIS_STATUS_FAILURE		Error
+
+	Note:
+
+	========================================================================
+*/
+NDIS_STATUS	RTMPCheckRxError(
+	IN	PRTMP_ADAPTER	pAd,
+	IN	PHEADER_802_11	pHeader,
+	IN	PRXWI_STRUC	pRxWI,
+	IN	PRT28XX_RXD_STRUC	pRxINFO)
+{
+	PCIPHER_KEY pWpaKey;
+	INT	dBm;
+
+	if (pAd->bPromiscuous == TRUE)
+		return(NDIS_STATUS_SUCCESS);
+	if(pRxINFO == NULL)
+		return(NDIS_STATUS_FAILURE);
+
+	// Phy errors & CRC errors
+	if (pRxINFO->Crc)
+	{
+		// Check RSSI for Noise Hist statistic collection.
+		dBm = (INT) (pRxWI->RSSI0) - pAd->BbpRssiToDbmDelta;
+		if (dBm <= -87)
+			pAd->StaCfg.RPIDensity[0] += 1;
+		else if (dBm <= -82)
+			pAd->StaCfg.RPIDensity[1] += 1;
+		else if (dBm <= -77)
+			pAd->StaCfg.RPIDensity[2] += 1;
+		else if (dBm <= -72)
+			pAd->StaCfg.RPIDensity[3] += 1;
+		else if (dBm <= -67)
+			pAd->StaCfg.RPIDensity[4] += 1;
+		else if (dBm <= -62)
+			pAd->StaCfg.RPIDensity[5] += 1;
+		else if (dBm <= -57)
+			pAd->StaCfg.RPIDensity[6] += 1;
+		else if (dBm > -57)
+			pAd->StaCfg.RPIDensity[7] += 1;
+
+		return(NDIS_STATUS_FAILURE);
+	}
+
+	// Add Rx size to channel load counter, we should ignore error counts
+	pAd->StaCfg.CLBusyBytes += (pRxWI->MPDUtotalByteCount+ 14);
+
+	// Drop ToDs promiscous frame, it is opened due to CCX 2 channel load statistics
+	if (pHeader->FC.ToDs)
+	{
+		DBGPRINT_RAW(RT_DEBUG_ERROR, ("Err;FC.ToDs\n"));
+		return NDIS_STATUS_FAILURE;
+	}
+
+	// Paul 04-03 for OFDM Rx length issue
+	if (pRxWI->MPDUtotalByteCount > MAX_AGGREGATION_SIZE)
+	{
+		DBGPRINT_RAW(RT_DEBUG_ERROR, ("received packet too long\n"));
+		return NDIS_STATUS_FAILURE;
+	}
+
+	// Drop not U2M frames, cant's drop here because we will drop beacon in this case
+	// I am kind of doubting the U2M bit operation
+	// if (pRxD->U2M == 0)
+	//	return(NDIS_STATUS_FAILURE);
+
+	// drop decyption fail frame
+	if (pRxINFO->Decrypted && pRxINFO->CipherErr)
+	{
+
+		//
+		// MIC Error
+		//
+		if ((pRxINFO->CipherErr == 2) && pRxINFO->MyBss)
+		{
+			pWpaKey = &pAd->SharedKey[BSS0][pRxWI->KeyIndex];
+			RTMPReportMicError(pAd, pWpaKey);
+			DBGPRINT_RAW(RT_DEBUG_ERROR,("Rx MIC Value error\n"));
+		}
+
+		if (pRxINFO->Decrypted &&
+			(pAd->SharedKey[BSS0][pRxWI->KeyIndex].CipherAlg == CIPHER_AES) &&
+			(pHeader->Sequence == pAd->FragFrame.Sequence))
+		{
+			//
+			// Acceptable since the First FragFrame no CipherErr problem.
+			//
+			return(NDIS_STATUS_SUCCESS);
+		}
+
+		return(NDIS_STATUS_FAILURE);
+	}
+
+	return(NDIS_STATUS_SUCCESS);
+}
+
+VOID RT28xxUsbStaAsicForceWakeup(
+	IN PRTMP_ADAPTER pAd,
+	IN BOOLEAN       bFromTx)
+{
+    AUTO_WAKEUP_STRUC	AutoWakeupCfg;
+
+	AutoWakeupCfg.word = 0;
+	RTMP_IO_WRITE32(pAd, AUTO_WAKEUP_CFG, AutoWakeupCfg.word);
+
+#ifndef RT30xx
+	AsicSendCommandToMcu(pAd, 0x31, 0xff, 0x00, 0x00);
+#endif
+#ifdef RT30xx
+	AsicSendCommandToMcu(pAd, 0x31, 0xff, 0x00, 0x02);
+#endif
+
+	OPSTATUS_CLEAR_FLAG(pAd, fOP_STATUS_DOZE);
+}
+
+VOID RT28xxUsbStaAsicSleepThenAutoWakeup(
+	IN PRTMP_ADAPTER pAd,
+	IN USHORT TbttNumToNextWakeUp)
+{
+	AUTO_WAKEUP_STRUC	AutoWakeupCfg;
+
+	// we have decided to SLEEP, so at least do it for a BEACON period.
+	if (TbttNumToNextWakeUp == 0)
+		TbttNumToNextWakeUp = 1;
+
+	AutoWakeupCfg.word = 0;
+	RTMP_IO_WRITE32(pAd, AUTO_WAKEUP_CFG, AutoWakeupCfg.word);
+
+	AutoWakeupCfg.field.NumofSleepingTbtt = TbttNumToNextWakeUp - 1;
+	AutoWakeupCfg.field.EnableAutoWakeup = 1;
+	AutoWakeupCfg.field.AutoLeadTime = 5;
+	RTMP_IO_WRITE32(pAd, AUTO_WAKEUP_CFG, AutoWakeupCfg.word);
+
+	AsicSendCommandToMcu(pAd, 0x30, 0xff, 0xff, 0x02);   // send POWER-SAVE command to MCU. Timeout 40us.
+
+	OPSTATUS_SET_FLAG(pAd, fOP_STATUS_DOZE);
+
+}
+
+VOID RT28xxUsbMlmeRadioOn(
+	IN PRTMP_ADAPTER pAd)
+{
+    DBGPRINT(RT_DEBUG_TRACE,("RT28xxUsbMlmeRadioOn()\n"));
+
+	if (!RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF))
+		return;
+
+#ifndef RT30xx
+    	AsicSendCommandToMcu(pAd, 0x31, 0xff, 0x00, 0x00);
+#endif
+#ifdef RT30xx
+    	AsicSendCommandToMcu(pAd, 0x31, 0xff, 0x00, 0x02);
+#endif
+		RTMPusecDelay(10000);
+
+	NICResetFromError(pAd);
+
+	// Enable Tx/Rx
+	RTMPEnableRxTx(pAd);
+
+#ifdef RT3070
+	if (IS_RT3071(pAd))
+	{
+		RT30xxReverseRFSleepModeSetup(pAd);
+	}
+#endif // RT3070 //
+
+	// Clear Radio off flag
+	RTMP_CLEAR_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF);
+
+	RTUSBBulkReceive(pAd);
+
+	// Set LED
+	RTMPSetLED(pAd, LED_RADIO_ON);
+}
+
+VOID RT28xxUsbMlmeRadioOFF(
+	IN PRTMP_ADAPTER pAd)
+{
+	WPDMA_GLO_CFG_STRUC	GloCfg;
+	UINT32	Value, i;
+
+	DBGPRINT(RT_DEBUG_TRACE,("RT28xxUsbMlmeRadioOFF()\n"));
+
+	if (RTMP_TEST_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF))
+		return;
+
+	// Set LED
+	RTMPSetLED(pAd, LED_RADIO_OFF);
+	// Set Radio off flag
+	RTMP_SET_FLAG(pAd, fRTMP_ADAPTER_RADIO_OFF);
+
+	{
+		// Link down first if any association exists
+		if (INFRA_ON(pAd) || ADHOC_ON(pAd))
+			LinkDown(pAd, FALSE);
+		RTMPusecDelay(10000);
+
+		//==========================================
+		// Clean up old bss table
+		BssTableInit(&pAd->ScanTab);
+	}
+
+#ifndef RT30xx
+	// Disable MAC Tx/Rx
+	RTMP_IO_READ32(pAd, MAC_SYS_CTRL, &Value);
+	Value &= (0xfffffff3);
+	RTMP_IO_WRITE32(pAd, MAC_SYS_CTRL, Value);
+
+	// MAC_SYS_CTRL => value = 0x0 => 40mA
+	RTMP_IO_WRITE32(pAd, MAC_SYS_CTRL, 0);
+
+	// PWR_PIN_CFG => value = 0x0 => 40mA
+	RTMP_IO_WRITE32(pAd, PWR_PIN_CFG, 0);
+
+	// TX_PIN_CFG => value = 0x0 => 20mA
+	RTMP_IO_WRITE32(pAd, TX_PIN_CFG, 0);
+#endif
+
+	if (pAd->CommonCfg.BBPCurrentBW == BW_40)
+	{
+		// Must using 40MHz.
+		AsicTurnOffRFClk(pAd, pAd->CommonCfg.CentralChannel);
+	}
+	else
+	{
+		// Must using 20MHz.
+		AsicTurnOffRFClk(pAd, pAd->CommonCfg.Channel);
+	}
+
+#ifdef RT30xx
+	// Disable Tx/Rx DMA
+	RTUSBReadMACRegister(pAd, WPDMA_GLO_CFG, &GloCfg.word);	   // disable DMA
+	GloCfg.field.EnableTxDMA = 0;
+	GloCfg.field.EnableRxDMA = 0;
+	RTUSBWriteMACRegister(pAd, WPDMA_GLO_CFG, GloCfg.word);	   // abort all TX rings
+#endif
+
+	// Waiting for DMA idle
+	i = 0;
+	do
+	{
+		RTMP_IO_READ32(pAd, WPDMA_GLO_CFG, &GloCfg.word);
+		if ((GloCfg.field.TxDMABusy == 0) && (GloCfg.field.RxDMABusy == 0))
+			break;
+
+		RTMPusecDelay(1000);
+	}while (i++ < 100);
+
+#ifdef RT30xx
+	// Disable MAC Tx/Rx
+	RTMP_IO_READ32(pAd, MAC_SYS_CTRL, &Value);
+	Value &= (0xfffffff3);
+	RTMP_IO_WRITE32(pAd, MAC_SYS_CTRL, Value);
+#endif
+
+	AsicSendCommandToMcu(pAd, 0x30, 0xff, 0xff, 0x02);
+}
+
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                88¨ \8¨ l8¨ |8¨ ³8¨ Ó8¨ å8¨ 	9¨ -9¨ =9¨ M9¨ .€¦ åè§ zé§ ©‡§ œé§ °é§ Ôé§ øé§ ê§ :ê§ Jê§ ^ê§ c„œ ¥½§ Õ½§ :¾§ o¾§ ¤¾§ ä¾§ ¿§ N¿§ ƒ¿§ ¸¿§ í¿§ "À§ `Á§ Â§ ã„œ ÊÑ¡ ðÑ¡ zÒ¡ œÒ¡ ÃÒ¡ çÒ¡ ûÒ¡ Ó¡ #Ó¡ Yn§ yn§ ‹n§ ›n§ ¯n§ qo§ “o§ §o§ Ëo§ ßo§ ïo§ p§ Dp§ Xp§ €p§ ˜p§ ¬p§ q§ ;q§ Mq§ qq§ q§ Ë‡§ á‡§ ˆ§ 1ˆ§ Eˆ§ Yˆ§ šˆ§ ¼ˆ§ Òˆ§ úˆ§ ‰§ "‰§ l‰§ £‰§ Ã‰§ á‰§ ñ‰§ ¢Š§ •q§ äÂŸ ðÂŸ ÃŸ 3ÃŸ cÃŸ uÃŸ ÃÃŸ ÑÃŸ <ÄŸ HÄŸ ÄŸ ›ÄŸ ÑÄŸ pÅŸ |ÅŸ œÅŸ ®ÅŸ üÅŸ 
+ÆŸ ÆŸ (ÆŸ iÆŸ wÆŸ ³£¥ l¤¥ ¯¤¥ ß¤¥ ÿ¤¥ ¥¥ !¥¥ 1¥¥ C¥¥ ˜¥¥ ¸¥¥ Ê¥¥ Ü¥¥ ì¥¥ ü¥¥ ­¦¥ 4§¥ "§ ¹,¨ F	¨ h	¨ ®	¨ ã	¨ 
+¨ U
+¨ “
+¨ µ
+¨ Ç
+¨ ñ
+¨ ¨ ¨ ÿ€¦ O¦ :¨ à:¨ Ñ;¨ á<¨ ÌÑ¥ D…œ %¨¥ D¨¥ ñÄ§ ©¥ àÆŸ ìÆŸ ÇŸ ÇŸ lÇŸ zÇŸ ŒÇŸ ˜ÇŸ ÙÇŸ çÇŸ uÅ§ ÅÅ§ ÛÅ§ Æ§ *Æ§ |-¨ ¥ û¥ ¥ 1¥ C¥ g¥ ‚¥ ”¥ ¸¥ È¥ Ü¥ C/¨ c/¨ u/¨ ™/¨ ©/¨ ½/¨ é § !§ !§ G!§ [!§ o!§ TÈŸ `ÈŸ €ÈŸ ’ÈŸ ¤ÈŸ tn¨ ƒ0¨ £0¨ µ0¨ Ù0¨ é0¨ ý0¨ ¶ÈŸ ÉŸ ÉŸ }ÉŸ ‰ÉŸ ÊÉŸ ØÉŸ ð¤ 
+‘¤ +‘¤ @‘¤ d‘¤ ~‘¤ ¢‘¤ ¼‘¤ â‘¤ ÷‘¤ A’¤ X’¤ ’¤ –’¤ °’¤ Ù’¤ î’¤ “¤ 1“¤ F“¤ `“¤ †“¤ ›“¤ µ“¤ ”¤ ”¤ W”¤ o”¤ ª”¤ ¿”¤ ÷”¤ •¤ I•¤ a•¤ ¥•¤ º•¤ þ•¤ –¤ W–¤ l–¤ §–¤ ¼–¤ 	—¤ —¤ Y—¤ n—¤ “—¤ ¨—¤ »—¤ É—¤ ˜¤ #˜¤ B˜¤ a˜¤ €˜¤ Ÿ˜¤ ¾˜¤ Ý˜¤ ü˜¤ ™¤ :™¤ Y™¤ x™¤ —™¤ ¶™¤ Õ™¤ ô™¤ š¤ 2š¤ Qš¤ pš¤ š¤ ®š¤ Íš¤ ìš¤ ›¤ *›¤ I›¤ ¡¨ 9¡¨ o¨ lÊŸ xÊŸ ˜ÊŸ æÊŸ ôÊŸ ËŸ à¨ ø¨ Ž¨ (Ž¨ :Ž¨ ŒŽ¨ ¬Ž¨ ¾Ž¨ âŽ¨ ¨ ¨ &¨ M¨ ]¨ w¨ ‰¨ Û¨ û¨ ¨ 1¨ E¨ i¨ ¨ ¨ ­¨ Ô¨ ä¨ þ¨ ‘¨ Q‘¨ a‘¨ {‘¨ ‘¨ Î‘¨ Þ‘¨ ø‘¨ 
+’¨ K’¨ [’¨ u’¨ ‡’¨ È’¨ Ø’¨ ò’¨ “¨ p“¨ a¨ “a¨ µa¨ Ça¨ ía¨ b¨ Hb¨ “¢¨ $£¨ š£¨ ¸£¨ Ù£¨ ý£¨ *¤¨ >¤¨ V¤¨  ¤¨ œk¨ pb¨ „b¨ œb¨ ì¯¨ °¨ (°¨ :°¨ ª¥ 0Ò¥ 5‚¦ o‚¦ ƒ¦ Âc¨ “d¨ «d¨ ¿d¨ Ûd¨ íd¨ e¨ Me¨ ie¨ e¨ ›e¨ ­e¨ Áe¨ îe¨ ¼Ò¥ ÔÒ¥ èÒ¥ ôÒ¥ Ó¥ ƒ¦ ¸ƒ¦ îƒ¦ ˜Ó¥ Õª¥ [«¥ ˜«¥ Î«¥ î«¥  ¬¥ ¬¥ $¬¥ 4¬¥ ‹¬¥ «¬¥ ½¬¥ Ï¬¥ ß¬¥ ó¬¥ Éu¨ =v¨ Qv¨ Ëv¨ Ú„¦ îÓ¥ Ÿ¦¨ «¦¨ Ï¦¨ ê¦¨ §¨ §¨ 2§¨ ä…œ %x¨ †Ô¥ ¡Ô¥ „†œ JÕ¥ ¢Õ¥ b€ € Ÿ€ € O€ _€ ´¨ +´¨ H´¨ l´¨ |´¨ Œ´¨ ÆÖ¥ ×¥ h›¤ ‡›¤ ¦›¤ ‚§ o#§ #§ ¡#§ Å#§ Ù#§ ý#§ $§ $§ å¥ ‰­¥ 	®¥ .®¥ ^®¥ ~®¥ ®¥  ®¥ °®¥ Â®¥ ÷®¥ ¯¥ +¯¥ A¯¥ U¯¥ i¯¥ 	°¥ 2°¥ ¢¶¨ ±¥ ²¥ B·¨ ÷·¨ 	¸¨ %¸¨ P¸¨ 2¹¨ í²¥ ³¥ ¹³¥ _µ¨ µ¨ œµ¨ Àµ¨ Ðµ¨ àµ¨ ¥ ½¨  q¨ Å›¤ ä›¤ œ¤ "œ¤ Aœ¤ `œ¤ œ¤ žœ¤ ½œ¤ Üœ¤ ûœ¤ ¤ 9¤ X¤ w¤ –¤ µ¤ Ô¤ ó¤ ž¤ ›…¦ Ó…¦ >Â¨ ÐÂ¨ !€ ˆ¥ ¥¥ ·¥ Í¥ &¥ b¥ z¥ Ž¥ š¥ ¸¥ Î¥ ê¥ ¥ ¥ ¥ 0¥ D¥ ü€ …€ º†¦ cÃ¨ sÃ¨ ØÃ¨ øÃ¨ 
+Ä¨ .Ä¨ >Ä¨ RÄ¨ ŸÄ¨ ¿Ä¨ ÑÄ¨ õÄ¨ Å¨ ÛA¨ ûA¨ B¨ B¨ ZB¨ zB¨ ŒB¨ œB¨ (ËŸ iËŸ wËŸ ÓÈ§ iÉ§ ºÉ§ ÒÉ§ €¨ …‡¦ »‡¦ ø‡¦ ˆ¦ 4ˆ¦ ~ˆ¦ öˆ¦ T‰¦ ]z¨ ‰z¨ ·z¨ Øz¨ E{¨ ª{¨ Ê{¨ Ü{¨  |¨ |¨  |¨ {Ê§ “Ê§ •Š¦ ËŠ¦ ëŠ¦ ýŠ¦ !‹¦ 1‹¦ A‹¦ ÁË§ èË§ Ì§ -Ì§ CÌ§ äËŸ ðËŸ 
+ÌŸ ÌŸ 0ÌŸ dÌŸ ¶ÌŸ ÆÌŸ ÐÌŸ ÍŸ ÍŸ ë‹¦ #Œ¦ ¤ÍŸ °ÍŸ ÐÍŸ âÍŸ ôÍŸ BÎŸ PÎŸ bÎŸ nÎŸ ¯ÎŸ ½ÎŸ À×¥ å×¥ 5Ø¥ EØ¥ WØ¥ yØ¥ ‰Ø¥ £Ø¥ .ü§ ©•¨ é•¨ ‘)§ *§ 9*§ K*§ o*§ *§ ‘*§ ¥*§ µ*§  ÏŸ ,ÏŸ LÏŸ ^ÏŸ ¬ÏŸ ºÏŸ ÌÏŸ ØÏŸ ÐŸ 'ÐŸ ðý§ þ§ ,þ§ <þ§ Lþ§ ,§ ¯,§ Á,§ å,§ õ,§ -§ -§ oÙ¥ {Ù¥ Ù¥ ±Ù¥ ÁÙ¥ ÕÙ¥ ôÙ¥ Ú¥ %Ú¥ `Ú¥ lÚ¥ ”ÐŸ  ÐŸ ÀÐŸ ÒÐŸ äÐŸ öÐŸ DÑŸ RÑŸ ×ÑŸ ãÑŸ (ÒŸ 6ÒŸ €Ú¥ ×Ž§ õŽ§ § 7§ K§ _§ § ¨§ Ê§ Ú§ ì§ *§ s§ PC¨ !D¨ «¨ ,«¨ >«¨ $E¨ rE¨ PŸ¤ uŸ¤ ÄŸ¤ O¡¤ h¡¤ ¡¤ 'F¨ ˜1¨ È1¨ 2¨ #2¨ 52¨ Y2¨ i2¨ }2¨ kq¨ Ûq¨ ûq¨ r¨ ;r¨ _r¨ or¨ r¨ ¢Ú¥ ²Ú¥ ÆÚ¥ 7Û¥ CÛ¥ WÛ¥ yÛ¥ ‰Û¥ Û¥ Ü¥ Ô°¨ ¥±¨ Ç±¨ â±¨ ö±¨ ²¨ *²¨ >²¨ ¹²¨ Û²¨ ö²¨ 
+³¨ .³¨ >³¨ R³¨ ¯Ü¥ ¿Ü¥ áÜ¥ ñÜ¥ 'Ý¥ GÝ¥ ƒÝ¥ —Ý¥ ©Ý¥ ¹Ý¥ ÉÝ¥  © Bü¨ Yü¨ `Þ¥ ­Þ¥ öÞ¥ ß¥ (ß¥ 8ß¥ Hß¥ àß¥ @3¨ ×¥ ¥ 5¥ G¥ Y¥ i¥ y¥ ð3¨ ¥ +.§ E¥ e¥ K.§ w¥ Y.§ b«¨ .§ r«¨ ‰¥ ‚«¨ “.§ £.§ ·.§ ™¥ ©¥ |H¨ 7¥ u¥ •¥ §¥ ¹¥ É¥ Ù¥ ¬¨ /¬¨ A¬¨ e¬¨ u¬¨ …¬¨ p5¨ 5¨ ¢5¨ Æ5¨ Ö5¨ æ5¨ g¥ ¥¥ Å¥ ×¥ é¥ ù¥ 	¥ ^­¨ ~­¨ ­¨ ´­¨ Ä­¨ Ô­¨ |®¨ ”®¨ ¸®¨ Ê®¨ Ò‘§ ¤’§ Æ’§ Ø’§ î’§ “§ “§ é© X© ©Ì§ ù“§ ß/§ ÿ/§ 0§ 50§ E0§ W0§ k0§ ŒÍ§ \à¥ ¹© Ù© ë© © © /© ¨ =¨ ]¨ o¨ “¨ Ï¨ ó¨ ¨ +¨ ;¨ K¨ àà¥ ÿŒ¦ 0¦ R¦ Š~¨ ¨ L¨ Æ¨ rŽ¦ ³–¨ {—¨ ™—¨ ¯—¨ Ù—¨ í—¨ ˜¨ ì˜¨ r™¨ æŽ¦ ¦ Ûš¨ Ú¦ W€¨ ž€¨ ¾€¨ Ü€¨  ¨ ¨ C¨ S¨ c¨ Æ¨ æ¨ ‚¨ B‚¨ V‚¨ z‚¨ Š‚¨ š‚¨ õ‚¨ —§ 2—§ T—§ d—§ |—§ ±—§ ý—§ ˜§ 5˜§ ]˜§ q˜§ …˜§ u™§ Š™§ í™§ ›¦ Ó¦ 11§ ×1§ ÷1§ 	2§ -2§ =2§ O2§ c2§ ôÒŸ  ÓŸ  ÓŸ 2ÓŸ DÓŸ ’ÓŸ  ÓŸ %ÔŸ 1ÔŸ vÔŸ „ÔŸ ‹›¨ É›¨ 3œ¨ Sœ¨ eœ¨ ‰œ¨ ™œ¨ ©œ¨ ­‘¦ Ó‘¦ Ä£¤ Ù£¤ î£¤ ¤¤ (¤¤ @¤¤ U¤¤ j¤¤ ¤¤ ”¤¤ ©¤¤ ¾¤¤ Ó¤¤ è¤¤ ý¤¤ ¥¤ '¥¤ <¥¤ Q¥¤ f¥¤ {¥¤ ¥¤ ½¥¤ Ð¥¤ ë¥¤ ¦¤ ¦¤ àƒ¨  „¨ 6„¨ Z„¨ ~„¨ ¸„¨ Ü„¨ ì„¨  …¨ ‘¨ l3§ Ž3§ ž3§ Ä3§ ß3§ 4§ 4§ '4§ Å¨ Ï¥ ï¥ ¥ ¥ #¥ 3¥ ¬´¥ õ¥ õÎ¨ Åµ¥ ¤Å¨ /Æ¨ OÆ¨ aÆ¨ …Æ¨ ™Æ¨ ½Æ¨ ÍÆ¨ áÆ¨ w¥ µ¥ Õ¥ ç¥ ù¥ 	¥ ¥ !Ð¨ ¶¥ ¬¶¥ §¥ å¥ ¥ ¥ )¥ 9¥ I¥ L8§ q·¥ ”·¥ º·¥ Î·¥ â·¥ Û¥ h© ¤© á© © 8© §© þ© è© ö!© ,"© L"© ^"© ‚"© ’"© ¢"© ½"© T#© t#© †#© ª#© Î#© Þ#© î#© ›J¨ òJ¨ NK¨ ÙL¨ ÷L¨ M¨ 9M¨ MM¨ aM¨ ÑÎ§ (ý¨ Cý¨ þ¨ 9§ ¯9§ Á9§ å9§ ù9§ :§ -:§ =:§ »:§ Û:§ í:§ ;§ %;§ I;§ Y;§ i;§ DÕŸ PÕŸ pÕŸ ‚ÕŸ ”ÕŸ âÕŸ ðÕŸ [ÖŸ gÖŸ ¨ÖŸ ¶ÖŸ "þ¨ ;þ¨ _þ¨ ïþ¨ )ÿ¨ ;ÿ¨ Kÿ¨ _ÿ¨ Ö¡ X€ ó€ +€ ;€ ý€ )€ 9€ € $€ ?€ K€ !?© c?© ¥?© ç?© @© N@© @© Ò@© A© @A© TA© ŠA© ÀA© öA© }¸¥ Ñ© vÝ¡ E© Zà¡ rà¡ œ© ‰à¡ §à¡ Çà¡ âà¡ á¡ #á¡ 7á¡ ­ã¡ vä¡ ¬ä¡ Ää¡ âä¡ ýä¡ ,å¡ >å¡ Rå¡ Äå¡ †æ¡ ¼æ¡ Ôæ¡ òæ¡ ç¡ <ç¡ Nç¡ bç¡ Ÿç¡ 'è¡ é¡ -é¡ Ké¡ ié¡ {é¡ é¡ Êé¡ âé¡ ê¡ -ê¡ Mê¡ hê¡ —ê¡ ©ê¡ ½ê¡ Ðê¡ ÿê¡ ë¡ Dë¡ bë¡ ‚ë¡ ë¡ Ìë¡ Þë¡ òë¡ Æì¡ *í¡ Bí¡ \í¡ zí¡ ˜í¡ ¨í¡ ¼í¡ P×Ÿ \×Ÿ |×Ÿ Ž×Ÿ Ü×Ÿ ØŸ ØŸ !ØŸ bØŸ pØŸ Œ© y›§ ››§ ­›§ Ã›§ Û›§ bœ§ „œ§ šœ§ ¾œ§ Úœ§ § § .§ ¡§ Ã§ Ù§ ž§ %ž§ Až§ iž§ ž§ ©ž§ ½ž§ Õž§ © ^© ¹© äØŸ ðØŸ ÙŸ "ÙŸ pÙŸ ~ÙŸ ­ÙŸ ØÙŸ æÙŸ òÙŸ 3ÚŸ ï© B© ‘© 	© ƒ	© Ë	© MÓ¨ Ù© ØO¨ ‡¥ Å¥ å¥ ÷¥ 	¥ ¥ )¥ © AÚŸ 	Q¨ 8Q¨ †Q¨ ½¥ ¥ -¥ ?¥ Q¥ a¥ q¥ °ÚŸ ¼ÚŸ ÜÚŸ îÚŸ <ÛŸ cÛŸ uÛŸ ÛŸ ÂÛŸ ÐÛŸ à¨ ¡§ 5¡§ G¡§ m¡§ …¡§ ¡§ #R¨ „R¨ ãR¨ G¥ ‘^© «^© !© è¨ <© \© n© ~© Ž© DÜŸ PÜŸ pÜŸ “ÜŸ °ÜŸ ÄÜŸ ÖÜŸ $ÝŸ 2ÝŸ ÝŸ ©ÝŸ îÝŸ üÝŸ 2ÞŸ .£§ (b© ÔÞŸ àÞŸ  ßŸ #ßŸ @ßŸ TßŸ fßŸ ´ßŸ ÂßŸ -àŸ 9àŸ ~àŸ ŒàŸ ÂàŸ º'© p)© Ž)©  )© ¸)© à)© ô)© *© sˆœ ‰œ ‹œ Òœ œ ˜œ m‘œ ‘œ Í‘œ !‡¨ A‡¨ ^‡¨ ‚‡¨ ó‡¨ ˆ¨ 'ˆ¨ 7ˆ¨ †ˆ¨ Îb© ùb© c© Ù¨ J”œ V”œ …c© °c© Âc© Ùc© þc© dáŸ páŸ áŸ ³áŸ ÐáŸ äáŸ öáŸ DâŸ RâŸ ½âŸ ÉâŸ ãŸ ãŸ RãŸ Û^© _© c_© |_© c•œ Œ•œ µ•œ i–œ ––œ ¥’© ·’© )—œ V—œ é—œ ˜œ ßC© *D© uD© ÀD© ìD©  E© 6E© E–© e–© s–© …–© ‹“© ÃË¨ ÙË¨ ”© Q”© Z—© z—© ˆ—© š—© g¥ y¥ ‰¥ ™¥ oF© ºF© G© PG© |G© G© ÆG© ìÌ¨ Í¨ %Í¨ CÍ¨ UÍ¨ O¥ ¥ ½¥ Ï¥ á¥ ñ¥ ¥ l© „© ¥© Ã© æ© ø© ‰¨ ¡‰¨ ¾‰¨ â‰¨ SŠ¨ wŠ¨ ‡Š¨ —Š¨ æŠ¨ æ7© !8© p8© «8© Ÿ?§ ¿?§ Ñ?§ õ?§ 	@§ -@§ =@§ M@§ Ñ@§ ñ@§ A§ 'A§ ;A§ _A§ oA§ A§ 1© |‹¨ ”‹¨ «‹¨ É‹¨ ì‹¨ 
+Œ¨ -Œ¨ ?Œ¨ Ì£© )¤© …¤© £¤© Ð¤© ø¤© ¥© $¥© 9¥© O¥© öö¨ ,÷¨ jm© ’¨© ê¥ )¥ ›¥ d©© ü€ € &€ È€ PÙ¨ Žd© ¹d© Ñd© èd© e© #e© 5e© Ke© âS¨ T¨ 8T¨ \T¨ €T¨ ºT¨ ÞT¨ îT¨ U¨ _€ 	W¨ ‚¤§ f© )f© Af© [f© yf© f© «f© Áf© Ýf© ïf© éW¨ ™n© ¯o© Ío© ço© p© #p© }p© ¹p© Ûp© ñp© q© -q© Îg© L÷¨ h÷¨ Œ÷¨ °÷¨ ×÷¨ û÷¨ ø¨ ø¨ ^€ € € ©˜œ Ò˜œ y™œ ¦™œ ð€ 9šœ fšœ ùšœ "›œ Ì<© ä<© =© #=© H=© d=© v=© É›œ ö›œ [¥ {¥ ¥ ¥ ­¥ õ¥ - ¥ M ¥ _ ¥ ƒ ¥ C© ¯© Ï© á© © © %© |© — ¥ © ¥ Í ¥ Ý ¥ í ¥ _!¥ Ý!¥ p"¥ +#¥ C#¥ W#¥ s#¥ ‰#¥ •#¥ §#¥ »#¥ Ï#¥ ’Ô© ¶Ô© ‰œœ ¶œœ Iœ vœ 1© Ï© 0© l¼© 8Ö© 	žœ 6žœ ,€ €€ œ€ öE§ Éžœ öžœ Á#¨ Ñ#¨ ø#¨ $¨ 7$¨ M$¨ v$¨ ˆ$¨ É$¨ á$¨ ø$¨ %¨ &%¨ 8%¨ _%¨ „%¨ %¨ ¯%¨ Ê%¨  € ‰Ÿœ ¶Ÿœ ³© =³© S³© {³© ³© £³© ”Ø© ¸Ø© ðãŸ üãŸ äŸ .äŸ |äŸ ŠäŸ åŸ åŸ `åŸ nåŸ >Ï© Œø¨ ¤ø¨ Åø¨ ãø¨ õø¨ Ð¥§ 5¦§ ¬¦§ Ì¦§ Þ¦§ §§ §§ :§§ J§§ Z§§ §§ ½§§ Ï§§ ó§§ ¨§ +¨§ ;¨§ K¨§ ÝX¨ õX¨ 	Y¨ %Y¨ ;Y¨ TY¨ rY¨ „Y¨ ˜Y¨ ,æŸ 8æŸ XæŸ ¦æŸ ÍæŸ øæŸ çŸ EçŸ SçŸ œà© ÃÙ© ýÙ© 3Ú© ñÏ© Ð© #Ð© GÐ© WÐ© gÐ© ¼çŸ ÈçŸ èçŸ 6èŸ DèŸ VèŸ bèŸ £èŸ ±èŸ ìé© Œ[¨ ¤[¨ »[¨ Ù[¨ ü[¨ \¨ =\¨ [\¨ ~\¨ Ì¶© 4¸©  éŸ ,éŸ LéŸ ^éŸ ¬éŸ ºéŸ ÌéŸ ØéŸ êŸ 'êŸ ‚r© ¢r© ´r© Ør© ür©  s© 0s© šã© Çä© ŒêŸ šêŸ ¶êŸ  ëŸ ëŸ ‡ëŸ —ëŸ ÖëŸ èëŸ -¹© O¹© a¹© ‹¹© Ÿ¹© ³¹© 1ë© Që© cë© ‡ë© —ë© §ë© ,K© DK© [K© \¨ yK© ’K© °K© ÉK© çK©  L© L© 0L© Èò¡ ó¡ )ó¡ Hó¡ dó¡ vó¡ æó¡ Aø¡ µú¡ yû¡ ¯û¡ Çû¡ åû¡  ü¡ /ü¡ Aü¡ Uü¡ ¸ü¡ ¦ý¡ ¾ý¡ ëý¡ 	þ¡ )þ¡ Dþ¡ sþ¡ …þ¡ ™þ¡ ¬þ¡ >©§ ^©§ p©§ ”©§ ¤©§ ´©§ ÷©§ ª§ )ª§ Mª§ ]ª§ mª§ I œ v œ Åt© çt© ùt© #u© Gu© _u© 	¡œ 6¡œ ³ª ãª ª 6 € É¡œ ö¡œ ÊÛ¨ ìÛ¨ þÛ¨ (Ü¨ <Ü¨ PÜ¨ 3Ý¨ jÞ¨ ý© ¡þ© Áþ© Óþ© ÷þ© ÿ© ÿ© Y¬© g¬© ‚¬© #

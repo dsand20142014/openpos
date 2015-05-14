@@ -1,0 +1,44 @@
+/*
+ * Copyright 2004-2007 Freescale Semiconductor, Inc. All Rights Reserved.
+ */
+
+/*
+ * The code contained herein is licensed under the GNU General Public
+ * License. You may obtain a copy of the GNU General Public License
+ * Version 2 or later at the following locations:
+ *
+ * http://www.opensource.org/licenses/gpl-license.html
+ * http://www.gnu.org/copyleft/gpl.html
+ */
+
+/*!
+ * @file mc13783/pmic_power_defs.h
+ * @brief This is the internal header define of PMIC(mc13783) Power driver.
+ *
+ * @ingroup PMIC_POWER
+ */
+
+/*
+ * Includes
+ */
+
+#ifndef __MC13783_POWER_DEFS_H__
+#define __MC13783_POWER_DEFS_H__
+
+/*
+ * Power Up Mode Sense bits
+ */
+
+#define         STATE_ICTEST_MASK       0x000001
+
+#define         STATE_CLKSEL_BIT        1
+#define         STATE_CLKSEL_MASK       0x000002
+
+#define         STATE_PUMS1_BITS        2
+#define         STATE_PUMS1_MASK        0x00000C
+
+#define         STATE_PUMS2_BITS        4
+#define         STATE_PUMS2_MASK        0x000030
+
+#define         STATE_PUMS3_BITS        6
+#def

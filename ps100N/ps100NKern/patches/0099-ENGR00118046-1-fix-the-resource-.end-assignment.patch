@@ -1,0 +1,115 @@
+sg(cm_id_priv, &cm_id_priv->msg);
+	if (ret)
+		goto error1;
+
+	req_msg = (struct cm_req_msg *) cm_id_priv->msg->mad;
+	cm_format_req(req_msg, cm_id_priv, param);
+	cm_id_priv->tid = req_msg->hdr.tid;
+	cm_id_priv->msg->timeout_ms = cm_id_priv->timeout_ms;
+	cm_id_priv->msg->context[1] = (void *) (unsigned long) IB_CM_REQ_SENT;
+
+	cm_id_priv->local_qpn = cm_req_get_local_qpn(req_msg);
+	cm_id_priv->rq_psn = cm_req_get_starting_psn(req_msg);
+
+	spin_lock_irqsave(&cm_id_priv->lock, flags);
+	ret = ib_post_send_mad(cm_id_priv->msg, NULL);
+	if (ret) {
+		spin_unlock_irqrestore(&cm_id_priv->lock, flags);
+		goto error2;
+	}
+	BUG_ON(cm_id->state != IB_CM_IDLE);
+	cm_id->state = IB_CM_REQ_SENT;
+	spin_unlock_irqrestore(&cm_id_priv->lock, flags);
+	return 0;
+
+error2:	cm_free_msg(cm_id_priv->msg);
+error1:	kfree(cm_id_priv->timewait_info);
+out:	return ret;
+}
+EXPORT_SYMBOL(ib_send_cm_req);
+
+static int cm_issue_rej(struct cm_port *port,
+			struct ib_mad_recv_wc *mad_recv_wc,
+			enum ib_cm_rej_reason reason,
+			enum cm_msg_response msg_rejected,
+			void *ari, u8 ari_length)
+{
+	struct ib_mad_send_buf *msg = NULL;
+	struct cm_rej_msg *rej_msg, *rcv_msg;
+	int ret;
+
+	ret = cm_alloc_response_msg(port, mad_recv_wc, &msg);
+	if (ret)
+		return ret;
+
+	/* We just need common CM header information.  Cast to any message. */
+	rcv_msg = (struct cm_rej_msg *) mad_recv_wc->recv_buf.mad;
+	rej_msg = (struct cm_rej_msg *) msg->mad;
+
+	cm_format_mad_hdr(&rej_msg->hdr, CM_REJ_ATTR_ID, rcv_msg->hdr.tid);
+	rej_msg->remote_comm_id = rcv_msg->local_comm_id;
+	rej_msg->local_comm_id = rcv_msg->remote_comm_id;
+	cm_rej_set_msg_rejected(rej_msg, msg_rejected);
+	rej_msg->reason = cpu_to_be16(reason);
+
+	if (ari && ari_length) {
+		cm_rej_set_reject_info_len(rej_msg, ari_length);
+		memcpy(rej_msg->ari, ari, ari_length);
+	}
+
+	ret = ib_post_send_mad(msg, NULL);
+	if (ret)
+		cm_free_msg(msg);
+
+	return ret;
+}
+
+static inline int cm_is_active_peer(__be64 local_ca_guid, __be64 remote_ca_guid,
+				    __be32 local_qpn, __be32 remote_qpn)
+{
+	return (be64_to_cpu(local_ca_guid) > be64_to_cpu(remote_ca_guid) ||
+		((local_ca_guid == remote_ca_guid) &&
+		 (be32_to_cpu(local_qpn) > be32_to_cpu(remote_qpn))));
+}
+
+static void cm_format_paths_from_req(struct cm_req_msg *req_msg,
+					    struct ib_sa_path_rec *primary_path,
+					    struct ib_sa_path_rec *alt_path)
+{
+	memset(primary_path, 0, sizeof *primary_path);
+	primary_path->dgid = req_msg->primary_local_gid;
+	primary_path->sgid = req_msg->primary_remote_gid;
+	primary_path->dlid = req_msg->primary_local_lid;
+	primary_path->slid = req_msg->primary_remote_lid;
+	primary_path->flow_label = cm_req_get_primary_flow_label(req_msg);
+	primary_path->hop_limit = req_msg->primary_hop_limit;
+	primary_path->traffic_class = req_msg->primary_traffic_class;
+	primary_path->reversible = 1;
+	primary_path->pkey = req_msg->pkey;
+	primary_path->sl = cm_req_get_primary_sl(req_msg);
+	primary_path->mtu_selector = IB_SA_EQ;
+	primary_path->mtu = cm_req_get_path_mtu(req_msg);
+	primary_path->rate_selector = IB_SA_EQ;
+	primary_path->rate = cm_req_get_primary_packet_rate(req_msg);
+	primary_path->packet_life_time_selector = IB_SA_EQ;
+	primary_path->packet_life_time =
+		cm_req_get_primary_local_ack_timeout(req_msg);
+	primary_path->packet_life_time -= (primary_path->packet_life_time > 0);
+
+	if (req_msg->alt_local_lid) {
+		memset(alt_path, 0, sizeof *alt_path);
+		alt_path->dgid = req_msg->alt_local_gid;
+		alt_path->sgid = req_msg->alt_remote_gid;
+		alt_path->dlid = req_msg->alt_local_lid;
+		alt_path->slid = req_msg->alt_remote_lid;
+		alt_path->flow_label = cm_req_get_alt_flow_label(req_msg);
+		alt_path->hop_limit = req_msg->alt_hop_limit;
+		alt_path->traffic_class = req_msg->alt_traffic_class;
+		alt_path->reversible = 1;
+		alt_path->pkey = req_msg->pkey;
+		alt_path->sl = cm_req_get_alt_sl(req_msg);
+		alt_path->mtu_selector = IB_SA_EQ;
+		alt_path->mtu = cm_req_get_path_mtu(req_msg);
+		alt_path->rate_selector = IB_SA_EQ;
+		alt_path->rate = cm_req_get_alt_packet_rate(req_msg);
+		alt_path->packet_life_time_selector = I

@@ -1,0 +1,449 @@
+; i++)
+		ipath_7220_put_tid(dd, &tidbase[i], RCVHQ_RCV_TYPE_EXPECTED,
+				   tidinv);
+
+	tidbase = (u64 __iomem *)
+		((char __iomem *)(dd->ipath_kregbase) +
+		 dd->ipath_rcvegrbase + port_egrtid_idx(dd, port)
+		 * sizeof(*tidbase));
+
+	for (i = port ? dd->ipath_rcvegrcnt : dd->ipath_p0_rcvegrcnt; i; i--)
+		ipath_7220_put_tid(dd, &tidbase[i-1], RCVHQ_RCV_TYPE_EAGER,
+			tidinv);
+}
+
+/**
+ * ipath_7220_tidtemplate - setup constants for TID updates
+ * @dd: the infinipath device
+ *
+ * We setup stuff that we use a lot, to avoid calculating each time
+ */
+static void ipath_7220_tidtemplate(struct ipath_devdata *dd)
+{
+	/* For now, we always allocate 4KB buffers (at init) so we can
+	 * receive max size packets.  We may want a module parameter to
+	 * specify 2KB or 4KB and/or make be per port instead of per device
+	 * for those who want to reduce memory footprint.  Note that the
+	 * ipath_rcvhdrentsize size must be large enough to hold the largest
+	 * IB header (currently 96 bytes) that we expect to handle (plus of
+	 * course the 2 dwords of RHF).
+	 */
+	if (dd->ipath_rcvegrbufsize == 2048)
+		dd->ipath_tidtemplate = IBA7220_TID_SZ_2K;
+	else if (dd->ipath_rcvegrbufsize == 4096)
+		dd->ipath_tidtemplate = IBA7220_TID_SZ_4K;
+	else {
+		dev_info(&dd->pcidev->dev, "BUG: unsupported egrbufsize "
+			 "%u, using %u\n", dd->ipath_rcvegrbufsize,
+			 4096);
+		dd->ipath_tidtemplate = IBA7220_TID_SZ_4K;
+	}
+	dd->ipath_tidinvalid = 0;
+}
+
+static int ipath_7220_early_init(struct ipath_devdata *dd)
+{
+	u32 i, s;
+
+	if (strcmp(int_type, "auto") &&
+	    strcmp(int_type, "force_msi") &&
+	    strcmp(int_type, "force_intx")) {
+		ipath_dev_err(dd, "Invalid interrupt_type: '%s', expecting "
+			      "auto, force_msi or force_intx\n", int_type);
+		return -EINVAL;
+	}
+
+	/*
+	 * Control[4] has been added to change the arbitration within
+	 * the SDMA engine between favoring data fetches over descriptor
+	 * fetches.  ipath_sdma_fetch_arb==0 gives data fetches priority.
+	 */
+	if (ipath_sdma_fetch_arb && (dd->ipath_minrev > 1))
+		dd->ipath_control |= 1<<4;
+
+	dd->ipath_flags |= IPATH_4BYTE_TID;
+
+	/*
+	 * For openfabrics, we need to be able to handle an IB header of
+	 * 24 dwords.  HT chip has arbitrary sized receive buffers, so we
+	 * made them the same size as the PIO buffers.  This chip does not
+	 * handle arbitrary size buffers, so we need the header large enough
+	 * to handle largest IB header, but still have room for a 2KB MTU
+	 * standard IB packet.
+	 */
+	dd->ipath_rcvhdrentsize = 24;
+	dd->ipath_rcvhdrsize = IPATH_DFLT_RCVHDRSIZE;
+	dd->ipath_rhf_offset =
+		dd->ipath_rcvhdrentsize - sizeof(u64) / sizeof(u32);
+
+	dd->ipath_rcvegrbufsize = ipath_mtu4096 ? 4096 : 2048;
+	/*
+	 * the min() check here is currently a nop, but it may not always
+	 * be, depending on just how we do ipath_rcvegrbufsize
+	 */
+	dd->ipath_ibmaxlen = min(ipath_mtu4096 ? dd->ipath_piosize4k :
+				 dd->ipath_piosize2k,
+				 dd->ipath_rcvegrbufsize +
+				 (dd->ipath_rcvhdrentsize << 2));
+	dd->ipath_init_ibmaxlen = dd->ipath_ibmaxlen;
+
+	ipath_7220_config_jint(dd, INFINIPATH_JINT_DEFAULT_IDLE_TICKS,
+			       INFINIPATH_JINT_DEFAULT_MAX_PACKETS);
+
+	if (dd->ipath_boardrev) /* no eeprom on emulator */
+		ipath_get_eeprom_info(dd);
+
+	/* start of code to check and print procmon */
+	s = ipath_read_kreg32(dd, IPATH_KREG_OFFSET(ProcMon));
+	s &= ~(1U<<31); /* clear done bit */
+	s |= 1U<<14; /* clear counter (write 1 to clear) */
+	ipath_write_kreg(dd, IPATH_KREG_OFFSET(ProcMon), s);
+	/* make sure clear_counter low long enough before start */
+	ipath_read_kreg32(dd, dd->ipath_kregs->kr_scratch);
+	ipath_read_kreg32(dd, dd->ipath_kregs->kr_scratch);
+
+	s &= ~(1U<<14); /* allow counter to count (before starting) */
+	ipath_write_kreg(dd, IPATH_KREG_OFFSET(ProcMon), s);
+	ipath_read_kreg32(dd, dd->ipath_kregs->kr_scratch);
+	ipath_read_kreg32(dd, dd->ipath_kregs->kr_scratch);
+	s = ipath_read_kreg32(dd, IPATH_KREG_OFFSET(ProcMon));
+
+	s |= 1U<<15; /* start the counter */
+	s &= ~(1U<<31); /* clear done bit */
+	s &= ~0x7ffU; /* clear frequency bits */
+	s |= 0xe29; /* set frequency bits, in case cleared */
+	ipath_write_kreg(dd, IPATH_KREG_OFFSET(ProcMon), s);
+
+	s = 0;
+	for (i = 500; i > 0 && !(s&(1ULL<<31)); i--) {
+		ipath_read_kreg32(dd, dd->ipath_kregs->kr_scratch);
+		s = ipath_read_kreg32(dd, IPATH_KREG_OFFSET(ProcMon));
+	}
+	if (!(s&(1U<<31)))
+		ipath_dev_err(dd, "ProcMon register not valid: 0x%x\n", s);
+	else
+		ipath_dbg("ProcMon=0x%x, count=0x%x\n", s, (s>>16)&0x1ff);
+
+	return 0;
+}
+
+/**
+ * ipath_init_7220_get_base_info - set chip-specific flags for user code
+ * @pd: the infinipath port
+ * @kbase: ipath_base_info pointer
+ *
+ * We set the PCIE flag because the lower bandwidth on PCIe vs
+ * HyperTransport can affect some user packet algorithims.
+ */
+static int ipath_7220_get_base_info(struct ipath_portdata *pd, void *kbase)
+{
+	struct ipath_base_info *kinfo = kbase;
+
+	kinfo->spi_runtime_flags |=
+		IPATH_RUNTIME_PCIE | IPATH_RUNTIME_NODMA_RTAIL |
+		IPATH_RUNTIME_SDMA;
+
+	return 0;
+}
+
+static void ipath_7220_free_irq(struct ipath_devdata *dd)
+{
+	free_irq(dd->ipath_irq, dd);
+	dd->ipath_irq = 0;
+}
+
+static struct ipath_message_header *
+ipath_7220_get_msgheader(struct ipath_devdata *dd, __le32 *rhf_addr)
+{
+	u32 offset = ipath_hdrget_offset(rhf_addr);
+
+	return (struct ipath_message_header *)
+		(rhf_addr - dd->ipath_rhf_offset + offset);
+}
+
+static void ipath_7220_config_ports(struct ipath_devdata *dd, ushort cfgports)
+{
+	u32 nchipports;
+
+	nchipports = ipath_read_kreg32(dd, dd->ipath_kregs->kr_portcnt);
+	if (!cfgports) {
+		int ncpus = num_online_cpus();
+
+		if (ncpus <= 4)
+			dd->ipath_portcnt = 5;
+		else if (ncpus <= 8)
+			dd->ipath_portcnt = 9;
+		if (dd->ipath_portcnt)
+			ipath_dbg("Auto-configured for %u ports, %d cpus "
+				"online\n", dd->ipath_portcnt, ncpus);
+	} else if (cfgports <= nchipports)
+		dd->ipath_portcnt = cfgports;
+	if (!dd->ipath_portcnt) /* none of the above, set to max */
+		dd->ipath_portcnt = nchipports;
+	/*
+	 * chip can be configured for 5, 9, or 17 ports, and choice
+	 * affects number of eager TIDs per port (1K, 2K, 4K).
+	 */
+	if (dd->ipath_portcnt > 9)
+		dd->ipath_rcvctrl |= 2ULL << IBA7220_R_PORTCFG_SHIFT;
+	else if (dd->ipath_portcnt > 5)
+		dd->ipath_rcvctrl |= 1ULL << IBA7220_R_PORTCFG_SHIFT;
+	/* else configure for default 5 receive ports */
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_rcvctrl,
+			 dd->ipath_rcvctrl);
+	dd->ipath_p0_rcvegrcnt = 2048; /* always */
+	if (dd->ipath_flags & IPATH_HAS_SEND_DMA)
+		dd->ipath_pioreserved = 3; /* kpiobufs used for PIO */
+}
+
+
+static int ipath_7220_get_ib_cfg(struct ipath_devdata *dd, int which)
+{
+	int lsb, ret = 0;
+	u64 maskr; /* right-justified mask */
+
+	switch (which) {
+	case IPATH_IB_CFG_HRTBT: /* Get Heartbeat off/enable/auto */
+		lsb = IBA7220_IBC_HRTBT_SHIFT;
+		maskr = IBA7220_IBC_HRTBT_MASK;
+		break;
+
+	case IPATH_IB_CFG_LWID_ENB: /* Get allowed Link-width */
+		ret = dd->ipath_link_width_enabled;
+		goto done;
+
+	case IPATH_IB_CFG_LWID: /* Get currently active Link-width */
+		ret = dd->ipath_link_width_active;
+		goto done;
+
+	case IPATH_IB_CFG_SPD_ENB: /* Get allowed Link speeds */
+		ret = dd->ipath_link_speed_enabled;
+		goto done;
+
+	case IPATH_IB_CFG_SPD: /* Get current Link spd */
+		ret = dd->ipath_link_speed_active;
+		goto done;
+
+	case IPATH_IB_CFG_RXPOL_ENB: /* Get Auto-RX-polarity enable */
+		lsb = IBA7220_IBC_RXPOL_SHIFT;
+		maskr = IBA7220_IBC_RXPOL_MASK;
+		break;
+
+	case IPATH_IB_CFG_LREV_ENB: /* Get Auto-Lane-reversal enable */
+		lsb = IBA7220_IBC_LREV_SHIFT;
+		maskr = IBA7220_IBC_LREV_MASK;
+		break;
+
+	case IPATH_IB_CFG_LINKLATENCY:
+		ret = ipath_read_kreg64(dd, dd->ipath_kregs->kr_ibcddrstatus)
+			& IBA7220_DDRSTAT_LINKLAT_MASK;
+		goto done;
+
+	default:
+		ret = -ENOTSUPP;
+		goto done;
+	}
+	ret = (int)((dd->ipath_ibcddrctrl >> lsb) & maskr);
+done:
+	return ret;
+}
+
+static int ipath_7220_set_ib_cfg(struct ipath_devdata *dd, int which, u32 val)
+{
+	int lsb, ret = 0, setforce = 0;
+	u64 maskr; /* right-justified mask */
+
+	switch (which) {
+	case IPATH_IB_CFG_LIDLMC:
+		/*
+		 * Set LID and LMC. Combined to avoid possible hazard
+		 * caller puts LMC in 16MSbits, DLID in 16LSbits of val
+		 */
+		lsb = IBA7220_IBC_DLIDLMC_SHIFT;
+		maskr = IBA7220_IBC_DLIDLMC_MASK;
+		break;
+
+	case IPATH_IB_CFG_HRTBT: /* set Heartbeat off/enable/auto */
+		if (val & IPATH_IB_HRTBT_ON &&
+			(dd->ipath_flags & IPATH_NO_HRTBT))
+			goto bail;
+		lsb = IBA7220_IBC_HRTBT_SHIFT;
+		maskr = IBA7220_IBC_HRTBT_MASK;
+		break;
+
+	case IPATH_IB_CFG_LWID_ENB: /* set allowed Link-width */
+		/*
+		 * As with speed, only write the actual register if
+		 * the link is currently down, otherwise takes effect
+		 * on next link change.
+		 */
+		dd->ipath_link_width_enabled = val;
+		if ((dd->ipath_flags & (IPATH_LINKDOWN|IPATH_LINKINIT)) !=
+			IPATH_LINKDOWN)
+			goto bail;
+		/*
+		 * We set the IPATH_IB_FORCE_NOTIFY bit so updown
+		 * will get called because we want update
+		 * link_width_active, and the change may not take
+		 * effect for some time (if we are in POLL), so this
+		 * flag will force the updown routine to be called
+		 * on the next ibstatuschange down interrupt, even
+		 * if it's not an down->up transition.
+		 */
+		val--; /* convert from IB to chip */
+		maskr = IBA7220_IBC_WIDTH_MASK;
+		lsb = IBA7220_IBC_WIDTH_SHIFT;
+		setforce = 1;
+		dd->ipath_flags |= IPATH_IB_FORCE_NOTIFY;
+		break;
+
+	case IPATH_IB_CFG_SPD_ENB: /* set allowed Link speeds */
+		/*
+		 * If we turn off IB1.2, need to preset SerDes defaults,
+		 * but not right now. Set a flag for the next time
+		 * we command the link down.  As with width, only write the
+		 * actual register if the link is currently down, otherwise
+		 * takes effect on next link change.  Since setting is being
+		 * explictly requested (via MAD or sysfs), clear autoneg
+		 * failure status if speed autoneg is enabled.
+		 */
+		dd->ipath_link_speed_enabled = val;
+		if (dd->ipath_ibcddrctrl & IBA7220_IBC_IBTA_1_2_MASK &&
+		    !(val & (val - 1)))
+			dd->ipath_presets_needed = 1;
+		if ((dd->ipath_flags & (IPATH_LINKDOWN|IPATH_LINKINIT)) !=
+			IPATH_LINKDOWN)
+			goto bail;
+		/*
+		 * We set the IPATH_IB_FORCE_NOTIFY bit so updown
+		 * will get called because we want update
+		 * link_speed_active, and the change may not take
+		 * effect for some time (if we are in POLL), so this
+		 * flag will force the updown routine to be called
+		 * on the next ibstatuschange down interrupt, even
+		 * if it's not an down->up transition.  When setting
+		 * speed autoneg, clear AUTONEG_FAILED.
+		 */
+		if (val == (IPATH_IB_SDR | IPATH_IB_DDR)) {
+			val = IBA7220_IBC_SPEED_AUTONEG_MASK |
+				IBA7220_IBC_IBTA_1_2_MASK;
+			dd->ipath_flags &= ~IPATH_IB_AUTONEG_FAILED;
+		} else
+			val = val == IPATH_IB_DDR ?  IBA7220_IBC_SPEED_DDR
+				: IBA7220_IBC_SPEED_SDR;
+		maskr = IBA7220_IBC_SPEED_AUTONEG_MASK |
+			IBA7220_IBC_IBTA_1_2_MASK;
+		lsb = 0; /* speed bits are low bits */
+		setforce = 1;
+		break;
+
+	case IPATH_IB_CFG_RXPOL_ENB: /* set Auto-RX-polarity enable */
+		lsb = IBA7220_IBC_RXPOL_SHIFT;
+		maskr = IBA7220_IBC_RXPOL_MASK;
+		break;
+
+	case IPATH_IB_CFG_LREV_ENB: /* set Auto-Lane-reversal enable */
+		lsb = IBA7220_IBC_LREV_SHIFT;
+		maskr = IBA7220_IBC_LREV_MASK;
+		break;
+
+	default:
+		ret = -ENOTSUPP;
+		goto bail;
+	}
+	dd->ipath_ibcddrctrl &= ~(maskr << lsb);
+	dd->ipath_ibcddrctrl |= (((u64) val & maskr) << lsb);
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_ibcddrctrl,
+			 dd->ipath_ibcddrctrl);
+	if (setforce)
+		dd->ipath_flags |= IPATH_IB_FORCE_NOTIFY;
+bail:
+	return ret;
+}
+
+static void ipath_7220_read_counters(struct ipath_devdata *dd,
+				     struct infinipath_counters *cntrs)
+{
+	u64 *counters = (u64 *) cntrs;
+	int i;
+
+	for (i = 0; i < sizeof(*cntrs) / sizeof(u64); i++)
+		counters[i] = ipath_snap_cntr(dd, i);
+}
+
+/* if we are using MSI, try to fallback to INTx */
+static int ipath_7220_intr_fallback(struct ipath_devdata *dd)
+{
+	if (dd->ipath_msi_lo) {
+		dev_info(&dd->pcidev->dev, "MSI interrupt not detected,"
+			" trying INTx interrupts\n");
+		ipath_7220_nomsi(dd);
+		ipath_enable_intx(dd->pcidev);
+		/*
+		 * some newer kernels require free_irq before disable_msi,
+		 * and irq can be changed during disable and intx enable
+		 * and we need to therefore use the pcidev->irq value,
+		 * not our saved MSI value.
+		 */
+		dd->ipath_irq = dd->pcidev->irq;
+		if (request_irq(dd->ipath_irq, ipath_intr, IRQF_SHARED,
+			IPATH_DRV_NAME, dd))
+			ipath_dev_err(dd,
+				"Could not re-request_irq for INTx\n");
+		return 1;
+	}
+	return 0;
+}
+
+/*
+ * reset the XGXS (between serdes and IBC).  Slightly less intrusive
+ * than resetting the IBC or external link state, and useful in some
+ * cases to cause some retraining.  To do this right, we reset IBC
+ * as well.
+ */
+static void ipath_7220_xgxs_reset(struct ipath_devdata *dd)
+{
+	u64 val, prev_val;
+
+	prev_val = ipath_read_kreg64(dd, dd->ipath_kregs->kr_xgxsconfig);
+	val = prev_val | INFINIPATH_XGXS_RESET;
+	prev_val &= ~INFINIPATH_XGXS_RESET; /* be sure */
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_control,
+			 dd->ipath_control & ~INFINIPATH_C_LINKENABLE);
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_xgxsconfig, val);
+	ipath_read_kreg32(dd, dd->ipath_kregs->kr_scratch);
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_xgxsconfig, prev_val);
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_control,
+			 dd->ipath_control);
+}
+
+
+/* Still needs cleanup, too much hardwired stuff */
+static void autoneg_send(struct ipath_devdata *dd,
+	u32 *hdr, u32 dcnt, u32 *data)
+{
+	int i;
+	u64 cnt;
+	u32 __iomem *piobuf;
+	u32 pnum;
+
+	i = 0;
+	cnt = 7 + dcnt + 1; /* 7 dword header, dword data, icrc */
+	while (!(piobuf = ipath_getpiobuf(dd, cnt, &pnum))) {
+		if (i++ > 15) {
+			ipath_dbg("Couldn't get pio buffer for send\n");
+			return;
+		}
+		udelay(2);
+	}
+	if (dd->ipath_flags&IPATH_HAS_PBC_CNT)
+		cnt |= 0x80000000UL<<32; /* mark as VL15 */
+	writeq(cnt, piobuf);
+	ipath_flush_wc();
+	__iowrite32_copy(piobuf + 2, hdr, 7);
+	__iowrite32_copy(piobuf + 9, data, dcnt);
+	ipath_flush_wc();
+}
+
+/*
+ * _star

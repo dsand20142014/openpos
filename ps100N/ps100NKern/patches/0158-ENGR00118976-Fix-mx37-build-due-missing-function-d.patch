@@ -1,0 +1,35 @@
+_length = lcdclor;
+	hitfb_fix.visual = (hitfb_var.bits_per_pixel == 8) ?
+	    FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
+	hitfb_var.yres = ldvndr + 1;
+	hitfb_var.xres_virtual = hitfb_var.xres;
+	hitfb_var.yres_virtual = hitfb_fix.smem_len / lcdclor;
+	switch (hitfb_var.bits_per_pixel) {
+	case 8:
+		hitfb_var.red.offset = 0;
+		hitfb_var.red.length = 8;
+		hitfb_var.green.offset = 0;
+		hitfb_var.green.length = 8;
+		hitfb_var.blue.offset = 0;
+		hitfb_var.blue.length = 8;
+		hitfb_var.transp.offset = 0;
+		hitfb_var.transp.length = 0;
+		break;
+	case 16:		/* RGB 565 */
+		hitfb_var.red.offset = 11;
+		hitfb_var.red.length = 5;
+		hitfb_var.green.offset = 5;
+		hitfb_var.green.length = 6;
+		hitfb_var.blue.offset = 0;
+		hitfb_var.blue.length = 5;
+		hitfb_var.transp.offset = 0;
+		hitfb_var.transp.length = 0;
+		break;
+	}
+
+	info = framebuffer_alloc(sizeof(u32) * 16, &dev->dev);
+	if (unlikely(!info))
+		return -ENOMEM;
+
+	info->fbops = &hitfb_ops;
+	i

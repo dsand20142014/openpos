@@ -1,0 +1,1 @@
+cmd_/home/root/ps100N/src/driver100N/mag/trimag_spi.ko := /opt/freescale/usr/local/gcc-4.1.2-glibc-2.5-nptl-3/arm-none-linux-gnueabi/bin/arm-none-linux-gnueabi-ld -EL -r    -o /home/root/ps100N/src/driver100N/mag/trimag_spi.ko /home/root/ps100N/src/driver100N/mag/trimag_spi.o /home/root/ps100N/src/driver100N/mag/trimag_spi.mod.o

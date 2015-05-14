@@ -1,0 +1,556 @@
+= sizeof(cmd.type);
+
+	switch (cmd.type) {
+	case IPATH_CMD_ASSIGN_PORT:
+	case __IPATH_CMD_USER_INIT:
+	case IPATH_CMD_USER_INIT:
+		copy = sizeof(cmd.cmd.user_info);
+		dest = &cmd.cmd.user_info;
+		src = &ucmd->cmd.user_info;
+		break;
+	case IPATH_CMD_RECV_CTRL:
+		copy = sizeof(cmd.cmd.recv_ctrl);
+		dest = &cmd.cmd.recv_ctrl;
+		src = &ucmd->cmd.recv_ctrl;
+		break;
+	case IPATH_CMD_PORT_INFO:
+		copy = sizeof(cmd.cmd.port_info);
+		dest = &cmd.cmd.port_info;
+		src = &ucmd->cmd.port_info;
+		break;
+	case IPATH_CMD_TID_UPDATE:
+	case IPATH_CMD_TID_FREE:
+		copy = sizeof(cmd.cmd.tid_info);
+		dest = &cmd.cmd.tid_info;
+		src = &ucmd->cmd.tid_info;
+		break;
+	case IPATH_CMD_SET_PART_KEY:
+		copy = sizeof(cmd.cmd.part_key);
+		dest = &cmd.cmd.part_key;
+		src = &ucmd->cmd.part_key;
+		break;
+	case __IPATH_CMD_SLAVE_INFO:
+		copy = sizeof(cmd.cmd.slave_mask_addr);
+		dest = &cmd.cmd.slave_mask_addr;
+		src = &ucmd->cmd.slave_mask_addr;
+		break;
+	case IPATH_CMD_PIOAVAILUPD:	// force an update of PIOAvail reg
+		copy = 0;
+		src = NULL;
+		dest = NULL;
+		break;
+	case IPATH_CMD_POLL_TYPE:
+		copy = sizeof(cmd.cmd.poll_type);
+		dest = &cmd.cmd.poll_type;
+		src = &ucmd->cmd.poll_type;
+		break;
+	case IPATH_CMD_ARMLAUNCH_CTRL:
+		copy = sizeof(cmd.cmd.armlaunch_ctrl);
+		dest = &cmd.cmd.armlaunch_ctrl;
+		src = &ucmd->cmd.armlaunch_ctrl;
+		break;
+	case IPATH_CMD_SDMA_INFLIGHT:
+		copy = sizeof(cmd.cmd.sdma_inflight);
+		dest = &cmd.cmd.sdma_inflight;
+		src = &ucmd->cmd.sdma_inflight;
+		break;
+	case IPATH_CMD_SDMA_COMPLETE:
+		copy = sizeof(cmd.cmd.sdma_complete);
+		dest = &cmd.cmd.sdma_complete;
+		src = &ucmd->cmd.sdma_complete;
+		break;
+	default:
+		ret = -EINVAL;
+		goto bail;
+	}
+
+	if (copy) {
+		if ((count - consumed) < copy) {
+			ret = -EINVAL;
+			goto bail;
+		}
+
+		if (copy_from_user(dest, src, copy)) {
+			ret = -EFAULT;
+			goto bail;
+		}
+
+		consumed += copy;
+	}
+
+	pd = port_fp(fp);
+	if (!pd && cmd.type != __IPATH_CMD_USER_INIT &&
+		cmd.type != IPATH_CMD_ASSIGN_PORT) {
+		ret = -EINVAL;
+		goto bail;
+	}
+
+	switch (cmd.type) {
+	case IPATH_CMD_ASSIGN_PORT:
+		ret = ipath_assign_port(fp, &cmd.cmd.user_info);
+		if (ret)
+			goto bail;
+		break;
+	case __IPATH_CMD_USER_INIT:
+		/* backwards compatibility, get port first */
+		ret = ipath_assign_port(fp, &cmd.cmd.user_info);
+		if (ret)
+			goto bail;
+		/* and fall through to current version. */
+	case IPATH_CMD_USER_INIT:
+		ret = ipath_do_user_init(fp, &cmd.cmd.user_info);
+		if (ret)
+			goto bail;
+		ret = ipath_get_base_info(
+			fp, (void __user *) (unsigned long)
+			cmd.cmd.user_info.spu_base_info,
+			cmd.cmd.user_info.spu_base_info_size);
+		break;
+	case IPATH_CMD_RECV_CTRL:
+		ret = ipath_manage_rcvq(pd, subport_fp(fp), cmd.cmd.recv_ctrl);
+		break;
+	case IPATH_CMD_PORT_INFO:
+		ret = ipath_port_info(pd, subport_fp(fp),
+				      (struct ipath_port_info __user *)
+				      (unsigned long) cmd.cmd.port_info);
+		break;
+	case IPATH_CMD_TID_UPDATE:
+		ret = ipath_tid_update(pd, fp, &cmd.cmd.tid_info);
+		break;
+	case IPATH_CMD_TID_FREE:
+		ret = ipath_tid_free(pd, subport_fp(fp), &cmd.cmd.tid_info);
+		break;
+	case IPATH_CMD_SET_PART_KEY:
+		ret = ipath_set_part_key(pd, cmd.cmd.part_key);
+		break;
+	case __IPATH_CMD_SLAVE_INFO:
+		ret = ipath_get_slave_info(pd,
+					   (void __user *) (unsigned long)
+					   cmd.cmd.slave_mask_addr);
+		break;
+	case IPATH_CMD_PIOAVAILUPD:
+		ipath_force_pio_avail_update(pd->port_dd);
+		break;
+	case IPATH_CMD_POLL_TYPE:
+		pd->poll_type = cmd.cmd.poll_type;
+		break;
+	case IPATH_CMD_ARMLAUNCH_CTRL:
+		if (cmd.cmd.armlaunch_ctrl)
+			ipath_enable_armlaunch(pd->port_dd);
+		else
+			ipath_disable_armlaunch(pd->port_dd);
+		break;
+	case IPATH_CMD_SDMA_INFLIGHT:
+		ret = ipath_sdma_get_inflight(user_sdma_queue_fp(fp),
+					      (u32 __user *) (unsigned long)
+					      cmd.cmd.sdma_inflight);
+		break;
+	case IPATH_CMD_SDMA_COMPLETE:
+		ret = ipath_sdma_get_complete(pd->port_dd,
+					      user_sdma_queue_fp(fp),
+					      (u32 __user *) (unsigned long)
+					      cmd.cmd.sdma_complete);
+		break;
+	}
+
+	if (ret >= 0)
+		ret = consumed;
+
+bail:
+	return ret;
+}
+
+static ssize_t ipath_writev(struct kiocb *iocb, const struct iovec *iov,
+			    unsigned long dim, loff_t off)
+{
+	struct file *filp = iocb->ki_filp;
+	struct ipath_filedata *fp = filp->private_data;
+	struct ipath_portdata *pd = port_fp(filp);
+	struct ipath_user_sdma_queue *pq = fp->pq;
+
+	if (!dim)
+		return -EINVAL;
+
+	return ipath_user_sdma_writev(pd->port_dd, pq, iov, dim);
+}
+
+static struct class *ipath_class;
+
+static int init_cdev(int minor, char *name, const struct file_operations *fops,
+		     struct cdev **cdevp, struct device **devp)
+{
+	const dev_t dev = MKDEV(IPATH_MAJOR, minor);
+	struct cdev *cdev = NULL;
+	struct device *device = NULL;
+	int ret;
+
+	cdev = cdev_alloc();
+	if (!cdev) {
+		printk(KERN_ERR IPATH_DRV_NAME
+		       ": Could not allocate cdev for minor %d, %s\n",
+		       minor, name);
+		ret = -ENOMEM;
+		goto done;
+	}
+
+	cdev->owner = THIS_MODULE;
+	cdev->ops = fops;
+	kobject_set_name(&cdev->kobj, name);
+
+	ret = cdev_add(cdev, dev, 1);
+	if (ret < 0) {
+		printk(KERN_ERR IPATH_DRV_NAME
+		       ": Could not add cdev for minor %d, %s (err %d)\n",
+		       minor, name, -ret);
+		goto err_cdev;
+	}
+
+	device = device_create(ipath_class, NULL, dev, NULL, name);
+
+	if (IS_ERR(device)) {
+		ret = PTR_ERR(device);
+		printk(KERN_ERR IPATH_DRV_NAME ": Could not create "
+		       "device for minor %d, %s (err %d)\n",
+		       minor, name, -ret);
+		goto err_cdev;
+	}
+
+	goto done;
+
+err_cdev:
+	cdev_del(cdev);
+	cdev = NULL;
+
+done:
+	if (ret >= 0) {
+		*cdevp = cdev;
+		*devp = device;
+	} else {
+		*cdevp = NULL;
+		*devp = NULL;
+	}
+
+	return ret;
+}
+
+int ipath_cdev_init(int minor, char *name, const struct file_operations *fops,
+		    struct cdev **cdevp, struct device **devp)
+{
+	return init_cdev(minor, name, fops, cdevp, devp);
+}
+
+static void cleanup_cdev(struct cdev **cdevp,
+			 struct device **devp)
+{
+	struct device *dev = *devp;
+
+	if (dev) {
+		device_unregister(dev);
+		*devp = NULL;
+	}
+
+	if (*cdevp) {
+		cdev_del(*cdevp);
+		*cdevp = NULL;
+	}
+}
+
+void ipath_cdev_cleanup(struct cdev **cdevp,
+			struct device **devp)
+{
+	cleanup_cdev(cdevp, devp);
+}
+
+static struct cdev *wildcard_cdev;
+static struct device *wildcard_dev;
+
+static const dev_t dev = MKDEV(IPATH_MAJOR, 0);
+
+static int user_init(void)
+{
+	int ret;
+
+	ret = register_chrdev_region(dev, IPATH_NMINORS, IPATH_DRV_NAME);
+	if (ret < 0) {
+		printk(KERN_ERR IPATH_DRV_NAME ": Could not register "
+		       "chrdev region (err %d)\n", -ret);
+		goto done;
+	}
+
+	ipath_class = class_create(THIS_MODULE, IPATH_DRV_NAME);
+
+	if (IS_ERR(ipath_class)) {
+		ret = PTR_ERR(ipath_class);
+		printk(KERN_ERR IPATH_DRV_NAME ": Could not create "
+		       "device class (err %d)\n", -ret);
+		goto bail;
+	}
+
+	goto done;
+bail:
+	unregister_chrdev_region(dev, IPATH_NMINORS);
+done:
+	return ret;
+}
+
+static void user_cleanup(void)
+{
+	if (ipath_class) {
+		class_destroy(ipath_class);
+		ipath_class = NULL;
+	}
+
+	unregister_chrdev_region(dev, IPATH_NMINORS);
+}
+
+static atomic_t user_count = ATOMIC_INIT(0);
+static atomic_t user_setup = ATOMIC_INIT(0);
+
+int ipath_user_add(struct ipath_devdata *dd)
+{
+	char name[10];
+	int ret;
+
+	if (atomic_inc_return(&user_count) == 1) {
+		ret = user_init();
+		if (ret < 0) {
+			ipath_dev_err(dd, "Unable to set up user support: "
+				      "error %d\n", -ret);
+			goto bail;
+		}
+		ret = init_cdev(0, "ipath", &ipath_file_ops, &wildcard_cdev,
+				&wildcard_dev);
+		if (ret < 0) {
+			ipath_dev_err(dd, "Could not create wildcard "
+				      "minor: error %d\n", -ret);
+			goto bail_user;
+		}
+
+		atomic_set(&user_setup, 1);
+	}
+
+	snprintf(name, sizeof(name), "ipath%d", dd->ipath_unit);
+
+	ret = init_cdev(dd->ipath_unit + 1, name, &ipath_file_ops,
+			&dd->user_cdev, &dd->user_dev);
+	if (ret < 0)
+		ipath_dev_err(dd, "Could not create user minor %d, %s\n",
+			      dd->ipath_unit + 1, name);
+
+	goto bail;
+
+bail_user:
+	user_cleanup();
+bail:
+	return ret;
+}
+
+void ipath_user_remove(struct ipath_devdata *dd)
+{
+	cleanup_cdev(&dd->user_cdev, &dd->user_dev);
+
+	if (atomic_dec_return(&user_count) == 0) {
+		if (atomic_read(&user_setup) == 0)
+			goto bail;
+
+		cleanup_cdev(&wildcard_cdev, &wildcard_dev);
+		user_cleanup();
+
+		atomic_set(&user_setup, 0);
+	}
+bail:
+	return;
+}
+                          /*
+ * Ultra Wide Band
+ * Information Element Handling
+ *
+ * Copyright (C) 2005-2006 Intel Corporation
+ * Inaky Perez-Gonzalez <inaky.perez-gonzalez@intel.com>
+ * Reinette Chatre <reinette.chatre@intel.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License version
+ * 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
+ *
+ *
+ * FIXME: docs
+ */
+
+#include "uwb-internal.h"
+
+/**
+ * uwb_ie_next - get the next IE in a buffer
+ * @ptr: start of the buffer containing the IE data
+ * @len: length of the buffer
+ *
+ * Both @ptr and @len are updated so subsequent calls to uwb_ie_next()
+ * will get the next IE.
+ *
+ * NULL is returned (and @ptr and @len will not be updated) if there
+ * are no more IEs in the buffer or the buffer is too short.
+ */
+struct uwb_ie_hdr *uwb_ie_next(void **ptr, size_t *len)
+{
+	struct uwb_ie_hdr *hdr;
+	size_t ie_len;
+
+	if (*len < sizeof(struct uwb_ie_hdr))
+		return NULL;
+
+	hdr = *ptr;
+	ie_len = sizeof(struct uwb_ie_hdr) + hdr->length;
+
+	if (*len < ie_len)
+		return NULL;
+
+	*ptr += ie_len;
+	*len -= ie_len;
+
+	return hdr;
+}
+EXPORT_SYMBOL_GPL(uwb_ie_next);
+
+/**
+ * uwb_ie_dump_hex - print IEs to a character buffer
+ * @ies: the IEs to print.
+ * @len: length of all the IEs.
+ * @buf: the destination buffer.
+ * @size: size of @buf.
+ *
+ * Returns the number of characters written.
+ */
+int uwb_ie_dump_hex(const struct uwb_ie_hdr *ies, size_t len,
+		    char *buf, size_t size)
+{
+	void *ptr;
+	const struct uwb_ie_hdr *ie;
+	int r = 0;
+	u8 *d;
+
+	ptr = (void *)ies;
+	for (;;) {
+		ie = uwb_ie_next(&ptr, &len);
+		if (!ie)
+			break;
+
+		r += scnprintf(buf + r, size - r, "%02x %02x",
+			       (unsigned)ie->element_id,
+			       (unsigned)ie->length);
+		d = (uint8_t *)ie + sizeof(struct uwb_ie_hdr);
+		while (d != ptr && r < size)
+			r += scnprintf(buf + r, size - r, " %02x", (unsigned)*d++);
+		if (r < size)
+			buf[r++] = '\n';
+	};
+
+	return r;
+}
+
+/**
+ * Get the IEs that a radio controller is sending in its beacon
+ *
+ * @uwb_rc:  UWB Radio Controller
+ * @returns: Size read from the system
+ *
+ * We don't need to lock the uwb_rc's mutex because we don't modify
+ * anything. Once done with the iedata buffer, call
+ * uwb_rc_ie_release(iedata). Don't call kfree on it.
+ */
+static
+ssize_t uwb_rc_get_ie(struct uwb_rc *uwb_rc, struct uwb_rc_evt_get_ie **pget_ie)
+{
+	ssize_t result;
+	struct device *dev = &uwb_rc->uwb_dev.dev;
+	struct uwb_rccb *cmd = NULL;
+	struct uwb_rceb *reply = NULL;
+	struct uwb_rc_evt_get_ie *get_ie;
+
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	if (cmd == NULL)
+		return -ENOMEM;
+
+	cmd->bCommandType = UWB_RC_CET_GENERAL;
+	cmd->wCommand = cpu_to_le16(UWB_RC_CMD_GET_IE);
+	result = uwb_rc_vcmd(uwb_rc, "GET_IE", cmd, sizeof(*cmd),
+			     UWB_RC_CET_GENERAL, UWB_RC_CMD_GET_IE,
+			     &reply);
+	kfree(cmd);
+	if (result < 0)
+		return result;
+
+	get_ie = container_of(reply, struct uwb_rc_evt_get_ie, rceb);
+	if (result < sizeof(*get_ie)) {
+		dev_err(dev, "not enough data returned for decoding GET IE "
+			"(%zu bytes received vs %zu needed)\n",
+			result, sizeof(*get_ie));
+		return -EINVAL;
+	} else if (result < sizeof(*get_ie) + le16_to_cpu(get_ie->wIELength)) {
+		dev_err(dev, "not enough data returned for decoding GET IE "
+			"payload (%zu bytes received vs %zu needed)\n", result,
+			sizeof(*get_ie) + le16_to_cpu(get_ie->wIELength));
+		return -EINVAL;
+	}
+
+	*pget_ie = get_ie;
+	return result;
+}
+
+
+/**
+ * Replace all IEs currently being transmitted by a device
+ *
+ * @cmd:    pointer to the SET-IE command with the IEs to set
+ * @size:   size of @buf
+ */
+int uwb_rc_set_ie(struct uwb_rc *rc, struct uwb_rc_cmd_set_ie *cmd)
+{
+	int result;
+	struct device *dev = &rc->uwb_dev.dev;
+	struct uwb_rc_evt_set_ie reply;
+
+	reply.rceb.bEventType = UWB_RC_CET_GENERAL;
+	reply.rceb.wEvent = UWB_RC_CMD_SET_IE;
+	result = uwb_rc_cmd(rc, "SET-IE", &cmd->rccb,
+			    sizeof(*cmd) + le16_to_cpu(cmd->wIELength),
+			    &reply.rceb, sizeof(reply));
+	if (result < 0)
+		goto error_cmd;
+	else if (result != sizeof(reply)) {
+		dev_err(dev, "SET-IE: not enough data to decode reply "
+			"(%d bytes received vs %zu needed)\n",
+			result, sizeof(reply));
+		result = -EIO;
+	} else if (reply.bResultCode != UWB_RC_RES_SUCCESS) {
+		dev_err(dev, "SET-IE: command execution failed: %s (%d)\n",
+			uwb_rc_strerror(reply.bResultCode), reply.bResultCode);
+		result = -EIO;
+	} else
+		result = 0;
+error_cmd:
+	return result;
+}
+
+/* Cleanup the whole IE management subsystem */
+void uwb_rc_ie_init(struct uwb_rc *uwb_rc)
+{
+	mutex_init(&uwb_rc->ies_mutex);
+}
+
+
+/**
+ * uwb_rc_ie_setup - setup a radio controller's IE manager
+ * @uwb_rc: the radio controller.
+ *
+ * The current set of IEs are obtained from the hardware with a GET-IE
+ * comma

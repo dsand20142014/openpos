@@ -1,0 +1,743 @@
+omp_ccbq);
+
+		/* Preserve the software timeout condition */
+		if (sym_get_cam_status(cmd) != DID_TIME_OUT)
+			sym_set_cam_status(cmd, cam_status);
+		++i;
+#if 0
+printf("XXXX TASK @%p CLEARED\n", cp);
+#endif
+	}
+	return i;
+}
+
+/*
+ *  chip handler for TASKS recovery
+ *
+ *  We cannot safely abort a command, while the SCRIPTS 
+ *  processor is running, since we just would be in race 
+ *  with it.
+ *
+ *  As long as we have tasks to abort, we keep the SEM 
+ *  bit set in the ISTAT. When this bit is set, the 
+ *  SCRIPTS processor interrupts (SIR_SCRIPT_STOPPED) 
+ *  each time it enters the scheduler.
+ *
+ *  If we have to reset a target, clear tasks of a unit,
+ *  or to perform the abort of a disconnected job, we 
+ *  restart the SCRIPTS for selecting the target. Once 
+ *  selected, the SCRIPTS interrupts (SIR_TARGET_SELECTED).
+ *  If it loses arbitration, the SCRIPTS will interrupt again 
+ *  the next time it will enter its scheduler, and so on ...
+ *
+ *  On SIR_TARGET_SELECTED, we scan for the more 
+ *  appropriate thing to do:
+ *
+ *  - If nothing, we just sent a M_ABORT message to the 
+ *    target to get rid of the useless SCSI bus ownership.
+ *    According to the specs, no tasks shall be affected.
+ *  - If the target is to be reset, we send it a M_RESET 
+ *    message.
+ *  - If a logical UNIT is to be cleared , we send the 
+ *    IDENTIFY(lun) + M_ABORT.
+ *  - If an untagged task is to be aborted, we send the 
+ *    IDENTIFY(lun) + M_ABORT.
+ *  - If a tagged task is to be aborted, we send the 
+ *    IDENTIFY(lun) + task attributes + M_ABORT_TAG.
+ *
+ *  Once our 'kiss of death' :) message has been accepted 
+ *  by the target, the SCRIPTS interrupts again 
+ *  (SIR_ABORT_SENT). On this interrupt, we complete 
+ *  all the CCBs that should have been aborted by the 
+ *  target according to our message.
+ */
+static void sym_sir_task_recovery(struct sym_hcb *np, int num)
+{
+	SYM_QUEHEAD *qp;
+	struct sym_ccb *cp;
+	struct sym_tcb *tp = NULL; /* gcc isn't quite smart enough yet */
+	struct scsi_target *starget;
+	int target=-1, lun=-1, task;
+	int i, k;
+
+	switch(num) {
+	/*
+	 *  The SCRIPTS processor stopped before starting
+	 *  the next command in order to allow us to perform 
+	 *  some task recovery.
+	 */
+	case SIR_SCRIPT_STOPPED:
+		/*
+		 *  Do we have any target to reset or unit to clear ?
+		 */
+		for (i = 0 ; i < SYM_CONF_MAX_TARGET ; i++) {
+			tp = &np->target[i];
+			if (tp->to_reset || 
+			    (tp->lun0p && tp->lun0p->to_clear)) {
+				target = i;
+				break;
+			}
+			if (!tp->lunmp)
+				continue;
+			for (k = 1 ; k < SYM_CONF_MAX_LUN ; k++) {
+				if (tp->lunmp[k] && tp->lunmp[k]->to_clear) {
+					target	= i;
+					break;
+				}
+			}
+			if (target != -1)
+				break;
+		}
+
+		/*
+		 *  If not, walk the busy queue for any 
+		 *  disconnected CCB to be aborted.
+		 */
+		if (target == -1) {
+			FOR_EACH_QUEUED_ELEMENT(&np->busy_ccbq, qp) {
+				cp = sym_que_entry(qp,struct sym_ccb,link_ccbq);
+				if (cp->host_status != HS_DISCONNECT)
+					continue;
+				if (cp->to_abort) {
+					target = cp->target;
+					break;
+				}
+			}
+		}
+
+		/*
+		 *  If some target is to be selected, 
+		 *  prepare and start the selection.
+		 */
+		if (target != -1) {
+			tp = &np->target[target];
+			np->abrt_sel.sel_id	= target;
+			np->abrt_sel.sel_scntl3 = tp->head.wval;
+			np->abrt_sel.sel_sxfer  = tp->head.sval;
+			OUTL(np, nc_dsa, np->hcb_ba);
+			OUTL_DSP(np, SCRIPTB_BA(np, sel_for_abort));
+			return;
+		}
+
+		/*
+		 *  Now look for a CCB to abort that haven't started yet.
+		 *  Btw, the SCRIPTS processor is still stopped, so 
+		 *  we are not in race.
+		 */
+		i = 0;
+		cp = NULL;
+		FOR_EACH_QUEUED_ELEMENT(&np->busy_ccbq, qp) {
+			cp = sym_que_entry(qp, struct sym_ccb, link_ccbq);
+			if (cp->host_status != HS_BUSY &&
+			    cp->host_status != HS_NEGOTIATE)
+				continue;
+			if (!cp->to_abort)
+				continue;
+#ifdef SYM_CONF_IARB_SUPPORT
+			/*
+			 *    If we are using IMMEDIATE ARBITRATION, we donnot 
+			 *    want to cancel the last queued CCB, since the 
+			 *    SCRIPTS may have anticipated the selection.
+			 */
+			if (cp == np->last_cp) {
+				cp->to_abort = 0;
+				continue;
+			}
+#endif
+			i = 1;	/* Means we have found some */
+			break;
+		}
+		if (!i) {
+			/*
+			 *  We are done, so we donnot need 
+			 *  to synchronize with the SCRIPTS anylonger.
+			 *  Remove the SEM flag from the ISTAT.
+			 */
+			np->istat_sem = 0;
+			OUTB(np, nc_istat, SIGP);
+			break;
+		}
+		/*
+		 *  Compute index of next position in the start 
+		 *  queue the SCRIPTS intends to start and dequeue 
+		 *  all CCBs for that device that haven't been started.
+		 */
+		i = (INL(np, nc_scratcha) - np->squeue_ba) / 4;
+		i = sym_dequeue_from_squeue(np, i, cp->target, cp->lun, -1);
+
+		/*
+		 *  Make sure at least our IO to abort has been dequeued.
+		 */
+#ifndef SYM_OPT_HANDLE_DEVICE_QUEUEING
+		assert(i && sym_get_cam_status(cp->cmd) == DID_SOFT_ERROR);
+#else
+		sym_remque(&cp->link_ccbq);
+		sym_insque_tail(&cp->link_ccbq, &np->comp_ccbq);
+#endif
+		/*
+		 *  Keep track in cam status of the reason of the abort.
+		 */
+		if (cp->to_abort == 2)
+			sym_set_cam_status(cp->cmd, DID_TIME_OUT);
+		else
+			sym_set_cam_status(cp->cmd, DID_ABORT);
+
+		/*
+		 *  Complete with error everything that we have dequeued.
+	 	 */
+		sym_flush_comp_queue(np, 0);
+		break;
+	/*
+	 *  The SCRIPTS processor has selected a target 
+	 *  we may have some manual recovery to perform for.
+	 */
+	case SIR_TARGET_SELECTED:
+		target = INB(np, nc_sdid) & 0xf;
+		tp = &np->target[target];
+
+		np->abrt_tbl.addr = cpu_to_scr(vtobus(np->abrt_msg));
+
+		/*
+		 *  If the target is to be reset, prepare a 
+		 *  M_RESET message and clear the to_reset flag 
+		 *  since we donnot expect this operation to fail.
+		 */
+		if (tp->to_reset) {
+			np->abrt_msg[0] = M_RESET;
+			np->abrt_tbl.size = 1;
+			tp->to_reset = 0;
+			break;
+		}
+
+		/*
+		 *  Otherwise, look for some logical unit to be cleared.
+		 */
+		if (tp->lun0p && tp->lun0p->to_clear)
+			lun = 0;
+		else if (tp->lunmp) {
+			for (k = 1 ; k < SYM_CONF_MAX_LUN ; k++) {
+				if (tp->lunmp[k] && tp->lunmp[k]->to_clear) {
+					lun = k;
+					break;
+				}
+			}
+		}
+
+		/*
+		 *  If a logical unit is to be cleared, prepare 
+		 *  an IDENTIFY(lun) + ABORT MESSAGE.
+		 */
+		if (lun != -1) {
+			struct sym_lcb *lp = sym_lp(tp, lun);
+			lp->to_clear = 0; /* We don't expect to fail here */
+			np->abrt_msg[0] = IDENTIFY(0, lun);
+			np->abrt_msg[1] = M_ABORT;
+			np->abrt_tbl.size = 2;
+			break;
+		}
+
+		/*
+		 *  Otherwise, look for some disconnected job to 
+		 *  abort for this target.
+		 */
+		i = 0;
+		cp = NULL;
+		FOR_EACH_QUEUED_ELEMENT(&np->busy_ccbq, qp) {
+			cp = sym_que_entry(qp, struct sym_ccb, link_ccbq);
+			if (cp->host_status != HS_DISCONNECT)
+				continue;
+			if (cp->target != target)
+				continue;
+			if (!cp->to_abort)
+				continue;
+			i = 1;	/* Means we have some */
+			break;
+		}
+
+		/*
+		 *  If we have none, probably since the device has 
+		 *  completed the command before we won abitration,
+		 *  send a M_ABORT message without IDENTIFY.
+		 *  According to the specs, the device must just 
+		 *  disconnect the BUS and not abort any task.
+		 */
+		if (!i) {
+			np->abrt_msg[0] = M_ABORT;
+			np->abrt_tbl.size = 1;
+			break;
+		}
+
+		/*
+		 *  We have some task to abort.
+		 *  Set the IDENTIFY(lun)
+		 */
+		np->abrt_msg[0] = IDENTIFY(0, cp->lun);
+
+		/*
+		 *  If we want to abort an untagged command, we 
+		 *  will send a IDENTIFY + M_ABORT.
+		 *  Otherwise (tagged command), we will send 
+		 *  a IDENTITFY + task attributes + ABORT TAG.
+		 */
+		if (cp->tag == NO_TAG) {
+			np->abrt_msg[1] = M_ABORT;
+			np->abrt_tbl.size = 2;
+		} else {
+			np->abrt_msg[1] = cp->scsi_smsg[1];
+			np->abrt_msg[2] = cp->scsi_smsg[2];
+			np->abrt_msg[3] = M_ABORT_TAG;
+			np->abrt_tbl.size = 4;
+		}
+		/*
+		 *  Keep track of software timeout condition, since the 
+		 *  peripheral driver may not count retries on abort 
+		 *  conditions not due to timeout.
+		 */
+		if (cp->to_abort == 2)
+			sym_set_cam_status(cp->cmd, DID_TIME_OUT);
+		cp->to_abort = 0; /* We donnot expect to fail here */
+		break;
+
+	/*
+	 *  The target has accepted our message and switched 
+	 *  to BUS FREE phase as we expected.
+	 */
+	case SIR_ABORT_SENT:
+		target = INB(np, nc_sdid) & 0xf;
+		tp = &np->target[target];
+		starget = tp->starget;
+		
+		/*
+		**  If we didn't abort anything, leave here.
+		*/
+		if (np->abrt_msg[0] == M_ABORT)
+			break;
+
+		/*
+		 *  If we sent a M_RESET, then a hardware reset has 
+		 *  been performed by the target.
+		 *  - Reset everything to async 8 bit
+		 *  - Tell ourself to negotiate next time :-)
+		 *  - Prepare to clear all disconnected CCBs for 
+		 *    this target from our task list (lun=task=-1)
+		 */
+		lun = -1;
+		task = -1;
+		if (np->abrt_msg[0] == M_RESET) {
+			tp->head.sval = 0;
+			tp->head.wval = np->rv_scntl3;
+			tp->head.uval = 0;
+			spi_period(starget) = 0;
+			spi_offset(starget) = 0;
+			spi_width(starget) = 0;
+			spi_iu(starget) = 0;
+			spi_dt(starget) = 0;
+			spi_qas(starget) = 0;
+			tp->tgoal.check_nego = 1;
+			tp->tgoal.renego = 0;
+		}
+
+		/*
+		 *  Otherwise, check for the LUN and TASK(s) 
+		 *  concerned by the cancelation.
+		 *  If it is not ABORT_TAG then it is CLEAR_QUEUE 
+		 *  or an ABORT message :-)
+		 */
+		else {
+			lun = np->abrt_msg[0] & 0x3f;
+			if (np->abrt_msg[1] == M_ABORT_TAG)
+				task = np->abrt_msg[2];
+		}
+
+		/*
+		 *  Complete all the CCBs the device should have 
+		 *  aborted due to our 'kiss of death' message.
+		 */
+		i = (INL(np, nc_scratcha) - np->squeue_ba) / 4;
+		sym_dequeue_from_squeue(np, i, target, lun, -1);
+		sym_clear_tasks(np, DID_ABORT, target, lun, task);
+		sym_flush_comp_queue(np, 0);
+
+ 		/*
+		 *  If we sent a BDR, make upper layer aware of that.
+ 		 */
+		if (np->abrt_msg[0] == M_RESET)
+			starget_printk(KERN_NOTICE, starget,
+							"has been reset\n");
+		break;
+	}
+
+	/*
+	 *  Print to the log the message we intend to send.
+	 */
+	if (num == SIR_TARGET_SELECTED) {
+		dev_info(&tp->starget->dev, "control msgout:");
+		sym_printl_hex(np->abrt_msg, np->abrt_tbl.size);
+		np->abrt_tbl.size = cpu_to_scr(np->abrt_tbl.size);
+	}
+
+	/*
+	 *  Let the SCRIPTS processor continue.
+	 */
+	OUTONB_STD();
+}
+
+/*
+ *  Gerard's alchemy:) that deals with with the data 
+ *  pointer for both MDP and the residual calculation.
+ *
+ *  I didn't want to bloat the code by more than 200 
+ *  lines for the handling of both MDP and the residual.
+ *  This has been achieved by using a data pointer 
+ *  representation consisting in an index in the data 
+ *  array (dp_sg) and a negative offset (dp_ofs) that 
+ *  have the following meaning:
+ *
+ *  - dp_sg = SYM_CONF_MAX_SG
+ *    we are at the end of the data script.
+ *  - dp_sg < SYM_CONF_MAX_SG
+ *    dp_sg points to the next entry of the scatter array 
+ *    we want to transfer.
+ *  - dp_ofs < 0
+ *    dp_ofs represents the residual of bytes of the 
+ *    previous entry scatter entry we will send first.
+ *  - dp_ofs = 0
+ *    no residual to send first.
+ *
+ *  The function sym_evaluate_dp() accepts an arbitray 
+ *  offset (basically from the MDP message) and returns 
+ *  the corresponding values of dp_sg and dp_ofs.
+ */
+
+static int sym_evaluate_dp(struct sym_hcb *np, struct sym_ccb *cp, u32 scr, int *ofs)
+{
+	u32	dp_scr;
+	int	dp_ofs, dp_sg, dp_sgmin;
+	int	tmp;
+	struct sym_pmc *pm;
+
+	/*
+	 *  Compute the resulted data pointer in term of a script 
+	 *  address within some DATA script and a signed byte offset.
+	 */
+	dp_scr = scr;
+	dp_ofs = *ofs;
+	if	(dp_scr == SCRIPTA_BA(np, pm0_data))
+		pm = &cp->phys.pm0;
+	else if (dp_scr == SCRIPTA_BA(np, pm1_data))
+		pm = &cp->phys.pm1;
+	else
+		pm = NULL;
+
+	if (pm) {
+		dp_scr  = scr_to_cpu(pm->ret);
+		dp_ofs -= scr_to_cpu(pm->sg.size) & 0x00ffffff;
+	}
+
+	/*
+	 *  If we are auto-sensing, then we are done.
+	 */
+	if (cp->host_flags & HF_SENSE) {
+		*ofs = dp_ofs;
+		return 0;
+	}
+
+	/*
+	 *  Deduce the index of the sg entry.
+	 *  Keep track of the index of the first valid entry.
+	 *  If result is dp_sg = SYM_CONF_MAX_SG, then we are at the 
+	 *  end of the data.
+	 */
+	tmp = scr_to_cpu(cp->goalp);
+	dp_sg = SYM_CONF_MAX_SG;
+	if (dp_scr != tmp)
+		dp_sg -= (tmp - 8 - (int)dp_scr) / (2*4);
+	dp_sgmin = SYM_CONF_MAX_SG - cp->segments;
+
+	/*
+	 *  Move to the sg entry the data pointer belongs to.
+	 *
+	 *  If we are inside the data area, we expect result to be:
+	 *
+	 *  Either,
+	 *      dp_ofs = 0 and dp_sg is the index of the sg entry
+	 *      the data pointer belongs to (or the end of the data)
+	 *  Or,
+	 *      dp_ofs < 0 and dp_sg is the index of the sg entry 
+	 *      the data pointer belongs to + 1.
+	 */
+	if (dp_ofs < 0) {
+		int n;
+		while (dp_sg > dp_sgmin) {
+			--dp_sg;
+			tmp = scr_to_cpu(cp->phys.data[dp_sg].size);
+			n = dp_ofs + (tmp & 0xffffff);
+			if (n > 0) {
+				++dp_sg;
+				break;
+			}
+			dp_ofs = n;
+		}
+	}
+	else if (dp_ofs > 0) {
+		while (dp_sg < SYM_CONF_MAX_SG) {
+			tmp = scr_to_cpu(cp->phys.data[dp_sg].size);
+			dp_ofs -= (tmp & 0xffffff);
+			++dp_sg;
+			if (dp_ofs <= 0)
+				break;
+		}
+	}
+
+	/*
+	 *  Make sure the data pointer is inside the data area.
+	 *  If not, return some error.
+	 */
+	if	(dp_sg < dp_sgmin || (dp_sg == dp_sgmin && dp_ofs < 0))
+		goto out_err;
+	else if	(dp_sg > SYM_CONF_MAX_SG ||
+		 (dp_sg == SYM_CONF_MAX_SG && dp_ofs > 0))
+		goto out_err;
+
+	/*
+	 *  Save the extreme pointer if needed.
+	 */
+	if (dp_sg > cp->ext_sg ||
+            (dp_sg == cp->ext_sg && dp_ofs > cp->ext_ofs)) {
+		cp->ext_sg  = dp_sg;
+		cp->ext_ofs = dp_ofs;
+	}
+
+	/*
+	 *  Return data.
+	 */
+	*ofs = dp_ofs;
+	return dp_sg;
+
+out_err:
+	return -1;
+}
+
+/*
+ *  chip handler for MODIFY DATA POINTER MESSAGE
+ *
+ *  We also call this function on IGNORE WIDE RESIDUE 
+ *  messages that do not match a SWIDE full condition.
+ *  Btw, we assume in that situation that such a message 
+ *  is equivalent to a MODIFY DATA POINTER (offset=-1).
+ */
+
+static void sym_modify_dp(struct sym_hcb *np, struct sym_tcb *tp, struct sym_ccb *cp, int ofs)
+{
+	int dp_ofs	= ofs;
+	u32	dp_scr	= sym_get_script_dp (np, cp);
+	u32	dp_ret;
+	u32	tmp;
+	u_char	hflags;
+	int	dp_sg;
+	struct	sym_pmc *pm;
+
+	/*
+	 *  Not supported for auto-sense.
+	 */
+	if (cp->host_flags & HF_SENSE)
+		goto out_reject;
+
+	/*
+	 *  Apply our alchemy:) (see comments in sym_evaluate_dp()), 
+	 *  to the resulted data pointer.
+	 */
+	dp_sg = sym_evaluate_dp(np, cp, dp_scr, &dp_ofs);
+	if (dp_sg < 0)
+		goto out_reject;
+
+	/*
+	 *  And our alchemy:) allows to easily calculate the data 
+	 *  script address we want to return for the next data phase.
+	 */
+	dp_ret = cpu_to_scr(cp->goalp);
+	dp_ret = dp_ret - 8 - (SYM_CONF_MAX_SG - dp_sg) * (2*4);
+
+	/*
+	 *  If offset / scatter entry is zero we donnot need 
+	 *  a context for the new current data pointer.
+	 */
+	if (dp_ofs == 0) {
+		dp_scr = dp_ret;
+		goto out_ok;
+	}
+
+	/*
+	 *  Get a context for the new current data pointer.
+	 */
+	hflags = INB(np, HF_PRT);
+
+	if (hflags & HF_DP_SAVED)
+		hflags ^= HF_ACT_PM;
+
+	if (!(hflags & HF_ACT_PM)) {
+		pm  = &cp->phys.pm0;
+		dp_scr = SCRIPTA_BA(np, pm0_data);
+	}
+	else {
+		pm = &cp->phys.pm1;
+		dp_scr = SCRIPTA_BA(np, pm1_data);
+	}
+
+	hflags &= ~(HF_DP_SAVED);
+
+	OUTB(np, HF_PRT, hflags);
+
+	/*
+	 *  Set up the new current data pointer.
+	 *  ofs < 0 there, and for the next data phase, we 
+	 *  want to transfer part of the data of the sg entry 
+	 *  corresponding to index dp_sg-1 prior to returning 
+	 *  to the main data script.
+	 */
+	pm->ret = cpu_to_scr(dp_ret);
+	tmp  = scr_to_cpu(cp->phys.data[dp_sg-1].addr);
+	tmp += scr_to_cpu(cp->phys.data[dp_sg-1].size) + dp_ofs;
+	pm->sg.addr = cpu_to_scr(tmp);
+	pm->sg.size = cpu_to_scr(-dp_ofs);
+
+out_ok:
+	sym_set_script_dp (np, cp, dp_scr);
+	OUTL_DSP(np, SCRIPTA_BA(np, clrack));
+	return;
+
+out_reject:
+	OUTL_DSP(np, SCRIPTB_BA(np, msg_bad));
+}
+
+
+/*
+ *  chip calculation of the data residual.
+ *
+ *  As I used to say, the requirement of data residual 
+ *  in SCSI is broken, useless and cannot be achieved 
+ *  without huge complexity.
+ *  But most OSes and even the official CAM require it.
+ *  When stupidity happens to be so widely spread inside 
+ *  a community, it gets hard to convince.
+ *
+ *  Anyway, I don't care, since I am not going to use 
+ *  any software that considers this data residual as 
+ *  a relevant information. :)
+ */
+
+int sym_compute_residual(struct sym_hcb *np, struct sym_ccb *cp)
+{
+	int dp_sg, dp_sgmin, resid = 0;
+	int dp_ofs = 0;
+
+	/*
+	 *  Check for some data lost or just thrown away.
+	 *  We are not required to be quite accurate in this 
+	 *  situation. Btw, if we are odd for output and the 
+	 *  device claims some more data, it may well happen 
+	 *  than our residual be zero. :-)
+	 */
+	if (cp->xerr_status & (XE_EXTRA_DATA|XE_SODL_UNRUN|XE_SWIDE_OVRUN)) {
+		if (cp->xerr_status & XE_EXTRA_DATA)
+			resid -= cp->extra_bytes;
+		if (cp->xerr_status & XE_SODL_UNRUN)
+			++resid;
+		if (cp->xerr_status & XE_SWIDE_OVRUN)
+			--resid;
+	}
+
+	/*
+	 *  If all data has been transferred,
+	 *  there is no residual.
+	 */
+	if (cp->phys.head.lastp == cp->goalp)
+		return resid;
+
+	/*
+	 *  If no data transfer occurs, or if the data
+	 *  pointer is weird, return full residual.
+	 */
+	if (cp->startp == cp->phys.head.lastp ||
+	    sym_evaluate_dp(np, cp, scr_to_cpu(cp->phys.head.lastp),
+			    &dp_ofs) < 0) {
+		return cp->data_len - cp->odd_byte_adjustment;
+	}
+
+	/*
+	 *  If we were auto-sensing, then we are done.
+	 */
+	if (cp->host_flags & HF_SENSE) {
+		return -dp_ofs;
+	}
+
+	/*
+	 *  We are now full comfortable in the computation 
+	 *  of the data residual (2's complement).
+	 */
+	dp_sgmin = SYM_CONF_MAX_SG - cp->segments;
+	resid = -cp->ext_ofs;
+	for (dp_sg = cp->ext_sg; dp_sg < SYM_CONF_MAX_SG; ++dp_sg) {
+		u_int tmp = scr_to_cpu(cp->phys.data[dp_sg].size);
+		resid += (tmp & 0xffffff);
+	}
+
+	resid -= cp->odd_byte_adjustment;
+
+	/*
+	 *  Hopefully, the result is not too wrong.
+	 */
+	return resid;
+}
+
+/*
+ *  Negotiation for WIDE and SYNCHRONOUS DATA TRANSFER.
+ *
+ *  When we try to negotiate, we append the negotiation message
+ *  to the identify and (maybe) simple tag message.
+ *  The host status field is set to HS_NEGOTIATE to mark this
+ *  situation.
+ *
+ *  If the target doesn't answer this message immediately
+ *  (as required by the standard), the SIR_NEGO_FAILED interrupt
+ *  will be raised eventually.
+ *  The handler removes the HS_NEGOTIATE status, and sets the
+ *  negotiated value to the default (async / nowide).
+ *
+ *  If we receive a matching answer immediately, we check it
+ *  for validity, and set the values.
+ *
+ *  If we receive a Reject message immediately, we assume the
+ *  negotiation has failed, and fall back to standard values.
+ *
+ *  If we receive a negotiation message while not in HS_NEGOTIATE
+ *  state, it's a target initiated negotiation. We prepare a
+ *  (hopefully) valid answer, set our parameters, and send back 
+ *  this answer to the target.
+ *
+ *  If the target doesn't fetch the answer (no message out phase),
+ *  we assume the negotiation has failed, and fall back to default
+ *  settings (SIR_NEGO_PROTO interrupt).
+ *
+ *  When we set the values, we adjust them in all ccbs belonging 
+ *  to this target, in the controller's register, and in the "phys"
+ *  field of the controller's struct sym_hcb.
+ */
+
+/*
+ *  chip handler for SYNCHRONOUS DATA TRANSFER REQUEST (SDTR) message.
+ */
+static int  
+sym_sync_nego_check(struct sym_hcb *np, int req, struct sym_ccb *cp)
+{
+	int target = cp->target;
+	u_char	chg, ofs, per, fak, div;
+
+	if (DEBUG_FLAGS & DEBUG_NEGO) {
+		sym_print_nego_msg(np, target, "sync msgin", np->msgin);
+	}
+
+	/*
+	 *  Get requested values.
+	 */
+	ch

@@ -1,0 +1,1177 @@
+gned int VCODEC_MASK = SET_BITS(regAUD_CODEC, CDCSSISEL, 1) |
+	   SET_BITS(regAUD_CODEC, CDCFS, 3) | SET_BITS(regAUD_CODEC, CDCSM, 1); */
+
+	unsigned int SSI_NW_MASK = SET_BITS(regSSI_NETWORK, STDCSLOTS, 1);
+	unsigned int reg_value = 0;
+	unsigned int ssi_nw_value = 0;
+
+	/* Enter a critical section so that we can ensure only one
+	 * state change request is completed at a time.
+	 */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+
+	if (handle == (PMIC_AUDIO_HANDLE) NULL) {
+		rc = PMIC_PARAMETER_ERROR;
+	} else {
+		if ((handle == vCodec.handle) &&
+		    (vCodec.handleState == HANDLE_IN_USE)) {
+			if ((stDAC.handleState == HANDLE_IN_USE) &&
+			    (stDAC.busID == busID) && (stDAC.protocol_set)) {
+				pr_debug("The requested bus already in USE\n");
+				rc = PMIC_PARAMETER_ERROR;
+			} else if ((masterSlave == BUS_MASTER_MODE)
+				   && (numSlots != USE_4_TIMESLOTS)) {
+				pr_debug
+				    ("mc13783 supports only 4 slots in Master mode\n");
+				rc = PMIC_NOT_SUPPORTED;
+			} else if ((masterSlave == BUS_SLAVE_MODE)
+				   && (numSlots != USE_4_TIMESLOTS)) {
+				pr_debug
+				    ("Driver currently supports only 4 slots in Slave mode\n");
+				rc = PMIC_NOT_SUPPORTED;
+			} else if (!((protocol == NETWORK_MODE) ||
+				     (protocol == I2S_MODE))) {
+				pr_debug
+				    ("mc13783 Voice codec works only in Network and I2S modes\n");
+				rc = PMIC_NOT_SUPPORTED;
+			} else {
+				pr_debug
+				    ("Proceeding to configure Voice Codec\n");
+				if (busID == AUDIO_DATA_BUS_1) {
+					reg_value =
+					    SET_BITS(regAUD_CODEC, CDCSSISEL,
+						     0);
+				} else {
+					reg_value =
+					    SET_BITS(regAUD_CODEC, CDCSSISEL,
+						     1);
+				}
+				reg_mask = SET_BITS(regAUD_CODEC, CDCSSISEL, 1);
+				if (PMIC_SUCCESS !=
+				    pmic_write_reg(REG_AUDIO_CODEC,
+						   reg_value, reg_mask))
+					return PMIC_ERROR;
+
+				if (masterSlave == BUS_MASTER_MODE) {
+					reg_value =
+					    SET_BITS(regAUD_CODEC, CDCSM, 0);
+				} else {
+					reg_value =
+					    SET_BITS(regAUD_CODEC, CDCSM, 1);
+				}
+				reg_mask = SET_BITS(regAUD_CODEC, CDCSM, 1);
+				if (PMIC_SUCCESS !=
+				    pmic_write_reg(REG_AUDIO_CODEC,
+						   reg_value, reg_mask))
+					return PMIC_ERROR;
+
+				if (protocol == NETWORK_MODE) {
+					reg_value =
+					    SET_BITS(regAUD_CODEC, CDCFS, 1);
+				} else {	/* protocol == I2S, other options have been already eliminated */
+					reg_value =
+					    SET_BITS(regAUD_CODEC, CDCFS, 2);
+				}
+				reg_mask = SET_BITS(regAUD_CODEC, CDCFS, 3);
+				if (PMIC_SUCCESS !=
+				    pmic_write_reg(REG_AUDIO_CODEC,
+						   reg_value, reg_mask))
+					return PMIC_ERROR;
+
+				ssi_nw_value =
+				    SET_BITS(regSSI_NETWORK, CDCFSDLY, 1);
+				/*if (pmic_write_reg
+				   (REG_AUDIO_CODEC, reg_value,
+				   VCODEC_MASK) != PMIC_SUCCESS) {
+				   rc = PMIC_ERROR;
+				   } else { */
+				vCodec.busID = busID;
+				vCodec.protocol = protocol;
+				vCodec.masterSlave = masterSlave;
+				vCodec.numSlots = numSlots;
+				vCodec.protocol_set = true;
+				//pmic_write_reg(REG_AUDIO_SSI_NETWORK, ssi_nw_value, ssi_nw_value);
+
+				pr_debug
+				    ("mc13783 Voice codec successfully configured\n");
+				rc = PMIC_SUCCESS;
+				//}
+
+			}
+
+		} else if ((handle == stDAC.handle) &&
+			   (stDAC.handleState == HANDLE_IN_USE)) {
+			if ((vCodec.handleState == HANDLE_IN_USE) &&
+			    (vCodec.busID == busID) && (vCodec.protocol_set)) {
+				pr_debug("The requested bus already in USE\n");
+				rc = PMIC_PARAMETER_ERROR;
+			} else if (((protocol == NORMAL_MSB_JUSTIFIED_MODE) ||
+				    (protocol == I2S_MODE))
+				   && (numSlots != USE_2_TIMESLOTS)) {
+				pr_debug
+				    ("STDAC uses only 2 slots in Normal and I2S modes\n");
+				rc = PMIC_PARAMETER_ERROR;
+			} else if ((protocol == NETWORK_MODE) &&
+				   !((numSlots == USE_2_TIMESLOTS) ||
+				     (numSlots == USE_4_TIMESLOTS) ||
+				     (numSlots == USE_8_TIMESLOTS))) {
+				pr_debug
+				    ("STDAC uses only 2,4 or 8 slots in Network mode\n");
+				rc = PMIC_PARAMETER_ERROR;
+			} else if (protocol == SPD_IF_MODE) {
+				pr_debug
+				    ("STDAC driver currently does not support SPD IF mode\n");
+				rc = PMIC_NOT_SUPPORTED;
+			} else {
+				pr_debug
+				    ("Proceeding to configure Stereo DAC\n");
+				if (busID == AUDIO_DATA_BUS_1) {
+					reg_value =
+					    SET_BITS(regST_DAC, STDCSSISEL, 0);
+				} else {
+					reg_value =
+					    SET_BITS(regST_DAC, STDCSSISEL, 1);
+				}
+				if (masterSlave == BUS_MASTER_MODE) {
+					reg_value |=
+					    SET_BITS(regST_DAC, STDCSM, 0);
+				} else {
+					reg_value |=
+					    SET_BITS(regST_DAC, STDCSM, 1);
+				}
+				if (protocol == NETWORK_MODE) {
+					reg_value |=
+					    SET_BITS(regST_DAC, STDCFS, 1);
+				} else if (protocol ==
+					   NORMAL_MSB_JUSTIFIED_MODE) {
+					reg_value |=
+					    SET_BITS(regST_DAC, STDCFS, 0);
+				} else {	/* I2S mode as the other option has already been eliminated */
+					reg_value |=
+					    SET_BITS(regST_DAC, STDCFS, 2);
+				}
+
+				if (pmic_write_reg
+				    (REG_AUDIO_STEREO_DAC,
+				     reg_value, ST_DAC_MASK) != PMIC_SUCCESS) {
+					rc = PMIC_ERROR;
+				} else {
+					if (numSlots == USE_2_TIMESLOTS) {
+						reg_value =
+						    SET_BITS(regSSI_NETWORK,
+							     STDCSLOTS, 3);
+					} else if (numSlots == USE_4_TIMESLOTS) {
+						reg_value =
+						    SET_BITS(regSSI_NETWORK,
+							     STDCSLOTS, 2);
+					} else {	/* Use 8 timeslots - L , R and 6 other */
+						reg_value =
+						    SET_BITS(regSSI_NETWORK,
+							     STDCSLOTS, 1);
+					}
+					if (pmic_write_reg
+					    (REG_AUDIO_SSI_NETWORK,
+					     reg_value,
+					     SSI_NW_MASK) != PMIC_SUCCESS) {
+						rc = PMIC_ERROR;
+					} else {
+						stDAC.busID = busID;
+						stDAC.protocol = protocol;
+						stDAC.protocol_set = true;
+						stDAC.masterSlave = masterSlave;
+						stDAC.numSlots = numSlots;
+						pr_debug
+						    ("mc13783 Stereo DAC successfully configured\n");
+						rc = PMIC_SUCCESS;
+					}
+				}
+
+			}
+		} else {
+			rc = PMIC_PARAMETER_ERROR;
+			/* Handle  can only be Voice Codec or Stereo DAC */
+			pr_debug("Handles only STDAC and VCODEC\n");
+		}
+
+	}
+	/* Exit critical section. */
+	up(&mutex);
+	return rc;
+}
+
+/*!
+ * @brief Retrieve the current data bus protocol configuration.
+ *
+ * Retrieve the parameters that define the current audio data bus protocol.
+ *
+ * @param  handle          Device handle from pmic_audio_open() call.
+ * @param  busID           The data bus being used.
+ * @param  protocol        The data bus protocol being used.
+ * @param  masterSlave     The data bus timing mode being used.
+ * @param  numSlots        The number of timeslots being used (if in
+ *                              master mode).
+ *
+ * @retval      PMIC_SUCCESS         If the protocol was successful retrieved.
+ * @retval      PMIC_PARAMETER_ERROR If the handle is invalid.
+ */
+PMIC_STATUS pmic_audio_get_protocol(const PMIC_AUDIO_HANDLE handle,
+				    PMIC_AUDIO_DATA_BUS * const busID,
+				    PMIC_AUDIO_BUS_PROTOCOL * const protocol,
+				    PMIC_AUDIO_BUS_MODE * const masterSlave,
+				    PMIC_AUDIO_NUMSLOTS * const numSlots)
+{
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+
+	if ((busID != (PMIC_AUDIO_DATA_BUS *) NULL) &&
+	    (protocol != (PMIC_AUDIO_BUS_PROTOCOL *) NULL) &&
+	    (masterSlave != (PMIC_AUDIO_BUS_MODE *) NULL) &&
+	    (numSlots != (PMIC_AUDIO_NUMSLOTS *) NULL)) {
+		/* Enter a critical section so that we return a consistent state. */
+		if (down_interruptible(&mutex))
+			return PMIC_SYSTEM_ERROR_EINTR;
+
+		if ((handle == stDAC.handle) &&
+		    (stDAC.handleState == HANDLE_IN_USE)) {
+			*busID = stDAC.busID;
+			*protocol = stDAC.protocol;
+			*masterSlave = stDAC.masterSlave;
+			*numSlots = stDAC.numSlots;
+			rc = PMIC_SUCCESS;
+		} else if ((handle == vCodec.handle) &&
+			   (vCodec.handleState == HANDLE_IN_USE)) {
+			*busID = vCodec.busID;
+			*protocol = vCodec.protocol;
+			*masterSlave = vCodec.masterSlave;
+			*numSlots = vCodec.numSlots;
+			rc = PMIC_SUCCESS;
+		}
+
+		/* Exit critical section. */
+		up(&mutex);
+	}
+
+	return rc;
+}
+
+/*!
+ * @brief Enable the Stereo DAC or the Voice CODEC.
+ *
+ * Explicitly enable the Stereo DAC or the Voice CODEC to begin audio
+ * playback or recording as required. This should only be done after
+ * successfully configuring all of the associated audio components (e.g.,
+ * microphones, amplifiers, etc.).
+ *
+ * Note that the timed delays used in this function are necessary to
+ * ensure reliable operation of the Voice CODEC and Stereo DAC. The
+ * Stereo DAC seems to be particularly sensitive and it has been observed
+ * to fail to generate the required master mode clock signals if it is
+ * not allowed enough time to initialize properly.
+ *
+ * @param      handle          Device handle from pmic_audio_open() call.
+ *
+ * @retval      PMIC_SUCCESS         If the device was successful enabled.
+ * @retval      PMIC_PARAMETER_ERROR If the handle is invalid.
+ * @retval      PMIC_ERROR           If the device could not be enabled.
+ */
+PMIC_STATUS pmic_audio_enable(const PMIC_AUDIO_HANDLE handle)
+{
+	const unsigned int AUDIO_BIAS_ENABLE = SET_BITS(regAUDIO_RX_0,
+							VAUDIOON, 1);
+	const unsigned int STDAC_ENABLE = SET_BITS(regST_DAC, STDCEN, 1);
+	const unsigned int VCODEC_ENABLE = SET_BITS(regAUD_CODEC, CDCEN, 1);
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+	unsigned int reg_write = 0;
+	unsigned int reg_mask = 0;
+
+	/* Use a critical section to ensure a consistent hardware state. */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+
+	if ((handle == stDAC.handle) && (stDAC.handleState == HANDLE_IN_USE)) {
+		pmic_write_reg(REG_AUDIO_RX_0, AUDIO_BIAS_ENABLE,
+			       AUDIO_BIAS_ENABLE);
+		reg_mask =
+		    SET_BITS(regAUDIO_RX_0, HSDETEN,
+			     1) | SET_BITS(regAUDIO_RX_0, HSDETAUTOB, 1);
+		reg_write =
+		    SET_BITS(regAUDIO_RX_0, HSDETEN,
+			     1) | SET_BITS(regAUDIO_RX_0, HSDETAUTOB, 1);
+		rc = pmic_write_reg(REG_AUDIO_RX_0, reg_write, reg_mask);
+		if (rc == PMIC_SUCCESS)
+			pr_debug("pmic_audio_enable\n");
+		/* We can enable the Stereo DAC. */
+		rc = pmic_write_reg(REG_AUDIO_STEREO_DAC,
+				    STDAC_ENABLE, STDAC_ENABLE);
+		/*pmic_read_reg(REG_AUDIO_STEREO_DAC, &reg_value); */
+		if (rc != PMIC_SUCCESS) {
+			pr_debug("Failed to enable the Stereo DAC\n");
+			rc = PMIC_ERROR;
+		}
+	} else if ((handle == vCodec.handle)
+		   && (vCodec.handleState == HANDLE_IN_USE)) {
+		/* Must first set the audio bias bit to power up the audio circuits. */
+		pmic_write_reg(REG_AUDIO_RX_0, AUDIO_BIAS_ENABLE,
+			       AUDIO_BIAS_ENABLE);
+		reg_mask = SET_BITS(regAUDIO_RX_0, HSDETEN, 1) |
+		    SET_BITS(regAUDIO_RX_0, HSDETAUTOB, 1);
+		reg_write = SET_BITS(regAUDIO_RX_0, HSDETEN, 1) |
+		    SET_BITS(regAUDIO_RX_0, HSDETAUTOB, 1);
+		rc = pmic_write_reg(REG_AUDIO_RX_0, reg_write, reg_mask);
+
+		/* Then we can enable the Voice CODEC. */
+		rc = pmic_write_reg(REG_AUDIO_CODEC, VCODEC_ENABLE,
+				    VCODEC_ENABLE);
+
+		/* pmic_read_reg(REG_AUDIO_CODEC, &reg_value); */
+		if (rc != PMIC_SUCCESS) {
+			pr_debug("Failed to enable the Voice codec\n");
+			rc = PMIC_ERROR;
+		}
+	}
+	/* Exit critical section. */
+	up(&mutex);
+	return rc;
+}
+
+/*!
+ * @brief Disable the Stereo DAC or the Voice CODEC.
+ *
+ * Explicitly disable the Stereo DAC or the Voice CODEC to end audio
+ * playback or recording as required.
+ *
+ * @param   	handle          Device handle from pmic_audio_open() call.
+ *
+ * @retval      PMIC_SUCCESS         If the device was successful disabled.
+ * @retval      PMIC_PARAMETER_ERROR If the handle is invalid.
+ * @retval      PMIC_ERROR           If the device could not be disabled.
+ */
+PMIC_STATUS pmic_audio_disable(const PMIC_AUDIO_HANDLE handle)
+{
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+	const unsigned int STDAC_DISABLE = SET_BITS(regST_DAC, STDCEN, 1);
+	const unsigned int VCODEC_DISABLE = SET_BITS(regAUD_CODEC, CDCEN, 1);
+
+	/* Use a critical section to ensure a consistent hardware state. */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+	if ((handle == stDAC.handle) && (stDAC.handleState == HANDLE_IN_USE)) {
+		rc = pmic_write_reg(REG_AUDIO_STEREO_DAC, 0, STDAC_DISABLE);
+	} else if ((handle == vCodec.handle)
+		   && (vCodec.handleState == HANDLE_IN_USE)) {
+		rc = pmic_write_reg(REG_AUDIO_CODEC, 0, VCODEC_DISABLE);
+	}
+	if (rc == PMIC_SUCCESS) {
+		pr_debug("Disabled successfully\n");
+	}
+	/* Exit critical section. */
+	up(&mutex);
+	return rc;
+}
+
+/*!
+ * @brief Reset the selected audio hardware control registers to their
+ *        power on state.
+ *
+ * This resets all of the audio hardware control registers currently
+ * associated with the device handle back to their power on states. For
+ * example, if the handle is associated with the Stereo DAC and a
+ * specific output port and output amplifiers, then this function will
+ * reset all of those components to their initial power on state.
+ *
+ * @param       handle          Device handle from pmic_audio_open() call.
+ *
+ * @retval      PMIC_SUCCESS         If the reset operation was successful.
+ * @retval      PMIC_PARAMETER_ERROR If the handle is invalid.
+ * @retval      PMIC_ERROR           If the reset was unsuccessful.
+ */
+PMIC_STATUS pmic_audio_reset(const PMIC_AUDIO_HANDLE handle)
+{
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+
+	/* Use a critical section to ensure a consistent hardware state. */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+
+	rc = pmic_audio_reset_device(handle);
+
+	/* Exit the critical section. */
+	up(&mutex);
+
+	return rc;
+}
+
+/*!
+ * @brief Reset all audio hardware control registers to their power on state.
+ *
+ * This resets all of the audio hardware control registers back to their
+ * power on states. Use this function with care since it also invalidates
+ * (i.e., automatically closes) all currently opened device handles.
+ *
+ * @retval      PMIC_SUCCESS         If the reset operation was successful.
+ * @retval      PMIC_ERROR           If the reset was unsuccessful.
+ */
+PMIC_STATUS pmic_audio_reset_all(void)
+{
+	PMIC_STATUS rc = PMIC_SUCCESS;
+	unsigned int audio_ssi_reset = 0;
+	unsigned int audio_rx1_reset = 0;
+	/* We need a critical section here to maintain a consistent state. */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+
+	/* First close all opened device handles, also deregisters callbacks. */
+	pmic_audio_close_handle(stDAC.handle);
+	pmic_audio_close_handle(vCodec.handle);
+	pmic_audio_close_handle(extStereoIn.handle);
+
+	if (pmic_write_reg(REG_AUDIO_RX_1, RESET_AUDIO_RX_1,
+			   PMIC_ALL_BITS) != PMIC_SUCCESS) {
+		rc = PMIC_ERROR;
+	} else {
+		audio_rx1_reset = 1;
+	}
+	if (pmic_write_reg(REG_AUDIO_SSI_NETWORK, RESET_SSI_NETWORK,
+			   PMIC_ALL_BITS) != PMIC_SUCCESS) {
+		rc = PMIC_ERROR;
+	} else {
+		audio_ssi_reset = 1;
+	}
+	if (pmic_write_reg
+	    (REG_AUDIO_STEREO_DAC, RESET_ST_DAC,
+	     PMIC_ALL_BITS) != PMIC_SUCCESS) {
+		rc = PMIC_ERROR;
+	} else {
+		/* Also reset the driver state information to match. Note that we
+		 * keep the device handle and event callback settings unchanged
+		 * since these don't affect the actual hardware and we rely on
+		 * the user to explicitly close the handle or deregister callbacks
+		 */
+		if (audio_ssi_reset) {
+			/* better to check if SSI is also reset as some fields are represennted in SSI reg */
+			stDAC.busID = AUDIO_DATA_BUS_1;
+			stDAC.protocol = NORMAL_MSB_JUSTIFIED_MODE;
+			stDAC.masterSlave = BUS_MASTER_MODE;
+			stDAC.protocol_set = false;
+			stDAC.numSlots = USE_2_TIMESLOTS;
+			stDAC.clockIn = CLOCK_IN_CLIA;
+			stDAC.samplingRate = STDAC_RATE_44_1_KHZ;
+			stDAC.clockFreq = STDAC_CLI_13MHZ;
+			stDAC.invert = NO_INVERT;
+			stDAC.timeslot = USE_TS0_TS1;
+			stDAC.config = (PMIC_AUDIO_STDAC_CONFIG) 0;
+		}
+	}
+
+	if (pmic_write_reg(REG_AUDIO_CODEC, RESET_AUD_CODEC,
+			   PMIC_ALL_BITS) != PMIC_SUCCESS) {
+		rc = PMIC_ERROR;
+	} else {
+		/* Also reset the driver state information to match. Note that we
+		 * keep the device handle and event callback settings unchanged
+		 * since these don't affect the actual hardware and we rely on
+		 * the user to explicitly close the handle or deregister callbacks
+		 */
+		if (audio_ssi_reset) {
+			vCodec.busID = AUDIO_DATA_BUS_2;
+			vCodec.protocol = NETWORK_MODE;
+			vCodec.masterSlave = BUS_SLAVE_MODE;
+			vCodec.protocol_set = false;
+			vCodec.numSlots = USE_4_TIMESLOTS;
+			vCodec.clockIn = CLOCK_IN_CLIB;
+			vCodec.samplingRate = VCODEC_RATE_8_KHZ;
+			vCodec.clockFreq = VCODEC_CLI_13MHZ;
+			vCodec.invert = NO_INVERT;
+			vCodec.timeslot = USE_TS0;
+			vCodec.config =
+			    INPUT_HIGHPASS_FILTER | OUTPUT_HIGHPASS_FILTER;
+		}
+	}
+
+	if (pmic_write_reg(REG_AUDIO_RX_0, RESET_AUDIO_RX_0,
+			   PMIC_ALL_BITS) != PMIC_SUCCESS) {
+		rc = PMIC_ERROR;
+	} else {
+		/* Also reset the driver state information to match. */
+		audioOutput.outputPort = (PMIC_AUDIO_OUTPUT_PORT) NULL;
+		audioOutput.vCodecoutputPGAGain = OUTPGA_GAIN_0DB;
+		audioOutput.stDacoutputPGAGain = OUTPGA_GAIN_0DB;
+		audioOutput.extStereooutputPGAGain = OUTPGA_GAIN_0DB;
+		audioOutput.balanceLeftGain = BAL_GAIN_0DB;
+		audioOutput.balanceRightGain = BAL_GAIN_0DB;
+		audioOutput.monoAdderGain = MONOADD_GAIN_0DB;
+		audioOutput.config = (PMIC_AUDIO_OUTPUT_CONFIG) 0;
+		audioOutput.vCodecOut = VCODEC_DIRECT_OUT;
+	}
+
+	if (pmic_write_reg(REG_AUDIO_TX, RESET_AUDIO_TX,
+			   PMIC_ALL_BITS) != PMIC_SUCCESS) {
+		rc = PMIC_ERROR;
+	} else {
+		/* Also reset the driver state information to match. Note that we
+		 * reset the vCodec fields since all of the input/recording
+		 * devices are only connected to the Voice CODEC and are managed
+		 * as part of the Voice CODEC state.
+		 */
+		if (audio_rx1_reset) {
+			vCodec.leftChannelMic.mic = NO_MIC;
+			vCodec.leftChannelMic.micOnOff = MICROPHONE_OFF;
+			vCodec.leftChannelMic.ampMode = CURRENT_TO_VOLTAGE;
+			vCodec.leftChannelMic.gain = MIC_GAIN_0DB;
+			vCodec.rightChannelMic.mic = NO_MIC;
+			vCodec.rightChannelMic.micOnOff = MICROPHONE_OFF;
+			vCodec.rightChannelMic.ampMode = AMP_OFF;
+			vCodec.rightChannelMic.gain = MIC_GAIN_0DB;
+		}
+	}
+	/* Finally, also reset any global state variables. */
+	headsetState = NO_HEADSET;
+	/* Exit the critical section. */
+	up(&mutex);
+	return rc;
+}
+
+/*!
+ * @brief Set the Audio callback function.
+ *
+ * Register a callback function that will be used to signal PMIC audio
+ * events. For example, the OSS audio driver should register a callback
+ * function in order to be notified of headset connect/disconnect events.
+ *
+ * @param   func            A pointer to the callback function.
+ * @param   eventMask       A mask selecting events to be notified.
+ * @param   hs_state        To know the headset state.
+ *
+ *
+ *
+ * @retval      PMIC_SUCCESS         If the callback was successfully
+ *                                   registered.
+ * @retval      PMIC_PARAMETER_ERROR If the handle or the eventMask is invalid.
+ */
+PMIC_STATUS pmic_audio_set_callback(void *func,
+				    const PMIC_AUDIO_EVENTS eventMask,
+				    PMIC_HS_STATE * hs_state)
+{
+	unsigned long flags;
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+	pmic_event_callback_t eventNotify;
+
+	/* We need to start a critical section here to ensure a consistent state
+	 * in case simultaneous calls to pmic_audio_set_callback() are made. In
+	 * that case, we must serialize the calls to ensure that the "callback"
+	 * and "eventMask" state variables are always consistent.
+	 *
+	 * Note that we don't actually need to acquire the spinlock until later
+	 * when we are finally ready to update the "callback" and "eventMask"
+	 * state variables which are shared with the interrupt handler.
+	 */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+
+	rc = PMIC_ERROR;
+	/* Register for PMIC events from the core protocol driver. */
+	if (eventMask & MICROPHONE_DETECTED) {
+		/* We need to register for the A1 amplifier interrupt. */
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_MC2BI);
+		rc = pmic_event_subscribe(EVENT_MC2BI, eventNotify);
+
+		if (rc != PMIC_SUCCESS) {
+			pr_debug
+			    ("%s: pmic_event_subscribe() for EVENT_HSDETI "
+			     "failed\n", __FILE__);
+			goto End;
+		}
+	}
+
+	if (eventMask & HEADSET_DETECTED) {
+		/* We need to register for the A1 amplifier interrupt. */
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_HSDETI);
+		rc = pmic_event_subscribe(EVENT_HSDETI, eventNotify);
+
+		if (rc != PMIC_SUCCESS) {
+			pr_debug
+			    ("%s: pmic_event_subscribe() for EVENT_HSDETI "
+			     "failed\n", __FILE__);
+			goto Cleanup_HDT;
+		}
+
+	}
+	if (eventMask & HEADSET_STEREO) {
+		/* We need to register for the A1 amplifier interrupt. */
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_HSLI);
+		rc = pmic_event_subscribe(EVENT_HSLI, eventNotify);
+
+		if (rc != PMIC_SUCCESS) {
+			pr_debug
+			    ("%s: pmic_event_subscribe() for EVENT_HSLI "
+			     "failed\n", __FILE__);
+			goto Cleanup_HST;
+		}
+	}
+	if (eventMask & HEADSET_THERMAL_SHUTDOWN) {
+		/* We need to register for the A1 amplifier interrupt. */
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_ALSPTHI);
+		rc = pmic_event_subscribe(EVENT_ALSPTHI, eventNotify);
+
+		if (rc != PMIC_SUCCESS) {
+			pr_debug
+			    ("%s: pmic_event_subscribe() for EVENT_ALSPTHI "
+			     "failed\n", __FILE__);
+			goto Cleanup_TSD;
+		}
+		pr_debug("Registered for EVENT_ALSPTHI\n");
+	}
+	if (eventMask & HEADSET_SHORT_CIRCUIT) {
+		/* We need to register for the A1 amplifier interrupt. */
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_AHSSHORTI);
+		rc = pmic_event_subscribe(EVENT_AHSSHORTI, eventNotify);
+
+		if (rc != PMIC_SUCCESS) {
+			pr_debug
+			    ("%s: pmic_event_subscribe() for EVENT_AHSSHORTI "
+			     "failed\n", __FILE__);
+			goto Cleanup_HShort;
+		}
+		pr_debug("Registered for EVENT_AHSSHORTI\n");
+	}
+
+	/* We also need the spinlock here to avoid possible problems
+	 * with the interrupt handler  when we update the
+	 * "callback" and "eventMask" state variables.
+	 */
+	spin_lock_irqsave(&lock, flags);
+
+	/* Successfully registered for all events. */
+	event_state.callback = func;
+	event_state.eventMask = eventMask;
+
+	/* The spinlock is no longer needed now that we've finished
+	 * updating the "callback" and "eventMask" state variables.
+	 */
+	spin_unlock_irqrestore(&lock, flags);
+
+	goto End;
+
+	/* This section unregisters any already registered events if we should
+	 * encounter an error partway through the registration process. Note
+	 * that we don't check the return status here since it is already set
+	 * to PMIC_ERROR before we get here.
+	 */
+      Cleanup_HShort:
+
+	if (eventMask & HEADSET_SHORT_CIRCUIT) {
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_AHSSHORTI);
+		pmic_event_unsubscribe(EVENT_AHSSHORTI, eventNotify);
+	}
+
+      Cleanup_TSD:
+
+	if (eventMask & HEADSET_THERMAL_SHUTDOWN) {
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_ALSPTHI);
+		pmic_event_unsubscribe(EVENT_ALSPTHI, eventNotify);
+	}
+
+      Cleanup_HST:
+
+	if (eventMask & HEADSET_STEREO) {
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_HSLI);
+		pmic_event_unsubscribe(EVENT_HSLI, eventNotify);
+	}
+
+      Cleanup_HDT:
+
+	if (eventMask & HEADSET_DETECTED) {
+		eventNotify.func = func;
+		eventNotify.param = (void *)(CORE_EVENT_HSDETI);
+		pmic_event_unsubscribe(EVENT_HSDETI, eventNotify);
+	}
+
+      End:
+	/* Exit the critical section. */
+	up(&mutex);
+	return rc;
+}
+
+/*!
+ * @brief Deregisters the existing audio callback function.
+ *
+ * Deregister the callback function that was previously registered by calling
+ * pmic_audio_set_callback().
+ *
+ *
+ * @retval      PMIC_SUCCESS         If the callback was successfully
+ *                                   deregistered.
+ * @retval      PMIC_PARAMETER_ERROR If the handle is invalid.
+ */
+PMIC_STATUS pmic_audio_clear_callback(void)
+{
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+
+	/* We need a critical section to maintain a consistent state. */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+
+	if (event_state.callback != (PMIC_AUDIO_CALLBACK) NULL) {
+		rc = pmic_audio_deregister(&(event_state.callback),
+					   &(event_state.eventMask));
+	}
+
+	/* Exit the critical section. */
+	up(&mutex);
+	return rc;
+}
+
+/*!
+ * @brief Get the current audio callback function settings.
+ *
+ * Get the current callback function and event mask.
+ *
+ * @param   func            The current callback function.
+ * @param   eventMask       The current event selection mask.
+ *
+ * @retval      PMIC_SUCCESS         If the callback information was
+ *                                   successfully retrieved.
+ * @retval      PMIC_PARAMETER_ERROR If the handle is invalid.
+ */
+PMIC_STATUS pmic_audio_get_callback(PMIC_AUDIO_CALLBACK * const func,
+				    PMIC_AUDIO_EVENTS * const eventMask)
+{
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+
+	/* We only need to acquire the mutex here because we will not be updating
+	 * anything that may affect the interrupt handler. We just need to ensure
+	 * that the callback fields are not changed while we are in the critical
+	 * section by calling either pmic_audio_set_callback() or
+	 * pmic_audio_clear_callback().
+	 */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+
+	if ((func != (PMIC_AUDIO_CALLBACK *) NULL) &&
+	    (eventMask != (PMIC_AUDIO_EVENTS *) NULL)) {
+
+		*func = event_state.callback;
+		*eventMask = event_state.eventMask;
+
+		rc = PMIC_SUCCESS;
+	}
+
+	/* Exit the critical section. */
+	up(&mutex);
+	return rc;
+}
+
+/*!
+ * @brief Enable the anti-pop circuitry to avoid extra noise when inserting
+ *        or removing a external device (e.g., a headset).
+ *
+ * Enable the use of the built-in anti-pop circuitry to prevent noise from
+ * being generated when an external audio device is inserted or removed
+ * from an audio plug. A slow ramp speed may be needed to avoid extra noise.
+ *
+ * @param       rampSpeed       The desired anti-pop circuitry ramp speed.
+ *
+ * @retval      PMIC_SUCCESS         If the anti-pop circuitry was successfully
+ *                                   enabled.
+ * @retval      PMIC_ERROR           If the anti-pop circuitry could not be
+ *                                   enabled.
+ */
+PMIC_STATUS pmic_audio_antipop_enable(const PMIC_AUDIO_ANTI_POP_RAMP_SPEED
+				      rampSpeed)
+{
+	PMIC_STATUS rc = PMIC_ERROR;
+	unsigned int reg_value = 0;
+	const unsigned int reg_mask = SET_BITS(regAUDIO_RX_0, BIASEN, 1) |
+	    SET_BITS(regAUDIO_RX_0, BIASSPEED, 1);
+
+	/* No critical section required here since we are not updating any
+	 * global data.
+	 */
+
+	/*
+	 * Antipop is enabled by enabling the BIAS (BIASEN) and setting the
+	 * BIASSPEED .
+	 * BIASEN is just to make sure that BIAS is enabled
+	 */
+	reg_value = SET_BITS(regAUDIO_RX_0, BIASEN, 1)
+	    | SET_BITS(regAUDIO_RX_0, BIASSPEED, 0) | SET_BITS(regAUDIO_RX_0,
+							       HSLDETEN, 1);
+	rc = pmic_write_reg(REG_AUDIO_RX_0, reg_value, reg_mask);
+	return rc;
+}
+
+/*!
+ * @brief Disable the anti-pop circuitry.
+ *
+ * Disable the use of the built-in anti-pop circuitry to prevent noise from
+ * being generated when an external audio device is inserted or removed
+ * from an audio plug.
+ *
+ * @retval      PMIC_SUCCESS         If the anti-pop circuitry was successfully
+ *                                   disabled.
+ * @retval      PMIC_ERROR           If the anti-pop circuitry could not be
+ *                                   disabled.
+ */
+PMIC_STATUS pmic_audio_antipop_disable(void)
+{
+	PMIC_STATUS rc = PMIC_ERROR;
+	const unsigned int reg_mask = SET_BITS(regAUDIO_RX_0, BIASSPEED, 1) |
+	    SET_BITS(regAUDIO_RX_0, BIASEN, 1);
+	const unsigned int reg_write = SET_BITS(regAUDIO_RX_0, BIASSPEED, 1) |
+	    SET_BITS(regAUDIO_RX_0, BIASEN, 0);
+
+	/* No critical section required here since we are not updating any
+	 * global data.
+	 */
+
+	/*
+	 * Antipop is disabled by setting BIASSPEED  = 0. BIASEN bit remains set
+	 * as only antipop needs to be disabled
+	 */
+	rc = pmic_write_reg(REG_AUDIO_RX_0, reg_write, reg_mask);
+
+	return rc;
+}
+
+/*!
+ * @brief Performs a reset of the Voice CODEC/Stereo DAC digital filter.
+ *
+ * The digital filter should be reset whenever the clock or sampling rate
+ * configuration has been changed.
+ *
+ * @param       handle          Device handle from pmic_audio_open() call.
+ *
+ * @retval      PMIC_SUCCESS         If the digital filter was successfully
+ *                                   reset.
+ * @retval      PMIC_ERROR           If the digital filter could not be reset.
+ */
+PMIC_STATUS pmic_audio_digital_filter_reset(const PMIC_AUDIO_HANDLE handle)
+{
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+	unsigned int reg_mask = 0;
+
+	/* No critical section required here since we are not updating any
+	 * global data.
+	 */
+
+	if ((handle == stDAC.handle) && (stDAC.handleState == HANDLE_IN_USE)) {
+		reg_mask = SET_BITS(regST_DAC, STDCRESET, 1);
+		if (pmic_write_reg(REG_AUDIO_STEREO_DAC, reg_mask,
+				   reg_mask) != PMIC_SUCCESS) {
+			rc = PMIC_ERROR;
+		} else {
+			pr_debug("STDAC filter reset\n");
+		}
+
+	} else if ((handle == vCodec.handle) &&
+		   (vCodec.handleState == HANDLE_IN_USE)) {
+		reg_mask = SET_BITS(regAUD_CODEC, CDCRESET, 1);
+		if (pmic_write_reg(REG_AUDIO_CODEC, reg_mask,
+				   reg_mask) != PMIC_SUCCESS) {
+			rc = PMIC_ERROR;
+		} else {
+			pr_debug("CODEC filter reset\n");
+		}
+	}
+	return rc;
+}
+
+/*!
+ * @brief Get the most recent PTT button voltage reading.
+ *
+ * This feature is not supported by mc13783
+ * @param       level                PTT button level.
+ *
+ * @retval      PMIC_SUCCESS         If the most recent PTT button voltage was
+ *                                   returned.
+ * @retval      PMIC_PARAMETER_ERROR If a NULL pointer argument was given.
+ */
+PMIC_STATUS pmic_audio_get_ptt_button_level(unsigned int *const level)
+{
+	PMIC_STATUS rc = PMIC_NOT_SUPPORTED;
+	return rc;
+}
+
+#ifdef DEBUG_AUDIO
+
+/*!
+ * @brief Provide a hexadecimal dump of all PMIC audio registers (DEBUG only)
+ *
+ * This function is intended strictly for debugging purposes only and will
+ * print the current values of the following PMIC registers:
+ *
+ * - AUD_CODEC
+ * - ST_DAC
+ * - AUDIO_RX_0
+ * - AUDIO_RX_1
+ * - AUDIO_TX
+ * - AUDIO_SSI_NW
+ *
+ * The register fields will not be decoded.
+ *
+ * Note that we don't dump any of the arbitration bits because we cannot
+ * access the true arbitration bit settings when reading the registers
+ * from the secondary SPI bus.
+ *
+ * Also note that we must not call this function with interrupts disabled,
+ * for example, while holding a spinlock, because calls to pmic_read_reg()
+ * eventually end up in the SPI driver which will want to perform a
+ * schedule() operation. If schedule() is called with interrupts disabled,
+ * then you will see messages like the following:
+ *
+ * BUG: scheduling while atomic: ...
+ *
+ */
+void pmic_audio_dump_registers(void)
+{
+	unsigned int reg_value = 0;
+
+	/* Dump the AUD_CODEC (Voice CODEC) register. */
+	if (pmic_read_reg(REG_AUDIO_CODEC, &reg_value, REG_FULLMASK)
+	    == PMIC_SUCCESS) {
+		pr_debug("Audio Codec = 0x%x\n", reg_value);
+	} else {
+		pr_debug("Failed to read audio codec\n");
+	}
+
+	/* Dump the ST DAC (Stereo DAC) register. */
+	if (pmic_read_reg
+	    (REG_AUDIO_STEREO_DAC, &reg_value, REG_FULLMASK) == PMIC_SUCCESS) {
+		pr_debug("Stereo DAC = 0x%x\n", reg_value);
+	} else {
+		pr_debug("Failed to read Stereo DAC\n");
+	}
+
+	/* Dump the SSI NW register. */
+	if (pmic_read_reg
+	    (REG_AUDIO_SSI_NETWORK, &reg_value, REG_FULLMASK) == PMIC_SUCCESS) {
+		pr_debug("SSI Network = 0x%x\n", reg_value);
+	} else {
+		pr_debug("Failed to read SSI network\n");
+	}
+
+	/* Dump the Audio RX 0 register. */
+	if (pmic_read_reg(REG_AUDIO_RX_0, &reg_value, REG_FULLMASK)
+	    == PMIC_SUCCESS) {
+		pr_debug("Audio RX 0 = 0x%x\n", reg_value);
+	} else {
+		pr_debug("Failed to read audio RX 0\n");
+	}
+
+	/* Dump the Audio RX 1 register. */
+	if (pmic_read_reg(REG_AUDIO_RX_1, &reg_value, REG_FULLMASK)
+	    == PMIC_SUCCESS) {
+		pr_debug("Audio RX 1 = 0x%x\n", reg_value);
+	} else {
+		pr_debug("Failed to read audio RX 1\n");
+	}
+	/* Dump the Audio TX register. */
+	if (pmic_read_reg(REG_AUDIO_TX, &reg_value, REG_FULLMASK) ==
+	    PMIC_SUCCESS) {
+		pr_debug("Audio Tx = 0x%x\n", reg_value);
+	} else {
+		pr_debug("Failed to read audio TX\n");
+	}
+
+}
+
+#endif				/* DEBUG_AUDIO */
+
+/*@}*/
+
+/*************************************************************************
+ * General Voice CODEC configuration.
+ *************************************************************************
+ */
+
+/*!
+ * @name General Voice CODEC Setup and Configuration APIs
+ * Functions for general setup and configuration of the PMIC Voice
+ * CODEC hardware.
+ */
+/*@{*/
+
+/*!
+ * @brief Set the Voice CODEC clock source and operating characteristics.
+ *
+ * Define the Voice CODEC clock source and operating characteristics. This
+ * must be done before the Voice CODEC is enabled.
+ *
+ *
+ *
+ * @param       handle          Device handle from pmic_audio_open() call.
+ * @param       clockIn         Select the clock signal source.
+ * @param       clockFreq       Select the clock signal frequency.
+ * @param       samplingRate    Select the audio data sampling rate.
+ * @param       invert          Enable inversion of the frame sync and/or
+ *                              bit clock inputs.
+ *
+ * @retval      PMIC_SUCCESS         If the Voice CODEC clock settings were
+ *                                   successfully configured.
+ * @retval      PMIC_PARAMETER_ERROR If the handle or clock configuration was
+ *                                   invalid.
+ * @retval      PMIC_ERROR           If the Voice CODEC clock configuration
+ *                                   could not be set.
+ */
+PMIC_STATUS pmic_audio_vcodec_set_clock(const PMIC_AUDIO_HANDLE handle,
+					const PMIC_AUDIO_CLOCK_IN_SOURCE
+					clockIn,
+					const PMIC_AUDIO_VCODEC_CLOCK_IN_FREQ
+					clockFreq,
+					const PMIC_AUDIO_VCODEC_SAMPLING_RATE
+					samplingRate,
+					const PMIC_AUDIO_CLOCK_INVERT invert)
+{
+	PMIC_STATUS rc = PMIC_PARAMETER_ERROR;
+	unsigned int reg_value = 0;
+	unsigned int reg_mask = 0;
+
+	/* Use a critical section to ensure a consistent hardware state. */
+	if (down_interruptible(&mutex))
+		return PMIC_SYSTEM_ERROR_EINTR;
+
+	/* Validate all of the calling parameters. */
+	if (handle == (PMIC_AUDIO_HANDLE) NULL) {
+		rc = PMIC_PARAMETER_ERROR;
+	} else if ((handle == vCodec.handle) &&
+		   (vCodec.handleState == HANDLE_IN_USE)) {
+		if ((clockIn != CLOCK_IN_CLIA) && (clockIn != CLOCK_IN_CLIB)) {
+			rc = PMIC_PARAMETER_ERROR;
+		} else if (!((clockFreq >= VCODEC_CLI_13MHZ)
+			     && (clockFreq <= VCODEC_CLI_33_6MHZ))) {
+			rc = PMIC_PARAMETER_ERROR;
+		} else if ((samplingRate != VCODEC_RATE_8_KHZ)
+			   && (samplingRate != VCODEC_RATE_16_KHZ)) {
+			rc = PMIC_PARAMETER_ERROR;
+		} else if (!((invert >= NO_INVERT)
+			     && (invert <= INVERT_FRAMESYNC))) {
+			rc = PMIC_PARAMETER_ERROR;
+		} else {
+			/*reg_mask = SET_BITS(regAUD_CODEC, CDCCLK, 7) |
+			   SET_BITS(regAUD_CODEC, CDCCLKSEL, 1) |
+			   SET_BITS(regAUD_CODEC, CDCFS8K16K, 1) |
+			   SET_BITS(regAUD_CODEC, CDCBCLINV, 1) |
+			   SET_BITS(regAUD_CODEC, CDCFSINV, 1); */
+			if (clockIn == CLOCK_IN_CLIA) {
+				reg_value =
+				    SET_BITS(regAUD_CODEC, CDCCLKSEL, 0);
+			} else {
+				reg_value =
+				    SET_BITS(regAUD_CODEC, CDCCLKSEL, 1);
+			}
+			reg_mask = SET_BITS(regAUD_CODEC, CDCCLKSEL, 1);
+			if (PMIC_SUCCESS !=
+			    pmic_write_reg(REG_AUDIO_CODEC,
+					   reg_value, reg_mask))
+				return PMIC_ERROR;
+
+			reg_value = 0;
+			if (clockFreq == VCODEC_CLI_13MHZ) {
+				reg_value |= SET_BITS(regAUD_CODEC, CDCCLK, 0);
+			} else if (clockFreq == VCODEC_CLI_15_36MHZ) {
+				reg_value |= SET_BITS(regAUD_CODEC, CDCCLK, 1);
+			} else if (clockFreq == VCODEC_CLI_16_8MHZ) {
+				reg_value |= SET_BITS(regAUD_CODEC, CDCCLK, 2);
+			} else if (clockFreq == VCODEC_CLI_26MHZ) {
+				reg_value |= SET_BITS(regAUD_CODEC, CDCCLK, 4);
+			} else {
+				reg_value |= SET_BITS(regAUD_CODEC, CDCCLK, 7);
+			}
+			reg_mask = SET_BITS(regAUD_CODEC, CDCCLK, 7);
+			if (PMIC_SUCCESS !=
+			    pmic_write_reg(REG_AUDIO_CODEC,
+					   reg_value, reg_mask))
+				return PMIC_ERROR;
+
+			reg_value = 0;
+			reg_mask = 0;
+
+			if (samplingRate == VCODEC_RATE_8_KHZ) {
+				reg_value |=
+				    SET_BITS(regAUD_CODEC, CDCFS8K16K, 0);
+			} else {
+				reg_value |=
+				    SET_BITS(regAUD_CODEC, CDCFS8K16K, 1);
+			}
+			reg_mask = SET_BITS(regAUD_CODEC, CDCFS8K16K, 1);
+			if (PMIC_SUCCESS !=
+			    pmic_write_reg(REG_AUDIO_CODEC,
+					   reg_value, reg_mask))
+				return PMIC_ERROR;
+			reg_value = 0;
+			reg_mask =
+			    SET_BITS(regAUD_CODEC, CDCBCLINV,
+				     1) | SET_BITS(regAUD_CODEC, CDCFSINV, 1);
+
+			if (invert & INVERT_BITCLOCK) {
+				reg_value |=
+				    SET_BITS(regAUD_CODEC, CDCBCLINV, 1);
+			}
+			if (invert & INVERT_FRAMESYNC) {
+				reg_value |=
+				    SET_BITS(regAUD_CODEC, CDCFSINV, 1);
+			}
+			if (invert & NO_INVERT) {
+				reg_value |=
+				    SET_BITS(regAUD_CODEC, CDCBCLINV, 0);
+				reg_value |=
+				    SET_BITS(regAUD_CODEC, CDCFSINV, 0);
+			}
+			if (pmic_write_reg
+			    (REG_AUDIO_CODEC, reg_value,
+			     reg_mask) != PMIC_SUCCESS) {
+				rc = PMIC_ERROR;
+			} else {
+				pr_debug("CODEC clock set\n");
+				vCodec.clockIn = clockIn;
+				vCodec.clockFreq = clockFreq;
+				vCodec.samplingRate = samplingRate;
+				vCodec.invert = invert;
+			}
+
+		}
+
+	} else {
+		rc = PMIC_PARAMETER_ERROR;
+	}
+
+	/* Exit the critical section. */
+	up(&mutex);
+
+	return rc;
+}
+
+/*!
+ * @brief Get the Voice CODEC clock source and operating characteristics.
+ *
+ * Get the current Voice CODEC clock source and operating characteristics.
+ *
+ * @param  	handle          Device handle from pmic_audio_open() call.
+ * @param  	clockIn         The clock signal source.
+ * @param  	clockFreq       The clock signal frequency.
+ * @param  	samplingRate    The audio data sampling rate.
+ * @param       invert          Inversion of the frame sync and/or
+ *                              bit clock inputs is enabled/disabled.
+ *
+ * @retval      PMIC_SUCCESS         If the Voice CODEC clock settings were
+ *                                   successfully retrieved.
+ * @retval      PMIC_PARAMETER_ERROR If the handle invalid.
+ * @retval      PMIC_ERROR           If the Voice CODEC clock configuration
+ *                                   could not be retrieved.
+ */
+PMIC_STATUS pmic_audio_vcodec_get_clock(const PMIC_AUDIO_HANDLE handle,
+					PMIC_AUDIO_CLOCK_IN_SOURCE *
+					const clockIn,
+					PMIC_AUDIO_VCODEC_CLOCK_IN_FREQ *
+					const clockFreq,
+					PMIC_AUDIO_VCODEC_SAMPLING_RATE *
+					const samplingRate,
+					PMIC_AUDIO_CLOCK_INVERT *

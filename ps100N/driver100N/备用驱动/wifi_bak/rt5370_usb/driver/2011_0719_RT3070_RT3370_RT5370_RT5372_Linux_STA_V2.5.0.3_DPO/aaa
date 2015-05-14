@@ -1,0 +1,9 @@
+make -C tools
+make[1]: Entering directory `/home/root/2011_0719_RT3070_RT3370_RT5370_RT5372_Linux_STA_V2.5.0.3_DPO/tools'
+gcc -g bin2h.c -o bin2h
+make[1]: Leaving directory `/home/root/2011_0719_RT3070_RT3370_RT5370_RT5372_Linux_STA_V2.5.0.3_DPO/tools'
+/home/root/2011_0719_RT3070_RT3370_RT5370_RT5372_Linux_STA_V2.5.0.3_DPO/tools/bin2h
+cp -f os/linux/Makefile.6.util /home/root/2011_0719_RT3070_RT3370_RT5370_RT5372_Linux_STA_V2.5.0.3_DPO/os/linux/Makefile
+make -C /root/rootHome/imx258_kerntest/imx258_usb/imx258_kernel/trunk  SUBDIRS=/home/root/2011_0719_RT3070_RT3370_RT5370_RT5372_Linux_STA_V2.5.0.3_DPO/os/linux modules
+make[1]: Entering directory `/home/root/imx258_kerntest/imx258_usb/imx258_kernel/trunk'
+make[1]: Leaving directory `/home/root/imx258_kerntest/imx258_usb/imx258_kernel/trunk'

@@ -1,0 +1,90 @@
+sure;
+		return 0;
+	}
+
+	if (icd->ops->get_control)
+		return icd->ops->get_control(icd, ctrl);
+	return -EINVAL;
+}
+
+static int soc_camera_s_ctrl(struct file *file, void *priv,
+			     struct v4l2_control *ctrl)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+
+	WARN_ON(priv != file->private_data);
+
+	if (icd->ops->set_control)
+		return icd->ops->set_control(icd, ctrl);
+	return -EINVAL;
+}
+
+static int soc_camera_cropcap(struct file *file, void *fh,
+			      struct v4l2_cropcap *a)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+
+	a->type				= V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	a->bounds.left			= icd->x_min;
+	a->bounds.top			= icd->y_min;
+	a->bounds.width			= icd->width_max;
+	a->bounds.height		= icd->height_max;
+	a->defrect.left			= icd->x_min;
+	a->defrect.top			= icd->y_min;
+	a->defrect.width		= DEFAULT_WIDTH;
+	a->defrect.height		= DEFAULT_HEIGHT;
+	a->pixelaspect.numerator	= 1;
+	a->pixelaspect.denominator	= 1;
+
+	return 0;
+}
+
+static int soc_camera_g_crop(struct file *file, void *fh,
+			     struct v4l2_crop *a)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+
+	a->type		= V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	a->c.left	= icd->x_current;
+	a->c.top	= icd->y_current;
+	a->c.width	= icd->width;
+	a->c.height	= icd->height;
+
+	return 0;
+}
+
+static int soc_camera_s_crop(struct file *file, void *fh,
+			     struct v4l2_crop *a)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struct soc_camera_device *icd = icf->icd;
+	struct soc_camera_host *ici = to_soc_camera_host(icd->dev.parent);
+	int ret;
+
+	if (a->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+		return -EINVAL;
+
+	/* Cropping is allowed during a running capture, guard consistency */
+	mutex_lock(&icf->vb_vidq.vb_lock);
+
+	ret = ici->ops->set_crop(icd, &a->c);
+	if (!ret) {
+		icd->width	= a->c.width;
+		icd->height	= a->c.height;
+		icd->x_current	= a->c.left;
+		icd->y_current	= a->c.top;
+	}
+
+	mutex_unlock(&icf->vb_vidq.vb_lock);
+
+	return ret;
+}
+
+static int soc_camera_g_chip_ident(struct file *file, void *fh,
+				   struct v4l2_dbg_chip_ident *id)
+{
+	struct soc_camera_file *icf = file->private_data;
+	struc

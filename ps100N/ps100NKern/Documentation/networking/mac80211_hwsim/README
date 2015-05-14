@@ -1,0 +1,106 @@
+reg_req->method_mask, IB_MGMT_MAX_METHODS,
+			       1+i)) {
+		(*method)->agent[i] = agent_priv;
+	}
+	return 0;
+
+error4:
+	/* Remove any methods for this mad agent */
+	remove_methods_mad_agent(*method, agent_priv);
+	/* Now, check to see if there are any methods in use */
+	if (!check_method_table(*method)) {
+		/* If not, release management method table */
+		kfree(*method);
+		*method = NULL;
+	}
+	ret = -EINVAL;
+error3:
+	if (vendor_class) {
+		(*vendor_table)->vendor_class[vclass] = NULL;
+		kfree(vendor_class);
+	}
+error2:
+	if (vendor) {
+		*vendor_table = NULL;
+		kfree(vendor);
+	}
+error1:
+	return ret;
+}
+
+static void remove_mad_reg_req(struct ib_mad_agent_private *agent_priv)
+{
+	struct ib_mad_port_private *port_priv;
+	struct ib_mad_mgmt_class_table *class;
+	struct ib_mad_mgmt_method_table *method;
+	struct ib_mad_mgmt_vendor_class_table *vendor;
+	struct ib_mad_mgmt_vendor_class *vendor_class;
+	int index;
+	u8 mgmt_class;
+
+	/*
+	 * Was MAD registration request supplied
+	 * with original registration ?
+	 */
+	if (!agent_priv->reg_req) {
+		goto out;
+	}
+
+	port_priv = agent_priv->qp_info->port_priv;
+	mgmt_class = convert_mgmt_class(agent_priv->reg_req->mgmt_class);
+	class = port_priv->version[
+			agent_priv->reg_req->mgmt_class_version].class;
+	if (!class)
+		goto vendor_check;
+
+	method = class->method_table[mgmt_class];
+	if (method) {
+		/* Remove any methods for this mad agent */
+		remove_methods_mad_agent(method, agent_priv);
+		/* Now, check to see if there are any methods still in use */
+		if (!check_method_table(method)) {
+			/* If not, release management method table */
+			 kfree(method);
+			 class->method_table[mgmt_class] = NULL;
+			 /* Any management classes left ? */
+			if (!check_class_table(class)) {
+				/* If not, release management class table */
+				kfree(class);
+				port_priv->version[
+					agent_priv->reg_req->
+					mgmt_class_version].class = NULL;
+			}
+		}
+	}
+
+vendor_check:
+	if (!is_vendor_class(mgmt_class))
+		goto out;
+
+	/* normalize mgmt_class to vendor range 2 */
+	mgmt_class = vendor_class_index(agent_priv->reg_req->mgmt_class);
+	vendor = port_priv->version[
+			agent_priv->reg_req->mgmt_class_version].vendor;
+
+	if (!vendor)
+		goto out;
+
+	vendor_class = vendor->vendor_class[mgmt_class];
+	if (vendor_class) {
+		index = find_vendor_oui(vendor_class, agent_priv->reg_req->oui);
+		if (index < 0)
+			goto out;
+		method = vendor_class->method_table[index];
+		if (method) {
+			/* Remove any methods for this mad agent */
+			remove_methods_mad_agent(method, agent_priv);
+			/*
+			 * Now, check to see if there are
+			 * any methods still in use
+			 */
+			if (!check_method_table(method)) {
+				/* If not, release management method table */
+				kfree(method);
+				vendor_class->method_table[index] = NULL;
+				memset(vendor_class->oui[index], 0, 3);
+				/* Any OUIs left ? *

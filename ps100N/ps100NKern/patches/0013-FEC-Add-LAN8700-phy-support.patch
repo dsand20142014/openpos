@@ -1,0 +1,48 @@
+auto Xon flow control */
+	efr |= (UART_17158_EFR_ECB | UART_17158_EFR_IXON);
+
+	/* Why? Becuz Exar's spec says we have to zero it out before setting it */
+	writeb(0, &ch->ch_neo_uart->efr);
+
+	/* Turn on UART enhanced bits */
+	writeb(efr, &ch->ch_neo_uart->efr);
+
+	writeb((UART_17158_FCTR_TRGD | UART_17158_FCTR_RTS_8DELAY), &ch->ch_neo_uart->fctr);
+	ch->ch_r_watermark = 4;
+
+	writeb(32, &ch->ch_neo_uart->rfifo);
+	ch->ch_r_tlevel = 32;
+
+	/* Tell UART what start/stop chars it should be looking for */
+	writeb(ch->ch_startc, &ch->ch_neo_uart->xonchar1);
+	writeb(0, &ch->ch_neo_uart->xonchar2);
+
+	writeb(ch->ch_stopc, &ch->ch_neo_uart->xoffchar1);
+	writeb(0, &ch->ch_neo_uart->xoffchar2);
+
+	writeb(ier, &ch->ch_neo_uart->ier);
+}
+
+static void neo_set_ixoff_flow_control(struct jsm_channel *ch)
+{
+	u8 ier, efr;
+	ier = readb(&ch->ch_neo_uart->ier);
+	efr = readb(&ch->ch_neo_uart->efr);
+
+	jsm_printk(PARAM, INFO, &ch->ch_bd->pci_dev, "Setting IXOFF FLOW\n");
+
+	/* Turn off auto RTS flow control */
+	ier &= ~(UART_17158_IER_RTSDTR);
+	efr &= ~(UART_17158_EFR_RTSDTR);
+
+	/* Turn on auto Xoff flow control */
+	ier |= (UART_17158_IER_XOFF);
+	efr |= (UART_17158_EFR_ECB | UART_17158_EFR_IXOFF);
+
+	/* Why? Becuz Exar's spec says we have to zero it out before setting it */
+	writeb(0, &ch->ch_neo_uart->efr);
+
+	/* Turn on UART enhanced bits */
+	writeb(efr, &ch->ch_neo_uart->efr);
+
+	/* Turn on table D, with 8 char h

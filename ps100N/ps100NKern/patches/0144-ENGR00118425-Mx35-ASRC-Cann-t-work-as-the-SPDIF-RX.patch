@@ -1,0 +1,34 @@
+atus));
+	nop.nop_h.ac_link = nop_addr;
+	obram_write(ioaddr, toff(ac_nop_t, nop_addr, nop_h.ac_link),
+		    (unsigned char *) &nop.nop_h.ac_link,
+		    sizeof(nop.nop_h.ac_link));
+
+	/* Create a configure action. */
+	memset(&cfg, 0x00, sizeof(cfg));
+
+	/*
+	 * For Linux we invert AC_CFG_ALOC() so as to conform
+	 * to the way that net packets reach us from above.
+	 * (See also ac_tx_t.)
+	 *
+	 * Updated from Wavelan Manual WCIN085B
+	 */
+	cfg.cfg_byte_cnt =
+	    AC_CFG_BYTE_CNT(sizeof(ac_cfg_t) - sizeof(ach_t));
+	cfg.cfg_fifolim = AC_CFG_FIFOLIM(4);
+	cfg.cfg_byte8 = AC_CFG_SAV_BF(1) | AC_CFG_SRDY(0);
+	cfg.cfg_byte9 = AC_CFG_ELPBCK(0) |
+	    AC_CFG_ILPBCK(0) |
+	    AC_CFG_PRELEN(AC_CFG_PLEN_2) |
+	    AC_CFG_ALOC(1) | AC_CFG_ADDRLEN(WAVELAN_ADDR_SIZE);
+	cfg.cfg_byte10 = AC_CFG_BOFMET(1) |
+	    AC_CFG_ACR(6) | AC_CFG_LINPRIO(0);
+	cfg.cfg_ifs = 0x20;
+	cfg.cfg_slotl = 0x0C;
+	cfg.cfg_byte13 = AC_CFG_RETRYNUM(15) | AC_CFG_SLTTMHI(0);
+	cfg.cfg_byte14 = AC_CFG_FLGPAD(0) |
+	    AC_CFG_BTSTF(0) |
+	    AC_CFG_CRC16(0) |
+	    AC_CFG_NCRC(0) |
+	    AC_CFG_TNCRS(

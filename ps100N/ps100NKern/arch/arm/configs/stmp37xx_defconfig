@@ -1,0 +1,873 @@
+);
+
+	if (!ha->mailbox_wait) {
+		if (ha->flags.reset_marker)
+			qla1280_rst_aen(ha);
+	}
+
+	if (!list_empty(&done_q))
+		qla1280_done(ha);
+
+	/* LEAVE("qla1280_poll"); */
+}
+
+/*
+ * qla1280_bus_reset
+ *      Issue SCSI bus reset.
+ *
+ * Input:
+ *      ha  = adapter block pointer.
+ *      bus = SCSI bus number.
+ *
+ * Returns:
+ *      0 = success
+ */
+static int
+qla1280_bus_reset(struct scsi_qla_host *ha, int bus)
+{
+	uint16_t mb[MAILBOX_REGISTER_COUNT];
+	uint16_t reset_delay;
+	int status;
+
+	dprintk(3, "qla1280_bus_reset: entered\n");
+
+	if (qla1280_verbose)
+		printk(KERN_INFO "scsi(%li:%i): Resetting SCSI BUS\n",
+		       ha->host_no, bus);
+
+	reset_delay = ha->bus_settings[bus].bus_reset_delay;
+	mb[0] = MBC_BUS_RESET;
+	mb[1] = reset_delay;
+	mb[2] = (uint16_t) bus;
+	status = qla1280_mailbox_command(ha, BIT_2 | BIT_1 | BIT_0, &mb[0]);
+
+	if (status) {
+		if (ha->bus_settings[bus].failed_reset_count > 2)
+			ha->bus_settings[bus].scsi_bus_dead = 1;
+		ha->bus_settings[bus].failed_reset_count++;
+	} else {
+		spin_unlock_irq(ha->host->host_lock);
+		ssleep(reset_delay);
+		spin_lock_irq(ha->host->host_lock);
+
+		ha->bus_settings[bus].scsi_bus_dead = 0;
+		ha->bus_settings[bus].failed_reset_count = 0;
+		ha->bus_settings[bus].reset_marker = 0;
+		/* Issue marker command. */
+		qla1280_marker(ha, bus, 0, 0, MK_SYNC_ALL);
+	}
+
+	/*
+	 * We should probably call qla1280_set_target_parameters()
+	 * here as well for all devices on the bus.
+	 */
+
+	if (status)
+		dprintk(2, "qla1280_bus_reset: **** FAILED ****\n");
+	else
+		dprintk(3, "qla1280_bus_reset: exiting normally\n");
+
+	return status;
+}
+
+/*
+ * qla1280_device_reset
+ *      Issue bus device reset message to the target.
+ *
+ * Input:
+ *      ha      = adapter block pointer.
+ *      bus     = SCSI BUS number.
+ *      target  = SCSI ID.
+ *
+ * Returns:
+ *      0 = success
+ */
+static int
+qla1280_device_reset(struct scsi_qla_host *ha, int bus, int target)
+{
+	uint16_t mb[MAILBOX_REGISTER_COUNT];
+	int status;
+
+	ENTER("qla1280_device_reset");
+
+	mb[0] = MBC_ABORT_TARGET;
+	mb[1] = (bus ? (target | BIT_7) : target) << 8;
+	mb[2] = 1;
+	status = qla1280_mailbox_command(ha, BIT_2 | BIT_1 | BIT_0, &mb[0]);
+
+	/* Issue marker command. */
+	qla1280_marker(ha, bus, target, 0, MK_SYNC_ID);
+
+	if (status)
+		dprintk(2, "qla1280_device_reset: **** FAILED ****\n");
+
+	LEAVE("qla1280_device_reset");
+	return status;
+}
+
+/*
+ * qla1280_abort_command
+ *      Abort command aborts a specified IOCB.
+ *
+ * Input:
+ *      ha = adapter block pointer.
+ *      sp = SB structure pointer.
+ *
+ * Returns:
+ *      0 = success
+ */
+static int
+qla1280_abort_command(struct scsi_qla_host *ha, struct srb * sp, int handle)
+{
+	uint16_t mb[MAILBOX_REGISTER_COUNT];
+	unsigned int bus, target, lun;
+	int status;
+
+	ENTER("qla1280_abort_command");
+
+	bus = SCSI_BUS_32(sp->cmd);
+	target = SCSI_TCN_32(sp->cmd);
+	lun = SCSI_LUN_32(sp->cmd);
+
+	sp->flags |= SRB_ABORT_PENDING;
+
+	mb[0] = MBC_ABORT_COMMAND;
+	mb[1] = (bus ? target | BIT_7 : target) << 8 | lun;
+	mb[2] = handle >> 16;
+	mb[3] = handle & 0xffff;
+	status = qla1280_mailbox_command(ha, 0x0f, &mb[0]);
+
+	if (status) {
+		dprintk(2, "qla1280_abort_command: **** FAILED ****\n");
+		sp->flags &= ~SRB_ABORT_PENDING;
+	}
+
+
+	LEAVE("qla1280_abort_command");
+	return status;
+}
+
+/*
+ * qla1280_reset_adapter
+ *      Reset adapter.
+ *
+ * Input:
+ *      ha = adapter block pointer.
+ */
+static void
+qla1280_reset_adapter(struct scsi_qla_host *ha)
+{
+	struct device_reg __iomem *reg = ha->iobase;
+
+	ENTER("qla1280_reset_adapter");
+
+	/* Disable ISP chip */
+	ha->flags.online = 0;
+	WRT_REG_WORD(&reg->ictrl, ISP_RESET);
+	WRT_REG_WORD(&reg->host_cmd,
+		     HC_RESET_RISC | HC_RELEASE_RISC | HC_DISABLE_BIOS);
+	RD_REG_WORD(&reg->id_l);	/* Flush PCI write */
+
+	LEAVE("qla1280_reset_adapter");
+}
+
+/*
+ *  Issue marker command.
+ *      Function issues marker IOCB.
+ *
+ * Input:
+ *      ha   = adapter block pointer.
+ *      bus  = SCSI BUS number
+ *      id   = SCSI ID
+ *      lun  = SCSI LUN
+ *      type = marker modifier
+ */
+static void
+qla1280_marker(struct scsi_qla_host *ha, int bus, int id, int lun, u8 type)
+{
+	struct mrk_entry *pkt;
+
+	ENTER("qla1280_marker");
+
+	/* Get request packet. */
+	if ((pkt = (struct mrk_entry *) qla1280_req_pkt(ha))) {
+		pkt->entry_type = MARKER_TYPE;
+		pkt->lun = (uint8_t) lun;
+		pkt->target = (uint8_t) (bus ? (id | BIT_7) : id);
+		pkt->modifier = type;
+		pkt->entry_status = 0;
+
+		/* Issue command to ISP */
+		qla1280_isp_cmd(ha);
+	}
+
+	LEAVE("qla1280_marker");
+}
+
+
+/*
+ * qla1280_64bit_start_scsi
+ *      The start SCSI is responsible for building request packets on
+ *      request ring and modifying ISP input pointer.
+ *
+ * Input:
+ *      ha = adapter block pointer.
+ *      sp = SB structure pointer.
+ *
+ * Returns:
+ *      0 = success, was able to issue command.
+ */
+#ifdef QLA_64BIT_PTR
+static int
+qla1280_64bit_start_scsi(struct scsi_qla_host *ha, struct srb * sp)
+{
+	struct device_reg __iomem *reg = ha->iobase;
+	struct scsi_cmnd *cmd = sp->cmd;
+	cmd_a64_entry_t *pkt;
+	__le32 *dword_ptr;
+	dma_addr_t dma_handle;
+	int status = 0;
+	int cnt;
+	int req_cnt;
+	int seg_cnt;
+	u8 dir;
+
+	ENTER("qla1280_64bit_start_scsi:");
+
+	/* Calculate number of entries and segments required. */
+	req_cnt = 1;
+	seg_cnt = scsi_dma_map(cmd);
+	if (seg_cnt > 0) {
+		if (seg_cnt > 2) {
+			req_cnt += (seg_cnt - 2) / 5;
+			if ((seg_cnt - 2) % 5)
+				req_cnt++;
+		}
+	} else if (seg_cnt < 0) {
+		status = 1;
+		goto out;
+	}
+
+	if ((req_cnt + 2) >= ha->req_q_cnt) {
+		/* Calculate number of free request entries. */
+		cnt = RD_REG_WORD(&reg->mailbox4);
+		if (ha->req_ring_index < cnt)
+			ha->req_q_cnt = cnt - ha->req_ring_index;
+		else
+			ha->req_q_cnt =
+				REQUEST_ENTRY_CNT - (ha->req_ring_index - cnt);
+	}
+
+	dprintk(3, "Number of free entries=(%d) seg_cnt=0x%x\n",
+		ha->req_q_cnt, seg_cnt);
+
+	/* If room for request in request ring. */
+	if ((req_cnt + 2) >= ha->req_q_cnt) {
+		status = SCSI_MLQUEUE_HOST_BUSY;
+		dprintk(2, "qla1280_start_scsi: in-ptr=0x%x  req_q_cnt="
+			"0x%xreq_cnt=0x%x", ha->req_ring_index, ha->req_q_cnt,
+			req_cnt);
+		goto out;
+	}
+
+	/* Check for room in outstanding command list. */
+	for (cnt = 0; cnt < MAX_OUTSTANDING_COMMANDS &&
+		     ha->outstanding_cmds[cnt] != NULL; cnt++);
+
+	if (cnt >= MAX_OUTSTANDING_COMMANDS) {
+		status = SCSI_MLQUEUE_HOST_BUSY;
+		dprintk(2, "qla1280_start_scsi: NO ROOM IN "
+			"OUTSTANDING ARRAY, req_q_cnt=0x%x", ha->req_q_cnt);
+		goto out;
+	}
+
+	ha->outstanding_cmds[cnt] = sp;
+	ha->req_q_cnt -= req_cnt;
+	CMD_HANDLE(sp->cmd) = (unsigned char *)(unsigned long)(cnt + 1);
+
+	dprintk(2, "start: cmd=%p sp=%p CDB=%xm, handle %lx\n", cmd, sp,
+		cmd->cmnd[0], (long)CMD_HANDLE(sp->cmd));
+	dprintk(2, "             bus %i, target %i, lun %i\n",
+		SCSI_BUS_32(cmd), SCSI_TCN_32(cmd), SCSI_LUN_32(cmd));
+	qla1280_dump_buffer(2, cmd->cmnd, MAX_COMMAND_SIZE);
+
+	/*
+	 * Build command packet.
+	 */
+	pkt = (cmd_a64_entry_t *) ha->request_ring_ptr;
+
+	pkt->entry_type = COMMAND_A64_TYPE;
+	pkt->entry_count = (uint8_t) req_cnt;
+	pkt->sys_define = (uint8_t) ha->req_ring_index;
+	pkt->entry_status = 0;
+	pkt->handle = cpu_to_le32(cnt);
+
+	/* Zero out remaining portion of packet. */
+	memset(((char *)pkt + 8), 0, (REQUEST_ENTRY_SIZE - 8));
+
+	/* Set ISP command timeout. */
+	pkt->timeout = cpu_to_le16(cmd->request->timeout/HZ);
+
+	/* Set device target ID and LUN */
+	pkt->lun = SCSI_LUN_32(cmd);
+	pkt->target = SCSI_BUS_32(cmd) ?
+		(SCSI_TCN_32(cmd) | BIT_7) : SCSI_TCN_32(cmd);
+
+	/* Enable simple tag queuing if device supports it. */
+	if (cmd->device->simple_tags)
+		pkt->control_flags |= cpu_to_le16(BIT_3);
+
+	/* Load SCSI command packet. */
+	pkt->cdb_len = cpu_to_le16(CMD_CDBLEN(cmd));
+	memcpy(pkt->scsi_cdb, CMD_CDBP(cmd), CMD_CDBLEN(cmd));
+	/* dprintk(1, "Build packet for command[0]=0x%x\n",pkt->scsi_cdb[0]); */
+
+	/* Set transfer direction. */
+	dir = qla1280_data_direction(cmd);
+	pkt->control_flags |= cpu_to_le16(dir);
+
+	/* Set total data segment count. */
+	pkt->dseg_count = cpu_to_le16(seg_cnt);
+
+	/*
+	 * Load data segments.
+	 */
+	if (seg_cnt) {	/* If data transfer. */
+		struct scatterlist *sg, *s;
+		int remseg = seg_cnt;
+
+		sg = scsi_sglist(cmd);
+
+		/* Setup packet address segment pointer. */
+		dword_ptr = (u32 *)&pkt->dseg_0_address;
+
+		/* Load command entry data segments. */
+		for_each_sg(sg, s, seg_cnt, cnt) {
+			if (cnt == 2)
+				break;
+
+			dma_handle = sg_dma_address(s);
+#if defined(CONFIG_IA64_GENERIC) || defined(CONFIG_IA64_SGI_SN2)
+			if (ha->flags.use_pci_vchannel)
+				sn_pci_set_vchan(ha->pdev,
+						 (unsigned long *)&dma_handle,
+						 SCSI_BUS_32(cmd));
+#endif
+			*dword_ptr++ =
+				cpu_to_le32(pci_dma_lo32(dma_handle));
+			*dword_ptr++ =
+				cpu_to_le32(pci_dma_hi32(dma_handle));
+			*dword_ptr++ = cpu_to_le32(sg_dma_len(s));
+			dprintk(3, "S/G Segment phys_addr=%x %x, len=0x%x\n",
+				cpu_to_le32(pci_dma_hi32(dma_handle)),
+				cpu_to_le32(pci_dma_lo32(dma_handle)),
+				cpu_to_le32(sg_dma_len(sg_next(s))));
+			remseg--;
+		}
+		dprintk(5, "qla1280_64bit_start_scsi: Scatter/gather "
+			"command packet data - b %i, t %i, l %i \n",
+			SCSI_BUS_32(cmd), SCSI_TCN_32(cmd),
+			SCSI_LUN_32(cmd));
+		qla1280_dump_buffer(5, (char *)pkt,
+				    REQUEST_ENTRY_SIZE);
+
+		/*
+		 * Build continuation packets.
+		 */
+		dprintk(3, "S/G Building Continuation...seg_cnt=0x%x "
+			"remains\n", seg_cnt);
+
+		while (remseg > 0) {
+			/* Update sg start */
+			sg = s;
+			/* Adjust ring index. */
+			ha->req_ring_index++;
+			if (ha->req_ring_index == REQUEST_ENTRY_CNT) {
+				ha->req_ring_index = 0;
+				ha->request_ring_ptr =
+					ha->request_ring;
+			} else
+				ha->request_ring_ptr++;
+
+			pkt = (cmd_a64_entry_t *)ha->request_ring_ptr;
+
+			/* Zero out packet. */
+			memset(pkt, 0, REQUEST_ENTRY_SIZE);
+
+			/* Load packet defaults. */
+			((struct cont_a64_entry *) pkt)->entry_type =
+				CONTINUE_A64_TYPE;
+			((struct cont_a64_entry *) pkt)->entry_count = 1;
+			((struct cont_a64_entry *) pkt)->sys_define =
+				(uint8_t)ha->req_ring_index;
+			/* Setup packet address segment pointer. */
+			dword_ptr =
+				(u32 *)&((struct cont_a64_entry *) pkt)->dseg_0_address;
+
+			/* Load continuation entry data segments. */
+			for_each_sg(sg, s, remseg, cnt) {
+				if (cnt == 5)
+					break;
+				dma_handle = sg_dma_address(s);
+#if defined(CONFIG_IA64_GENERIC) || defined(CONFIG_IA64_SGI_SN2)
+				if (ha->flags.use_pci_vchannel)
+					sn_pci_set_vchan(ha->pdev,
+							 (unsigned long *)&dma_handle,
+							 SCSI_BUS_32(cmd));
+#endif
+				*dword_ptr++ =
+					cpu_to_le32(pci_dma_lo32(dma_handle));
+				*dword_ptr++ =
+					cpu_to_le32(pci_dma_hi32(dma_handle));
+				*dword_ptr++ =
+					cpu_to_le32(sg_dma_len(s));
+				dprintk(3, "S/G Segment Cont. phys_addr=%x %x, len=0x%x\n",
+					cpu_to_le32(pci_dma_hi32(dma_handle)),
+					cpu_to_le32(pci_dma_lo32(dma_handle)),
+					cpu_to_le32(sg_dma_len(s)));
+			}
+			remseg -= cnt;
+			dprintk(5, "qla1280_64bit_start_scsi: "
+				"continuation packet data - b %i, t "
+				"%i, l %i \n", SCSI_BUS_32(cmd),
+				SCSI_TCN_32(cmd), SCSI_LUN_32(cmd));
+			qla1280_dump_buffer(5, (char *)pkt,
+					    REQUEST_ENTRY_SIZE);
+		}
+	} else {	/* No data transfer */
+		dprintk(5, "qla1280_64bit_start_scsi: No data, command "
+			"packet data - b %i, t %i, l %i \n",
+			SCSI_BUS_32(cmd), SCSI_TCN_32(cmd), SCSI_LUN_32(cmd));
+		qla1280_dump_buffer(5, (char *)pkt, REQUEST_ENTRY_SIZE);
+	}
+	/* Adjust ring index. */
+	ha->req_ring_index++;
+	if (ha->req_ring_index == REQUEST_ENTRY_CNT) {
+		ha->req_ring_index = 0;
+		ha->request_ring_ptr = ha->request_ring;
+	} else
+		ha->request_ring_ptr++;
+
+	/* Set chip new ring index. */
+	dprintk(2,
+		"qla1280_64bit_start_scsi: Wakeup RISC for pending command\n");
+	sp->flags |= SRB_SENT;
+	ha->actthreads++;
+	WRT_REG_WORD(&reg->mailbox4, ha->req_ring_index);
+	/* Enforce mmio write ordering; see comment in qla1280_isp_cmd(). */
+	mmiowb();
+
+ out:
+	if (status)
+		dprintk(2, "qla1280_64bit_start_scsi: **** FAILED ****\n");
+	else
+		dprintk(3, "qla1280_64bit_start_scsi: exiting normally\n");
+
+	return status;
+}
+#else /* !QLA_64BIT_PTR */
+
+/*
+ * qla1280_32bit_start_scsi
+ *      The start SCSI is responsible for building request packets on
+ *      request ring and modifying ISP input pointer.
+ *
+ *      The Qlogic firmware interface allows every queue slot to have a SCSI
+ *      command and up to 4 scatter/gather (SG) entries.  If we need more
+ *      than 4 SG entries, then continuation entries are used that can
+ *      hold another 7 entries each.  The start routine determines if there
+ *      is eought empty slots then build the combination of requests to
+ *      fulfill the OS request.
+ *
+ * Input:
+ *      ha = adapter block pointer.
+ *      sp = SCSI Request Block structure pointer.
+ *
+ * Returns:
+ *      0 = success, was able to issue command.
+ */
+static int
+qla1280_32bit_start_scsi(struct scsi_qla_host *ha, struct srb * sp)
+{
+	struct device_reg __iomem *reg = ha->iobase;
+	struct scsi_cmnd *cmd = sp->cmd;
+	struct cmd_entry *pkt;
+	__le32 *dword_ptr;
+	int status = 0;
+	int cnt;
+	int req_cnt;
+	int seg_cnt;
+	u8 dir;
+
+	ENTER("qla1280_32bit_start_scsi");
+
+	dprintk(1, "32bit_start: cmd=%p sp=%p CDB=%x\n", cmd, sp,
+		cmd->cmnd[0]);
+
+	/* Calculate number of entries and segments required. */
+	req_cnt = 1;
+	seg_cnt = scsi_dma_map(cmd);
+	if (seg_cnt) {
+		/*
+		 * if greater than four sg entries then we need to allocate
+		 * continuation entries
+		 */
+		if (seg_cnt > 4) {
+			req_cnt += (seg_cnt - 4) / 7;
+			if ((seg_cnt - 4) % 7)
+				req_cnt++;
+		}
+		dprintk(3, "S/G Transfer cmd=%p seg_cnt=0x%x, req_cnt=%x\n",
+			cmd, seg_cnt, req_cnt);
+	} else if (seg_cnt < 0) {
+		status = 1;
+		goto out;
+	}
+
+	if ((req_cnt + 2) >= ha->req_q_cnt) {
+		/* Calculate number of free request entries. */
+		cnt = RD_REG_WORD(&reg->mailbox4);
+		if (ha->req_ring_index < cnt)
+			ha->req_q_cnt = cnt - ha->req_ring_index;
+		else
+			ha->req_q_cnt =
+				REQUEST_ENTRY_CNT - (ha->req_ring_index - cnt);
+	}
+
+	dprintk(3, "Number of free entries=(%d) seg_cnt=0x%x\n",
+		ha->req_q_cnt, seg_cnt);
+	/* If room for request in request ring. */
+	if ((req_cnt + 2) >= ha->req_q_cnt) {
+		status = SCSI_MLQUEUE_HOST_BUSY;
+		dprintk(2, "qla1280_32bit_start_scsi: in-ptr=0x%x, "
+			"req_q_cnt=0x%x, req_cnt=0x%x", ha->req_ring_index,
+			ha->req_q_cnt, req_cnt);
+		goto out;
+	}
+
+	/* Check for empty slot in outstanding command list. */
+	for (cnt = 0; cnt < MAX_OUTSTANDING_COMMANDS &&
+		     (ha->outstanding_cmds[cnt] != 0); cnt++) ;
+
+	if (cnt >= MAX_OUTSTANDING_COMMANDS) {
+		status = SCSI_MLQUEUE_HOST_BUSY;
+		dprintk(2, "qla1280_32bit_start_scsi: NO ROOM IN OUTSTANDING "
+			"ARRAY, req_q_cnt=0x%x\n", ha->req_q_cnt);
+		goto out;
+	}
+
+	CMD_HANDLE(sp->cmd) = (unsigned char *) (unsigned long)(cnt + 1);
+	ha->outstanding_cmds[cnt] = sp;
+	ha->req_q_cnt -= req_cnt;
+
+	/*
+	 * Build command packet.
+	 */
+	pkt = (struct cmd_entry *) ha->request_ring_ptr;
+
+	pkt->entry_type = COMMAND_TYPE;
+	pkt->entry_count = (uint8_t) req_cnt;
+	pkt->sys_define = (uint8_t) ha->req_ring_index;
+	pkt->entry_status = 0;
+	pkt->handle = cpu_to_le32(cnt);
+
+	/* Zero out remaining portion of packet. */
+	memset(((char *)pkt + 8), 0, (REQUEST_ENTRY_SIZE - 8));
+
+	/* Set ISP command timeout. */
+	pkt->timeout = cpu_to_le16(cmd->request->timeout/HZ);
+
+	/* Set device target ID and LUN */
+	pkt->lun = SCSI_LUN_32(cmd);
+	pkt->target = SCSI_BUS_32(cmd) ?
+		(SCSI_TCN_32(cmd) | BIT_7) : SCSI_TCN_32(cmd);
+
+	/* Enable simple tag queuing if device supports it. */
+	if (cmd->device->simple_tags)
+		pkt->control_flags |= cpu_to_le16(BIT_3);
+
+	/* Load SCSI command packet. */
+	pkt->cdb_len = cpu_to_le16(CMD_CDBLEN(cmd));
+	memcpy(pkt->scsi_cdb, CMD_CDBP(cmd), CMD_CDBLEN(cmd));
+
+	/*dprintk(1, "Build packet for command[0]=0x%x\n",pkt->scsi_cdb[0]); */
+	/* Set transfer direction. */
+	dir = qla1280_data_direction(cmd);
+	pkt->control_flags |= cpu_to_le16(dir);
+
+	/* Set total data segment count. */
+	pkt->dseg_count = cpu_to_le16(seg_cnt);
+
+	/*
+	 * Load data segments.
+	 */
+	if (seg_cnt) {
+		struct scatterlist *sg, *s;
+		int remseg = seg_cnt;
+
+		sg = scsi_sglist(cmd);
+
+		/* Setup packet address segment pointer. */
+		dword_ptr = &pkt->dseg_0_address;
+
+		dprintk(3, "Building S/G data segments..\n");
+		qla1280_dump_buffer(1, (char *)sg, 4 * 16);
+
+		/* Load command entry data segments. */
+		for_each_sg(sg, s, seg_cnt, cnt) {
+			if (cnt == 4)
+				break;
+			*dword_ptr++ =
+				cpu_to_le32(pci_dma_lo32(sg_dma_address(s)));
+			*dword_ptr++ = cpu_to_le32(sg_dma_len(s));
+			dprintk(3, "S/G Segment phys_addr=0x%lx, len=0x%x\n",
+				(pci_dma_lo32(sg_dma_address(s))),
+				(sg_dma_len(s)));
+			remseg--;
+		}
+		/*
+		 * Build continuation packets.
+		 */
+		dprintk(3, "S/G Building Continuation"
+			"...seg_cnt=0x%x remains\n", seg_cnt);
+		while (remseg > 0) {
+			/* Continue from end point */
+			sg = s;
+			/* Adjust ring index. */
+			ha->req_ring_index++;
+			if (ha->req_ring_index == REQUEST_ENTRY_CNT) {
+				ha->req_ring_index = 0;
+				ha->request_ring_ptr =
+					ha->request_ring;
+			} else
+				ha->request_ring_ptr++;
+
+			pkt = (struct cmd_entry *)ha->request_ring_ptr;
+
+			/* Zero out packet. */
+			memset(pkt, 0, REQUEST_ENTRY_SIZE);
+
+			/* Load packet defaults. */
+			((struct cont_entry *) pkt)->
+				entry_type = CONTINUE_TYPE;
+			((struct cont_entry *) pkt)->entry_count = 1;
+
+			((struct cont_entry *) pkt)->sys_define =
+				(uint8_t) ha->req_ring_index;
+
+			/* Setup packet address segment pointer. */
+			dword_ptr =
+				&((struct cont_entry *) pkt)->dseg_0_address;
+
+			/* Load continuation entry data segments. */
+			for_each_sg(sg, s, remseg, cnt) {
+				if (cnt == 7)
+					break;
+				*dword_ptr++ =
+					cpu_to_le32(pci_dma_lo32(sg_dma_address(s)));
+				*dword_ptr++ =
+					cpu_to_le32(sg_dma_len(s));
+				dprintk(1,
+					"S/G Segment Cont. phys_addr=0x%x, "
+					"len=0x%x\n",
+					cpu_to_le32(pci_dma_lo32(sg_dma_address(s))),
+					cpu_to_le32(sg_dma_len(s)));
+			}
+			remseg -= cnt;
+			dprintk(5, "qla1280_32bit_start_scsi: "
+				"continuation packet data - "
+				"scsi(%i:%i:%i)\n", SCSI_BUS_32(cmd),
+				SCSI_TCN_32(cmd), SCSI_LUN_32(cmd));
+			qla1280_dump_buffer(5, (char *)pkt,
+					    REQUEST_ENTRY_SIZE);
+		}
+	} else {	/* No data transfer at all */
+		dprintk(5, "qla1280_32bit_start_scsi: No data, command "
+			"packet data - \n");
+		qla1280_dump_buffer(5, (char *)pkt, REQUEST_ENTRY_SIZE);
+	}
+	dprintk(5, "qla1280_32bit_start_scsi: First IOCB block:\n");
+	qla1280_dump_buffer(5, (char *)ha->request_ring_ptr,
+			    REQUEST_ENTRY_SIZE);
+
+	/* Adjust ring index. */
+	ha->req_ring_index++;
+	if (ha->req_ring_index == REQUEST_ENTRY_CNT) {
+		ha->req_ring_index = 0;
+		ha->request_ring_ptr = ha->request_ring;
+	} else
+		ha->request_ring_ptr++;
+
+	/* Set chip new ring index. */
+	dprintk(2, "qla1280_32bit_start_scsi: Wakeup RISC "
+		"for pending command\n");
+	sp->flags |= SRB_SENT;
+	ha->actthreads++;
+	WRT_REG_WORD(&reg->mailbox4, ha->req_ring_index);
+	/* Enforce mmio write ordering; see comment in qla1280_isp_cmd(). */
+	mmiowb();
+
+out:
+	if (status)
+		dprintk(2, "qla1280_32bit_start_scsi: **** FAILED ****\n");
+
+	LEAVE("qla1280_32bit_start_scsi");
+
+	return status;
+}
+#endif
+
+/*
+ * qla1280_req_pkt
+ *      Function is responsible for locking ring and
+ *      getting a zeroed out request packet.
+ *
+ * Input:
+ *      ha  = adapter block pointer.
+ *
+ * Returns:
+ *      0 = failed to get slot.
+ */
+static request_t *
+qla1280_req_pkt(struct scsi_qla_host *ha)
+{
+	struct device_reg __iomem *reg = ha->iobase;
+	request_t *pkt = NULL;
+	int cnt;
+	uint32_t timer;
+
+	ENTER("qla1280_req_pkt");
+
+	/*
+	 * This can be called from interrupt context, damn it!!!
+	 */
+	/* Wait for 30 seconds for slot. */
+	for (timer = 15000000; timer; timer--) {
+		if (ha->req_q_cnt > 0) {
+			/* Calculate number of free request entries. */
+			cnt = RD_REG_WORD(&reg->mailbox4);
+			if (ha->req_ring_index < cnt)
+				ha->req_q_cnt = cnt - ha->req_ring_index;
+			else
+				ha->req_q_cnt =
+					REQUEST_ENTRY_CNT - (ha->req_ring_index - cnt);
+		}
+
+		/* Found empty request ring slot? */
+		if (ha->req_q_cnt > 0) {
+			ha->req_q_cnt--;
+			pkt = ha->request_ring_ptr;
+
+			/* Zero out packet. */
+			memset(pkt, 0, REQUEST_ENTRY_SIZE);
+
+			/*
+			 * How can this be right when we have a ring
+			 * size of 512???
+			 */
+			/* Set system defined field. */
+			pkt->sys_define = (uint8_t) ha->req_ring_index;
+
+			/* Set entry count. */
+			pkt->entry_count = 1;
+
+			break;
+		}
+
+		udelay(2);	/* 10 */
+
+		/* Check for pending interrupts. */
+		qla1280_poll(ha);
+	}
+
+	if (!pkt)
+		dprintk(2, "qla1280_req_pkt: **** FAILED ****\n");
+	else
+		dprintk(3, "qla1280_req_pkt: exiting normally\n");
+
+	return pkt;
+}
+
+/*
+ * qla1280_isp_cmd
+ *      Function is responsible for modifying ISP input pointer.
+ *      Releases ring lock.
+ *
+ * Input:
+ *      ha  = adapter block pointer.
+ */
+static void
+qla1280_isp_cmd(struct scsi_qla_host *ha)
+{
+	struct device_reg __iomem *reg = ha->iobase;
+
+	ENTER("qla1280_isp_cmd");
+
+	dprintk(5, "qla1280_isp_cmd: IOCB data:\n");
+	qla1280_dump_buffer(5, (char *)ha->request_ring_ptr,
+			    REQUEST_ENTRY_SIZE);
+
+	/* Adjust ring index. */
+	ha->req_ring_index++;
+	if (ha->req_ring_index == REQUEST_ENTRY_CNT) {
+		ha->req_ring_index = 0;
+		ha->request_ring_ptr = ha->request_ring;
+	} else
+		ha->request_ring_ptr++;
+
+	/*
+	 * Update request index to mailbox4 (Request Queue In).
+	 * The mmiowb() ensures that this write is ordered with writes by other
+	 * CPUs.  Without the mmiowb(), it is possible for the following:
+	 *    CPUA posts write of index 5 to mailbox4
+	 *    CPUA releases host lock
+	 *    CPUB acquires host lock
+	 *    CPUB posts write of index 6 to mailbox4
+	 *    On PCI bus, order reverses and write of 6 posts, then index 5,
+	 *       causing chip to issue full queue of stale commands
+	 * The mmiowb() prevents future writes from crossing the barrier.
+	 * See Documentation/DocBook/deviceiobook.tmpl for more information.
+	 */
+	WRT_REG_WORD(&reg->mailbox4, ha->req_ring_index);
+	mmiowb();
+
+	LEAVE("qla1280_isp_cmd");
+}
+
+/****************************************************************************/
+/*                        Interrupt Service Routine.                        */
+/****************************************************************************/
+
+/****************************************************************************
+ *  qla1280_isr
+ *      Calls I/O done on command completion.
+ *
+ * Input:
+ *      ha           = adapter block pointer.
+ *      done_q       = done queue.
+ ****************************************************************************/
+static void
+qla1280_isr(struct scsi_qla_host *ha, struct list_head *done_q)
+{
+	struct device_reg __iomem *reg = ha->iobase;
+	struct response *pkt;
+	struct srb *sp = NULL;
+	uint16_t mailbox[MAILBOX_REGISTER_COUNT];
+	uint16_t *wptr;
+	uint32_t index;
+	u16 istatus;
+
+	ENTER("qla1280_isr");
+
+	istatus = RD_REG_WORD(&reg->istatus);
+	if (!(istatus & (RISC_INT | PCI_INT)))
+		return;
+
+	/* Save mailbox register 5 */
+	mailbox[5] = RD_REG_WORD(&reg->mailbox5);
+
+	/* Check for mailbox interrupt. */
+
+	mailbox[0] = RD_REG_WORD_dmasync(&reg->semaphore);
+
+	if (mailbox[0]

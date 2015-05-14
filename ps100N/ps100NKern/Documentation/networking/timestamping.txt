@@ -1,0 +1,301 @@
+(struct pm2fb_par *p, s32 idx)
+{
+	pm2_WR(p, PM2R_RD_PALETTE_WRITE_ADDRESS, idx);
+	mb();
+	return pm2_RD(p, PM2R_RD_INDEXED_DATA);
+}
+
+static inline u32 pm2v_RDAC_RD(struct pm2fb_par *p, s32 idx)
+{
+	pm2_WR(p, PM2VR_RD_INDEX_LOW, idx & 0xff);
+	mb();
+	return pm2_RD(p,  PM2VR_RD_INDEXED_DATA);
+}
+
+static inline void pm2_RDAC_WR(struct pm2fb_par *p, s32 idx, u32 v)
+{
+	pm2_WR(p, PM2R_RD_PALETTE_WRITE_ADDRESS, idx);
+	wmb();
+	pm2_WR(p, PM2R_RD_INDEXED_DATA, v);
+	wmb();
+}
+
+static inline void pm2v_RDAC_WR(struct pm2fb_par *p, s32 idx, u32 v)
+{
+	pm2_WR(p, PM2VR_RD_INDEX_LOW, idx & 0xff);
+	wmb();
+	pm2_WR(p, PM2VR_RD_INDEXED_DATA, v);
+	wmb();
+}
+
+#ifdef CONFIG_FB_PM2_FIFO_DISCONNECT
+#define WAIT_FIFO(p, a)
+#else
+static inline void WAIT_FIFO(struct pm2fb_par *p, u32 a)
+{
+	while (pm2_RD(p, PM2R_IN_FIFO_SPACE) < a)
+		cpu_relax();
+}
+#endif
+
+/*
+ * partial products for the supported horizontal resolutions.
+ */
+#define PACKPP(p0, p1, p2)	(((p2) << 6) | ((p1) << 3) | (p0))
+static const struct {
+	u16 width;
+	u16 pp;
+} pp_table[] = {
+	{ 32,	PACKPP(1, 0, 0) }, { 64,	PACKPP(1, 1, 0) },
+	{ 96,	PACKPP(1, 1, 1) }, { 128,	PACKPP(2, 1, 1) },
+	{ 160,	PACKPP(2, 2, 1) }, { 192,	PACKPP(2, 2, 2) },
+	{ 224,	PACKPP(3, 2, 1) }, { 256,	PACKPP(3, 2, 2) },
+	{ 288,	PACKPP(3, 3, 1) }, { 320,	PACKPP(3, 3, 2) },
+	{ 384,	PACKPP(3, 3, 3) }, { 416,	PACKPP(4, 3, 1) },
+	{ 448,	PACKPP(4, 3, 2) }, { 512,	PACKPP(4, 3, 3) },
+	{ 544,	PACKPP(4, 4, 1) }, { 576,	PACKPP(4, 4, 2) },
+	{ 640,	PACKPP(4, 4, 3) }, { 768,	PACKPP(4, 4, 4) },
+	{ 800,	PACKPP(5, 4, 1) }, { 832,	PACKPP(5, 4, 2) },
+	{ 896,	PACKPP(5, 4, 3) }, { 1024,	PACKPP(5, 4, 4) },
+	{ 1056,	PACKPP(5, 5, 1) }, { 1088,	PACKPP(5, 5, 2) },
+	{ 1152,	PACKPP(5, 5, 3) }, { 1280,	PACKPP(5, 5, 4) },
+	{ 1536,	PACKPP(5, 5, 5) }, { 1568,	PACKPP(6, 5, 1) },
+	{ 1600,	PACKPP(6, 5, 2) }, { 1664,	PACKPP(6, 5, 3) },
+	{ 1792,	PACKPP(6, 5, 4) }, { 2048,	PACKPP(6, 5, 5) },
+	{ 0,	0 } };
+
+static u32 partprod(u32 xres)
+{
+	int i;
+
+	for (i = 0; pp_table[i].width && pp_table[i].width != xres; i++)
+		;
+	if (pp_table[i].width == 0)
+		DPRINTK("invalid width %u\n", xres);
+	return pp_table[i].pp;
+}
+
+static u32 to3264(u32 timing, int bpp, int is64)
+{
+	switch (bpp) {
+	case 24:
+		timing *= 3;
+	case 8:
+		timing >>= 1;
+	case 16:
+		timing >>= 1;
+	case 32:
+		break;
+	}
+	if (is64)
+		timing >>= 1;
+	return timing;
+}
+
+static void pm2_mnp(u32 clk, unsigned char *mm, unsigned char *nn,
+		    unsigned char *pp)
+{
+	unsigned char m;
+	unsigned char n;
+	unsigned char p;
+	u32 f;
+	s32 curr;
+	s32 delta = 100000;
+
+	*mm = *nn = *pp = 0;
+	for (n = 2; n < 15; n++) {
+		for (m = 2; m; m++) {
+			f = PM2_REFERENCE_CLOCK * m / n;
+			if (f >= 150000 && f <= 300000) {
+				for (p = 0; p < 5; p++, f >>= 1) {
+					curr = (clk > f) ? clk - f : f - clk;
+					if (curr < delta) {
+						delta = curr;
+						*mm = m;
+						*nn = n;
+						*pp = p;
+					}
+				}
+			}
+		}
+	}
+}
+
+static void pm2v_mnp(u32 clk, unsigned char *mm, unsigned char *nn,
+		     unsigned char *pp)
+{
+	unsigned char m;
+	unsigned char n;
+	unsigned char p;
+	u32 f;
+	s32 delta = 1000;
+
+	*mm = *nn = *pp = 0;
+	for (m = 1; m < 128; m++) {
+		for (n = 2 * m + 1; n; n++) {
+			for (p = 0; p < 2; p++) {
+				f = (PM2_REFERENCE_CLOCK >> (p + 1)) * n / m;
+				if (clk > f - delta && clk < f + delta) {
+					delta = (clk > f) ? clk - f : f - clk;
+					*mm = m;
+					*nn = n;
+					*pp = p;
+				}
+			}
+		}
+	}
+}
+
+static void clear_palette(struct pm2fb_par *p)
+{
+	int i = 256;
+
+	WAIT_FIFO(p, 1);
+	pm2_WR(p, PM2R_RD_PALETTE_WRITE_ADDRESS, 0);
+	wmb();
+	while (i--) {
+		WAIT_FIFO(p, 3);
+		pm2_WR(p, PM2R_RD_PALETTE_DATA, 0);
+		pm2_WR(p, PM2R_RD_PALETTE_DATA, 0);
+		pm2_WR(p, PM2R_RD_PALETTE_DATA, 0);
+	}
+}
+
+static void reset_card(struct pm2fb_par *p)
+{
+	if (p->type == PM2_TYPE_PERMEDIA2V)
+		pm2_WR(p, PM2VR_RD_INDEX_HIGH, 0);
+	pm2_WR(p, PM2R_RESET_STATUS, 0);
+	mb();
+	while (pm2_RD(p, PM2R_RESET_STATUS) & PM2F_BEING_RESET)
+		cpu_relax();
+	mb();
+#ifdef CONFIG_FB_PM2_FIFO_DISCONNECT
+	DPRINTK("FIFO disconnect enabled\n");
+	pm2_WR(p, PM2R_FIFO_DISCON, 1);
+	mb();
+#endif
+
+	/* Restore stashed memory config information from probe */
+	WAIT_FIFO(p, 3);
+	pm2_WR(p, PM2R_MEM_CONTROL, p->mem_control);
+	pm2_WR(p, PM2R_BOOT_ADDRESS, p->boot_address);
+	wmb();
+	pm2_WR(p, PM2R_MEM_CONFIG, p->mem_config);
+}
+
+static void reset_config(struct pm2fb_par *p)
+{
+	WAIT_FIFO(p, 53);
+	pm2_WR(p, PM2R_CHIP_CONFIG, pm2_RD(p, PM2R_CHIP_CONFIG) &
+			~(PM2F_VGA_ENABLE | PM2F_VGA_FIXED));
+	pm2_WR(p, PM2R_BYPASS_WRITE_MASK, ~(0L));
+	pm2_WR(p, PM2R_FRAMEBUFFER_WRITE_MASK, ~(0L));
+	pm2_WR(p, PM2R_FIFO_CONTROL, 0);
+	pm2_WR(p, PM2R_APERTURE_ONE, 0);
+	pm2_WR(p, PM2R_APERTURE_TWO, 0);
+	pm2_WR(p, PM2R_RASTERIZER_MODE, 0);
+	pm2_WR(p, PM2R_DELTA_MODE, PM2F_DELTA_ORDER_RGB);
+	pm2_WR(p, PM2R_LB_READ_FORMAT, 0);
+	pm2_WR(p, PM2R_LB_WRITE_FORMAT, 0);
+	pm2_WR(p, PM2R_LB_READ_MODE, 0);
+	pm2_WR(p, PM2R_LB_SOURCE_OFFSET, 0);
+	pm2_WR(p, PM2R_FB_SOURCE_OFFSET, 0);
+	pm2_WR(p, PM2R_FB_PIXEL_OFFSET, 0);
+	pm2_WR(p, PM2R_FB_WINDOW_BASE, 0);
+	pm2_WR(p, PM2R_LB_WINDOW_BASE, 0);
+	pm2_WR(p, PM2R_FB_SOFT_WRITE_MASK, ~(0L));
+	pm2_WR(p, PM2R_FB_HARD_WRITE_MASK, ~(0L));
+	pm2_WR(p, PM2R_FB_READ_PIXEL, 0);
+	pm2_WR(p, PM2R_DITHER_MODE, 0);
+	pm2_WR(p, PM2R_AREA_STIPPLE_MODE, 0);
+	pm2_WR(p, PM2R_DEPTH_MODE, 0);
+	pm2_WR(p, PM2R_STENCIL_MODE, 0);
+	pm2_WR(p, PM2R_TEXTURE_ADDRESS_MODE, 0);
+	pm2_WR(p, PM2R_TEXTURE_READ_MODE, 0);
+	pm2_WR(p, PM2R_TEXEL_LUT_MODE, 0);
+	pm2_WR(p, PM2R_YUV_MODE, 0);
+	pm2_WR(p, PM2R_COLOR_DDA_MODE, 0);
+	pm2_WR(p, PM2R_TEXTURE_COLOR_MODE, 0);
+	pm2_WR(p, PM2R_FOG_MODE, 0);
+	pm2_WR(p, PM2R_ALPHA_BLEND_MODE, 0);
+	pm2_WR(p, PM2R_LOGICAL_OP_MODE, 0);
+	pm2_WR(p, PM2R_STATISTICS_MODE, 0);
+	pm2_WR(p, PM2R_SCISSOR_MODE, 0);
+	pm2_WR(p, PM2R_FILTER_MODE, PM2F_SYNCHRONIZATION);
+	pm2_WR(p, PM2R_RD_PIXEL_MASK, 0xff);
+	switch (p->type) {
+	case PM2_TYPE_PERMEDIA2:
+		pm2_RDAC_WR(p, PM2I_RD_MODE_CONTROL, 0); /* no overlay */
+		pm2_RDAC_WR(p, PM2I_RD_CURSOR_CONTROL, 0);
+		pm2_RDAC_WR(p, PM2I_RD_MISC_CONTROL, PM2F_RD_PALETTE_WIDTH_8);
+		pm2_RDAC_WR(p, PM2I_RD_COLOR_KEY_CONTROL, 0);
+		pm2_RDAC_WR(p, PM2I_RD_OVERLAY_KEY, 0);
+		pm2_RDAC_WR(p, PM2I_RD_RED_KEY, 0);
+		pm2_RDAC_WR(p, PM2I_RD_GREEN_KEY, 0);
+		pm2_RDAC_WR(p, PM2I_RD_BLUE_KEY, 0);
+		break;
+	case PM2_TYPE_PERMEDIA2V:
+		pm2v_RDAC_WR(p, PM2VI_RD_MISC_CONTROL, 1); /* 8bit */
+		break;
+	}
+}
+
+static void set_aperture(struct pm2fb_par *p, u32 depth)
+{
+	/*
+	 * The hardware is little-endian. When used in big-endian
+	 * hosts, the on-chip aperture settings are used where
+	 * possible to translate from host to card byte order.
+	 */
+	WAIT_FIFO(p, 2);
+#ifdef __LITTLE_ENDIAN
+	pm2_WR(p, PM2R_APERTURE_ONE, PM2F_APERTURE_STANDARD);
+#else
+	switch (depth) {
+	case 24:	/* RGB->BGR */
+		/*
+		 * We can't use the aperture to translate host to
+		 * card byte order here, so we switch to BGR mode
+		 * in pm2fb_set_par().
+		 */
+	case 8:		/* B->B */
+		pm2_WR(p, PM2R_APERTURE_ONE, PM2F_APERTURE_STANDARD);
+		break;
+	case 16:	/* HL->LH */
+		pm2_WR(p, PM2R_APERTURE_ONE, PM2F_APERTURE_HALFWORDSWAP);
+		break;
+	case 32:	/* RGBA->ABGR */
+		pm2_WR(p, PM2R_APERTURE_ONE, PM2F_APERTURE_BYTESWAP);
+		break;
+	}
+#endif
+
+	/* We don't use aperture two, so this may be superflous */
+	pm2_WR(p, PM2R_APERTURE_TWO, PM2F_APERTURE_STANDARD);
+}
+
+static void set_color(struct pm2fb_par *p, unsigned char regno,
+		      unsigned char r, unsigned char g, unsigned char b)
+{
+	WAIT_FIFO(p, 4);
+	pm2_WR(p, PM2R_RD_PALETTE_WRITE_ADDRESS, regno);
+	wmb();
+	pm2_WR(p, PM2R_RD_PALETTE_DATA, r);
+	wmb();
+	pm2_WR(p, PM2R_RD_PALETTE_DATA, g);
+	wmb();
+	pm2_WR(p, PM2R_RD_PALETTE_DATA, b);
+}
+
+static void set_memclock(struct pm2fb_par *par, u32 clk)
+{
+	int i;
+	unsigned char m, n, p;
+
+	switch (par->type) {
+	case PM2_TYPE_PERMEDIA2V:
+		pm2v_mnp(clk/2, &m, &n, &p);
+		WAIT_FIFO(par, 12);
+		pm2_WR(par, PM2VR_RD_INDEX_HIGH, PM2VI_RD_MCLK_CONTROL >> 8);
+		pm2v_RDAC_WR(par, PM2VI_RD_MCLK_CONTROL

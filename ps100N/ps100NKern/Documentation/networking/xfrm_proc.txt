@@ -1,0 +1,73 @@
+0_DIVISOR);
+	hw->vga1_divisor = INREG(VGA1_DIVISOR);
+	hw->vga_pd = INREG(VGAPD);
+	hw->dpll_a = INREG(DPLL_A);
+	hw->dpll_b = INREG(DPLL_B);
+	hw->fpa0 = INREG(FPA0);
+	hw->fpa1 = INREG(FPA1);
+	hw->fpb0 = INREG(FPB0);
+	hw->fpb1 = INREG(FPB1);
+
+	if (flag == 1)
+		return flag;
+
+#if 0
+	/* This seems to be a problem with the 852GM/855GM */
+	for (i = 0; i < PALETTE_8_ENTRIES; i++) {
+		hw->palette_a[i] = INREG(PALETTE_A + (i << 2));
+		hw->palette_b[i] = INREG(PALETTE_B + (i << 2));
+	}
+#endif
+
+	if (flag == 2)
+		return flag;
+
+	hw->htotal_a = INREG(HTOTAL_A);
+	hw->hblank_a = INREG(HBLANK_A);
+	hw->hsync_a = INREG(HSYNC_A);
+	hw->vtotal_a = INREG(VTOTAL_A);
+	hw->vblank_a = INREG(VBLANK_A);
+	hw->vsync_a = INREG(VSYNC_A);
+	hw->src_size_a = INREG(SRC_SIZE_A);
+	hw->bclrpat_a = INREG(BCLRPAT_A);
+	hw->htotal_b = INREG(HTOTAL_B);
+	hw->hblank_b = INREG(HBLANK_B);
+	hw->hsync_b = INREG(HSYNC_B);
+	hw->vtotal_b = INREG(VTOTAL_B);
+	hw->vblank_b = INREG(VBLANK_B);
+	hw->vsync_b = INREG(VSYNC_B);
+	hw->src_size_b = INREG(SRC_SIZE_B);
+	hw->bclrpat_b = INREG(BCLRPAT_B);
+
+	if (flag == 3)
+		return flag;
+
+	hw->adpa = INREG(ADPA);
+	hw->dvoa = INREG(DVOA);
+	hw->dvob = INREG(DVOB);
+	hw->dvoc = INREG(DVOC);
+	hw->dvoa_srcdim = INREG(DVOA_SRCDIM);
+	hw->dvob_srcdim = INREG(DVOB_SRCDIM);
+	hw->dvoc_srcdim = INREG(DVOC_SRCDIM);
+	hw->lvds = INREG(LVDS);
+
+	if (flag == 4)
+		return flag;
+
+	hw->pipe_a_conf = INREG(PIPEACONF);
+	hw->pipe_b_conf = INREG(PIPEBCONF);
+	hw->disp_arb = INREG(DISPARB);
+
+	if (flag == 5)
+		return flag;
+
+	hw->cursor_a_control = INREG(CURSOR_A_CONTROL);
+	hw->cursor_b_control = INREG(CURSOR_B_CONTROL);
+	hw->cursor_a_base = INREG(CURSOR_A_BASEADDR);
+	hw->cursor_b_base = INREG(CURSOR_B_BASEADDR);
+
+	if (flag == 6)
+		return flag;
+
+	for (i = 0; i < 4; i++) {
+		hw->cursor_a_palette[i] = INREG(CURSOR_A_PALET

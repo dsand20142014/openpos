@@ -1,0 +1,850 @@
+------------------*/,{
+/*
+**	Because the size depends on the
+**	#define MAX_SCATTERH parameter,
+**	it is filled in at runtime.
+**
+**  ##==< i=MAX_SCATTERL; i<MAX_SCATTERL+MAX_SCATTERH >==
+**  ||	SCR_CALL ^ IFFALSE (WHEN (SCR_DATA_IN)),
+**  ||		PADDR (dispatch),
+**  ||	SCR_MOVE_TBL ^ SCR_DATA_IN,
+**  ||		offsetof (struct dsb, data[ i]),
+**  ##===================================================
+**
+**---------------------------------------------------------
+*/
+0
+}/*-------------------------< HDATA_IN2 >------------------*/,{
+	SCR_JUMP,
+		PADDR (data_in),
+
+}/*-------------------------< HDATA_OUT >-------------------*/,{
+/*
+**	Because the size depends on the
+**	#define MAX_SCATTERH parameter,
+**	it is filled in at runtime.
+**
+**  ##==< i=MAX_SCATTERL; i<MAX_SCATTERL+MAX_SCATTERH >==
+**  ||	SCR_CALL ^ IFFALSE (WHEN (SCR_DATA_OUT)),
+**  ||		PADDR (dispatch),
+**  ||	SCR_MOVE_TBL ^ SCR_DATA_OUT,
+**  ||		offsetof (struct dsb, data[ i]),
+**  ##===================================================
+**
+**---------------------------------------------------------
+*/
+0
+}/*-------------------------< HDATA_OUT2 >------------------*/,{
+	SCR_JUMP,
+		PADDR (data_out),
+
+}/*-------------------------< RESET >----------------------*/,{
+	/*
+	**      Send a TARGET_RESET message if bad IDENTIFY 
+	**	received on reselection.
+	*/
+	SCR_LOAD_REG (scratcha, ABORT_TASK),
+		0,
+	SCR_JUMP,
+		PADDRH (abort_resel),
+}/*-------------------------< ABORTTAG >-------------------*/,{
+	/*
+	**      Abort a wrong tag received on reselection.
+	*/
+	SCR_LOAD_REG (scratcha, ABORT_TASK),
+		0,
+	SCR_JUMP,
+		PADDRH (abort_resel),
+}/*-------------------------< ABORT >----------------------*/,{
+	/*
+	**      Abort a reselection when no active CCB.
+	*/
+	SCR_LOAD_REG (scratcha, ABORT_TASK_SET),
+		0,
+}/*-------------------------< ABORT_RESEL >----------------*/,{
+	SCR_COPY (1),
+		RADDR (scratcha),
+		NADDR (msgout),
+	SCR_SET (SCR_ATN),
+		0,
+	SCR_CLR (SCR_ACK),
+		0,
+	/*
+	**	and send it.
+	**	we expect an immediate disconnect
+	*/
+	SCR_REG_REG (scntl2, SCR_AND, 0x7f),
+		0,
+	SCR_MOVE_ABS (1) ^ SCR_MSG_OUT,
+		NADDR (msgout),
+	SCR_COPY (1),
+		NADDR (msgout),
+		NADDR (lastmsg),
+	SCR_CLR (SCR_ACK|SCR_ATN),
+		0,
+	SCR_WAIT_DISC,
+		0,
+	SCR_JUMP,
+		PADDR (start),
+}/*-------------------------< RESEND_IDENT >-------------------*/,{
+	/*
+	**	The target stays in MSG OUT phase after having acked 
+	**	Identify [+ Tag [+ Extended message ]]. Targets shall
+	**	behave this way on parity error.
+	**	We must send it again all the messages.
+	*/
+	SCR_SET (SCR_ATN), /* Shall be asserted 2 deskew delays before the  */
+		0,         /* 1rst ACK = 90 ns. Hope the NCR is'nt too fast */
+	SCR_JUMP,
+		PADDR (send_ident),
+}/*-------------------------< CLRATN_GO_ON >-------------------*/,{
+	SCR_CLR (SCR_ATN),
+		0,
+	SCR_JUMP,
+}/*-------------------------< NXTDSP_GO_ON >-------------------*/,{
+		0,
+}/*-------------------------< SDATA_IN >-------------------*/,{
+	SCR_CALL ^ IFFALSE (WHEN (SCR_DATA_IN)),
+		PADDR (dispatch),
+	SCR_MOVE_TBL ^ SCR_DATA_IN,
+		offsetof (struct dsb, sense),
+	SCR_CALL,
+		PADDR (dispatch),
+	SCR_JUMP,
+		PADDR (no_data),
+}/*-------------------------< DATA_IO >--------------------*/,{
+	/*
+	**	We jump here if the data direction was unknown at the 
+	**	time we had to queue the command to the scripts processor.
+	**	Pointers had been set as follow in this situation:
+	**	  savep   -->   DATA_IO
+	**	  lastp   -->   start pointer when DATA_IN
+	**	  goalp   -->   goal  pointer when DATA_IN
+	**	  wlastp  -->   start pointer when DATA_OUT
+	**	  wgoalp  -->   goal  pointer when DATA_OUT
+	**	This script sets savep/lastp/goalp according to the 
+	**	direction chosen by the target.
+	*/
+	SCR_JUMPR ^ IFTRUE (WHEN (SCR_DATA_OUT)),
+		32,
+	/*
+	**	Direction is DATA IN.
+	**	Warning: we jump here, even when phase is DATA OUT.
+	*/
+	SCR_COPY (4),
+		NADDR (header.lastp),
+		NADDR (header.savep),
+
+	/*
+	**	Jump to the SCRIPTS according to actual direction.
+	*/
+	SCR_COPY (4),
+		NADDR (header.savep),
+		RADDR (temp),
+	SCR_RETURN,
+		0,
+	/*
+	**	Direction is DATA OUT.
+	*/
+	SCR_COPY (4),
+		NADDR (header.wlastp),
+		NADDR (header.lastp),
+	SCR_COPY (4),
+		NADDR (header.wgoalp),
+		NADDR (header.goalp),
+	SCR_JUMPR,
+		-64,
+}/*-------------------------< BAD_IDENTIFY >---------------*/,{
+	/*
+	**	If message phase but not an IDENTIFY,
+	**	get some help from the C code.
+	**	Old SCSI device may behave so.
+	*/
+	SCR_JUMPR ^ IFTRUE (MASK (0x80, 0x80)),
+		16,
+	SCR_INT,
+		SIR_RESEL_NO_IDENTIFY,
+	SCR_JUMP,
+		PADDRH (reset),
+	/*
+	**	Message is an IDENTIFY, but lun is unknown.
+	**	Read the message, since we got it directly 
+	**	from the SCSI BUS data lines.
+	**	Signal problem to C code for logging the event.
+	**	Send an ABORT_TASK_SET to clear all pending tasks.
+	*/
+	SCR_INT,
+		SIR_RESEL_BAD_LUN,
+	SCR_MOVE_ABS (1) ^ SCR_MSG_IN,
+		NADDR (msgin),
+	SCR_JUMP,
+		PADDRH (abort),
+}/*-------------------------< BAD_I_T_L >------------------*/,{
+	/*
+	**	We donnot have a task for that I_T_L.
+	**	Signal problem to C code for logging the event.
+	**	Send an ABORT_TASK_SET message.
+	*/
+	SCR_INT,
+		SIR_RESEL_BAD_I_T_L,
+	SCR_JUMP,
+		PADDRH (abort),
+}/*-------------------------< BAD_I_T_L_Q >----------------*/,{
+	/*
+	**	We donnot have a task that matches the tag.
+	**	Signal problem to C code for logging the event.
+	**	Send an ABORT_TASK message.
+	*/
+	SCR_INT,
+		SIR_RESEL_BAD_I_T_L_Q,
+	SCR_JUMP,
+		PADDRH (aborttag),
+}/*-------------------------< BAD_TARGET >-----------------*/,{
+	/*
+	**	We donnot know the target that reselected us.
+	**	Grab the first message if any (IDENTIFY).
+	**	Signal problem to C code for logging the event.
+	**	TARGET_RESET message.
+	*/
+	SCR_INT,
+		SIR_RESEL_BAD_TARGET,
+	SCR_JUMPR ^ IFFALSE (WHEN (SCR_MSG_IN)),
+		8,
+	SCR_MOVE_ABS (1) ^ SCR_MSG_IN,
+		NADDR (msgin),
+	SCR_JUMP,
+		PADDRH (reset),
+}/*-------------------------< BAD_STATUS >-----------------*/,{
+	/*
+	**	If command resulted in either QUEUE FULL,
+	**	CHECK CONDITION or COMMAND TERMINATED,
+	**	call the C code.
+	*/
+	SCR_INT ^ IFTRUE (DATA (S_QUEUE_FULL)),
+		SIR_BAD_STATUS,
+	SCR_INT ^ IFTRUE (DATA (S_CHECK_COND)),
+		SIR_BAD_STATUS,
+	SCR_INT ^ IFTRUE (DATA (S_TERMINATED)),
+		SIR_BAD_STATUS,
+	SCR_RETURN,
+		0,
+}/*-------------------------< START_RAM >-------------------*/,{
+	/*
+	**	Load the script into on-chip RAM, 
+	**	and jump to start point.
+	*/
+	SCR_COPY_F (4),
+		RADDR (scratcha),
+		PADDRH (start_ram0),
+	/*
+	**	Flush script prefetch if required
+	*/
+	PREFETCH_FLUSH
+	SCR_COPY (sizeof (struct script)),
+}/*-------------------------< START_RAM0 >--------------------*/,{
+		0,
+		PADDR (start),
+	SCR_JUMP,
+		PADDR (start),
+}/*-------------------------< STO_RESTART >-------------------*/,{
+	/*
+	**
+	**	Repair start queue (e.g. next time use the next slot) 
+	**	and jump to start point.
+	*/
+	SCR_COPY (4),
+		RADDR (temp),
+		PADDR (startpos),
+	SCR_JUMP,
+		PADDR (start),
+}/*-------------------------< WAIT_DMA >-------------------*/,{
+	/*
+	**	For HP Zalon/53c720 systems, the Zalon interface
+	**	between CPU and 53c720 does prefetches, which causes
+	**	problems with self modifying scripts.  The problem
+	**	is overcome by calling a dummy subroutine after each
+	**	modification, to force a refetch of the script on
+	**	return from the subroutine.
+	*/
+	SCR_RETURN,
+		0,
+}/*-------------------------< SNOOPTEST >-------------------*/,{
+	/*
+	**	Read the variable.
+	*/
+	SCR_COPY (4),
+		NADDR(ncr_cache),
+		RADDR (scratcha),
+	/*
+	**	Write the variable.
+	*/
+	SCR_COPY (4),
+		RADDR (temp),
+		NADDR(ncr_cache),
+	/*
+	**	Read back the variable.
+	*/
+	SCR_COPY (4),
+		NADDR(ncr_cache),
+		RADDR (temp),
+}/*-------------------------< SNOOPEND >-------------------*/,{
+	/*
+	**	And stop.
+	*/
+	SCR_INT,
+		99,
+}/*--------------------------------------------------------*/
+};
+
+/*==========================================================
+**
+**
+**	Fill in #define dependent parts of the script
+**
+**
+**==========================================================
+*/
+
+void __init ncr_script_fill (struct script * scr, struct scripth * scrh)
+{
+	int	i;
+	ncrcmd	*p;
+
+	p = scrh->tryloop;
+	for (i=0; i<MAX_START; i++) {
+		*p++ =SCR_CALL;
+		*p++ =PADDR (idle);
+	}
+
+	BUG_ON((u_long)p != (u_long)&scrh->tryloop + sizeof (scrh->tryloop));
+
+#ifdef SCSI_NCR_CCB_DONE_SUPPORT
+
+	p = scrh->done_queue;
+	for (i = 0; i<MAX_DONE; i++) {
+		*p++ =SCR_COPY (sizeof(struct ccb *));
+		*p++ =NADDR (header.cp);
+		*p++ =NADDR (ccb_done[i]);
+		*p++ =SCR_CALL;
+		*p++ =PADDR (done_end);
+	}
+
+	BUG_ON((u_long)p != (u_long)&scrh->done_queue+sizeof(scrh->done_queue));
+
+#endif /* SCSI_NCR_CCB_DONE_SUPPORT */
+
+	p = scrh->hdata_in;
+	for (i=0; i<MAX_SCATTERH; i++) {
+		*p++ =SCR_CALL ^ IFFALSE (WHEN (SCR_DATA_IN));
+		*p++ =PADDR (dispatch);
+		*p++ =SCR_MOVE_TBL ^ SCR_DATA_IN;
+		*p++ =offsetof (struct dsb, data[i]);
+	}
+
+	BUG_ON((u_long)p != (u_long)&scrh->hdata_in + sizeof (scrh->hdata_in));
+
+	p = scr->data_in;
+	for (i=MAX_SCATTERH; i<MAX_SCATTERH+MAX_SCATTERL; i++) {
+		*p++ =SCR_CALL ^ IFFALSE (WHEN (SCR_DATA_IN));
+		*p++ =PADDR (dispatch);
+		*p++ =SCR_MOVE_TBL ^ SCR_DATA_IN;
+		*p++ =offsetof (struct dsb, data[i]);
+	}
+
+	BUG_ON((u_long)p != (u_long)&scr->data_in + sizeof (scr->data_in));
+
+	p = scrh->hdata_out;
+	for (i=0; i<MAX_SCATTERH; i++) {
+		*p++ =SCR_CALL ^ IFFALSE (WHEN (SCR_DATA_OUT));
+		*p++ =PADDR (dispatch);
+		*p++ =SCR_MOVE_TBL ^ SCR_DATA_OUT;
+		*p++ =offsetof (struct dsb, data[i]);
+	}
+
+	BUG_ON((u_long)p != (u_long)&scrh->hdata_out + sizeof (scrh->hdata_out));
+
+	p = scr->data_out;
+	for (i=MAX_SCATTERH; i<MAX_SCATTERH+MAX_SCATTERL; i++) {
+		*p++ =SCR_CALL ^ IFFALSE (WHEN (SCR_DATA_OUT));
+		*p++ =PADDR (dispatch);
+		*p++ =SCR_MOVE_TBL ^ SCR_DATA_OUT;
+		*p++ =offsetof (struct dsb, data[i]);
+	}
+
+	BUG_ON((u_long) p != (u_long)&scr->data_out + sizeof (scr->data_out));
+}
+
+/*==========================================================
+**
+**
+**	Copy and rebind a script.
+**
+**
+**==========================================================
+*/
+
+static void __init 
+ncr_script_copy_and_bind (struct ncb *np, ncrcmd *src, ncrcmd *dst, int len)
+{
+	ncrcmd  opcode, new, old, tmp1, tmp2;
+	ncrcmd	*start, *end;
+	int relocs;
+	int opchanged = 0;
+
+	start = src;
+	end = src + len/4;
+
+	while (src < end) {
+
+		opcode = *src++;
+		*dst++ = cpu_to_scr(opcode);
+
+		/*
+		**	If we forget to change the length
+		**	in struct script, a field will be
+		**	padded with 0. This is an illegal
+		**	command.
+		*/
+
+		if (opcode == 0) {
+			printk (KERN_ERR "%s: ERROR0 IN SCRIPT at %d.\n",
+				ncr_name(np), (int) (src-start-1));
+			mdelay(1000);
+		}
+
+		if (DEBUG_FLAGS & DEBUG_SCRIPT)
+			printk (KERN_DEBUG "%p:  <%x>\n",
+				(src-1), (unsigned)opcode);
+
+		/*
+		**	We don't have to decode ALL commands
+		*/
+		switch (opcode >> 28) {
+
+		case 0xc:
+			/*
+			**	COPY has TWO arguments.
+			*/
+			relocs = 2;
+			tmp1 = src[0];
+#ifdef	RELOC_KVAR
+			if ((tmp1 & RELOC_MASK) == RELOC_KVAR)
+				tmp1 = 0;
+#endif
+			tmp2 = src[1];
+#ifdef	RELOC_KVAR
+			if ((tmp2 & RELOC_MASK) == RELOC_KVAR)
+				tmp2 = 0;
+#endif
+			if ((tmp1 ^ tmp2) & 3) {
+				printk (KERN_ERR"%s: ERROR1 IN SCRIPT at %d.\n",
+					ncr_name(np), (int) (src-start-1));
+				mdelay(1000);
+			}
+			/*
+			**	If PREFETCH feature not enabled, remove 
+			**	the NO FLUSH bit if present.
+			*/
+			if ((opcode & SCR_NO_FLUSH) && !(np->features & FE_PFEN)) {
+				dst[-1] = cpu_to_scr(opcode & ~SCR_NO_FLUSH);
+				++opchanged;
+			}
+			break;
+
+		case 0x0:
+			/*
+			**	MOVE (absolute address)
+			*/
+			relocs = 1;
+			break;
+
+		case 0x8:
+			/*
+			**	JUMP / CALL
+			**	don't relocate if relative :-)
+			*/
+			if (opcode & 0x00800000)
+				relocs = 0;
+			else
+				relocs = 1;
+			break;
+
+		case 0x4:
+		case 0x5:
+		case 0x6:
+		case 0x7:
+			relocs = 1;
+			break;
+
+		default:
+			relocs = 0;
+			break;
+		}
+
+		if (relocs) {
+			while (relocs--) {
+				old = *src++;
+
+				switch (old & RELOC_MASK) {
+				case RELOC_REGISTER:
+					new = (old & ~RELOC_MASK) + np->paddr;
+					break;
+				case RELOC_LABEL:
+					new = (old & ~RELOC_MASK) + np->p_script;
+					break;
+				case RELOC_LABELH:
+					new = (old & ~RELOC_MASK) + np->p_scripth;
+					break;
+				case RELOC_SOFTC:
+					new = (old & ~RELOC_MASK) + np->p_ncb;
+					break;
+#ifdef	RELOC_KVAR
+				case RELOC_KVAR:
+					if (((old & ~RELOC_MASK) <
+					     SCRIPT_KVAR_FIRST) ||
+					    ((old & ~RELOC_MASK) >
+					     SCRIPT_KVAR_LAST))
+						panic("ncr KVAR out of range");
+					new = vtophys(script_kvars[old &
+					    ~RELOC_MASK]);
+					break;
+#endif
+				case 0:
+					/* Don't relocate a 0 address. */
+					if (old == 0) {
+						new = old;
+						break;
+					}
+					/* fall through */
+				default:
+					panic("ncr_script_copy_and_bind: weird relocation %x\n", old);
+					break;
+				}
+
+				*dst++ = cpu_to_scr(new);
+			}
+		} else
+			*dst++ = cpu_to_scr(*src++);
+
+	}
+}
+
+/*
+**	Linux host data structure
+*/
+
+struct host_data {
+     struct ncb *ncb;
+};
+
+#define PRINT_ADDR(cmd, arg...) dev_info(&cmd->device->sdev_gendev , ## arg)
+
+static void ncr_print_msg(struct ccb *cp, char *label, u_char *msg)
+{
+	PRINT_ADDR(cp->cmd, "%s: ", label);
+
+	spi_print_msg(msg);
+	printk("\n");
+}
+
+/*==========================================================
+**
+**	NCR chip clock divisor table.
+**	Divisors are multiplied by 10,000,000 in order to make 
+**	calculations more simple.
+**
+**==========================================================
+*/
+
+#define _5M 5000000
+static u_long div_10M[] =
+	{2*_5M, 3*_5M, 4*_5M, 6*_5M, 8*_5M, 12*_5M, 16*_5M};
+
+
+/*===============================================================
+**
+**	Prepare io register values used by ncr_init() according 
+**	to selected and supported features.
+**
+**	NCR chips allow burst lengths of 2, 4, 8, 16, 32, 64, 128 
+**	transfers. 32,64,128 are only supported by 875 and 895 chips.
+**	We use log base 2 (burst length) as internal code, with 
+**	value 0 meaning "burst disabled".
+**
+**===============================================================
+*/
+
+/*
+ *	Burst length from burst code.
+ */
+#define burst_length(bc) (!(bc))? 0 : 1 << (bc)
+
+/*
+ *	Burst code from io register bits.  Burst enable is ctest0 for c720
+ */
+#define burst_code(dmode, ctest0) \
+	(ctest0) & 0x80 ? 0 : (((dmode) & 0xc0) >> 6) + 1
+
+/*
+ *	Set initial io register bits from burst code.
+ */
+static inline void ncr_init_burst(struct ncb *np, u_char bc)
+{
+	u_char *be = &np->rv_ctest0;
+	*be		&= ~0x80;
+	np->rv_dmode	&= ~(0x3 << 6);
+	np->rv_ctest5	&= ~0x4;
+
+	if (!bc) {
+		*be		|= 0x80;
+	} else {
+		--bc;
+		np->rv_dmode	|= ((bc & 0x3) << 6);
+		np->rv_ctest5	|= (bc & 0x4);
+	}
+}
+
+static void __init ncr_prepare_setting(struct ncb *np)
+{
+	u_char	burst_max;
+	u_long	period;
+	int i;
+
+	/*
+	**	Save assumed BIOS setting
+	*/
+
+	np->sv_scntl0	= INB(nc_scntl0) & 0x0a;
+	np->sv_scntl3	= INB(nc_scntl3) & 0x07;
+	np->sv_dmode	= INB(nc_dmode)  & 0xce;
+	np->sv_dcntl	= INB(nc_dcntl)  & 0xa8;
+	np->sv_ctest0	= INB(nc_ctest0) & 0x84;
+	np->sv_ctest3	= INB(nc_ctest3) & 0x01;
+	np->sv_ctest4	= INB(nc_ctest4) & 0x80;
+	np->sv_ctest5	= INB(nc_ctest5) & 0x24;
+	np->sv_gpcntl	= INB(nc_gpcntl);
+	np->sv_stest2	= INB(nc_stest2) & 0x20;
+	np->sv_stest4	= INB(nc_stest4);
+
+	/*
+	**	Wide ?
+	*/
+
+	np->maxwide	= (np->features & FE_WIDE)? 1 : 0;
+
+ 	/*
+	 *  Guess the frequency of the chip's clock.
+	 */
+	if (np->features & FE_ULTRA)
+		np->clock_khz = 80000;
+	else
+		np->clock_khz = 40000;
+
+	/*
+	 *  Get the clock multiplier factor.
+ 	 */
+	if	(np->features & FE_QUAD)
+		np->multiplier	= 4;
+	else if	(np->features & FE_DBLR)
+		np->multiplier	= 2;
+	else
+		np->multiplier	= 1;
+
+	/*
+	 *  Measure SCSI clock frequency for chips 
+	 *  it may vary from assumed one.
+	 */
+	if (np->features & FE_VARCLK)
+		ncr_getclock(np, np->multiplier);
+
+	/*
+	 * Divisor to be used for async (timer pre-scaler).
+	 */
+	i = np->clock_divn - 1;
+	while (--i >= 0) {
+		if (10ul * SCSI_NCR_MIN_ASYNC * np->clock_khz > div_10M[i]) {
+			++i;
+			break;
+		}
+	}
+	np->rv_scntl3 = i+1;
+
+	/*
+	 * Minimum synchronous period factor supported by the chip.
+	 * Btw, 'period' is in tenths of nanoseconds.
+	 */
+
+	period = (4 * div_10M[0] + np->clock_khz - 1) / np->clock_khz;
+	if	(period <= 250)		np->minsync = 10;
+	else if	(period <= 303)		np->minsync = 11;
+	else if	(period <= 500)		np->minsync = 12;
+	else				np->minsync = (period + 40 - 1) / 40;
+
+	/*
+	 * Check against chip SCSI standard support (SCSI-2,ULTRA,ULTRA2).
+	 */
+
+	if	(np->minsync < 25 && !(np->features & FE_ULTRA))
+		np->minsync = 25;
+
+	/*
+	 * Maximum synchronous period factor supported by the chip.
+	 */
+
+	period = (11 * div_10M[np->clock_divn - 1]) / (4 * np->clock_khz);
+	np->maxsync = period > 2540 ? 254 : period / 10;
+
+	/*
+	**	Prepare initial value of other IO registers
+	*/
+#if defined SCSI_NCR_TRUST_BIOS_SETTING
+	np->rv_scntl0	= np->sv_scntl0;
+	np->rv_dmode	= np->sv_dmode;
+	np->rv_dcntl	= np->sv_dcntl;
+	np->rv_ctest0	= np->sv_ctest0;
+	np->rv_ctest3	= np->sv_ctest3;
+	np->rv_ctest4	= np->sv_ctest4;
+	np->rv_ctest5	= np->sv_ctest5;
+	burst_max	= burst_code(np->sv_dmode, np->sv_ctest0);
+#else
+
+	/*
+	**	Select burst length (dwords)
+	*/
+	burst_max	= driver_setup.burst_max;
+	if (burst_max == 255)
+		burst_max = burst_code(np->sv_dmode, np->sv_ctest0);
+	if (burst_max > 7)
+		burst_max = 7;
+	if (burst_max > np->maxburst)
+		burst_max = np->maxburst;
+
+	/*
+	**	Select all supported special features
+	*/
+	if (np->features & FE_ERL)
+		np->rv_dmode	|= ERL;		/* Enable Read Line */
+	if (np->features & FE_BOF)
+		np->rv_dmode	|= BOF;		/* Burst Opcode Fetch */
+	if (np->features & FE_ERMP)
+		np->rv_dmode	|= ERMP;	/* Enable Read Multiple */
+	if (np->features & FE_PFEN)
+		np->rv_dcntl	|= PFEN;	/* Prefetch Enable */
+	if (np->features & FE_CLSE)
+		np->rv_dcntl	|= CLSE;	/* Cache Line Size Enable */
+	if (np->features & FE_WRIE)
+		np->rv_ctest3	|= WRIE;	/* Write and Invalidate */
+	if (np->features & FE_DFS)
+		np->rv_ctest5	|= DFS;		/* Dma Fifo Size */
+	if (np->features & FE_MUX)
+		np->rv_ctest4	|= MUX;		/* Host bus multiplex mode */
+	if (np->features & FE_EA)
+		np->rv_dcntl	|= EA;		/* Enable ACK */
+	if (np->features & FE_EHP)
+		np->rv_ctest0	|= EHP;		/* Even host parity */
+
+	/*
+	**	Select some other
+	*/
+	if (driver_setup.master_parity)
+		np->rv_ctest4	|= MPEE;	/* Master parity checking */
+	if (driver_setup.scsi_parity)
+		np->rv_scntl0	|= 0x0a;	/*  full arb., ena parity, par->ATN  */
+
+	/*
+	**  Get SCSI addr of host adapter (set by bios?).
+	*/
+	if (np->myaddr == 255) {
+		np->myaddr = INB(nc_scid) & 0x07;
+		if (!np->myaddr)
+			np->myaddr = SCSI_NCR_MYADDR;
+	}
+
+#endif /* SCSI_NCR_TRUST_BIOS_SETTING */
+
+	/*
+	 *	Prepare initial io register bits for burst length
+	 */
+	ncr_init_burst(np, burst_max);
+
+	/*
+	**	Set SCSI BUS mode.
+	**
+	**	- ULTRA2 chips (895/895A/896) report the current 
+	**	  BUS mode through the STEST4 IO register.
+	**	- For previous generation chips (825/825A/875), 
+	**	  user has to tell us how to check against HVD, 
+	**	  since a 100% safe algorithm is not possible.
+	*/
+	np->scsi_mode = SMODE_SE;
+	if (np->features & FE_DIFF) {
+		switch(driver_setup.diff_support) {
+		case 4:	/* Trust previous settings if present, then GPIO3 */
+			if (np->sv_scntl3) {
+				if (np->sv_stest2 & 0x20)
+					np->scsi_mode = SMODE_HVD;
+				break;
+			}
+		case 3:	/* SYMBIOS controllers report HVD through GPIO3 */
+			if (INB(nc_gpreg) & 0x08)
+				break;
+		case 2:	/* Set HVD unconditionally */
+			np->scsi_mode = SMODE_HVD;
+		case 1:	/* Trust previous settings for HVD */
+			if (np->sv_stest2 & 0x20)
+				np->scsi_mode = SMODE_HVD;
+			break;
+		default:/* Don't care about HVD */	
+			break;
+		}
+	}
+	if (np->scsi_mode == SMODE_HVD)
+		np->rv_stest2 |= 0x20;
+
+	/*
+	**	Set LED support from SCRIPTS.
+	**	Ignore this feature for boards known to use a 
+	**	specific GPIO wiring and for the 895A or 896 
+	**	that drive the LED directly.
+	**	Also probe initial setting of GPIO0 as output.
+	*/
+	if ((driver_setup.led_pin) &&
+	    !(np->features & FE_LEDC) && !(np->sv_gpcntl & 0x01))
+		np->features |= FE_LED0;
+
+	/*
+	**	Set irq mode.
+	*/
+	switch(driver_setup.irqm & 3) {
+	case 2:
+		np->rv_dcntl	|= IRQM;
+		break;
+	case 1:
+		np->rv_dcntl	|= (np->sv_dcntl & IRQM);
+		break;
+	default:
+		break;
+	}
+
+	/*
+	**	Configure targets according to driver setup.
+	**	Allow to override sync, wide and NOSCAN from 
+	**	boot command line.
+	*/
+	for (i = 0 ; i < MAX_TARGET ; i++) {
+		struct tcb *tp = &np->target[i];
+
+		tp->usrsync = driver_setup.default_sync;
+		tp->usrwide = driver_setup.max_wide;
+		tp->usrtags = MAX_TAGS;
+		tp->period = 0xffff;
+		if (!driver_setup.disconnection)
+			np->target[i].usrflag = UF_NODISC;
+	}
+
+	/*
+	**	Announce all that stuff to user.
+	*/
+
+	printk(KERN_INFO "%s: ID %d, Fast-%d%s%s\n", ncr_name(np),
+		np->myad

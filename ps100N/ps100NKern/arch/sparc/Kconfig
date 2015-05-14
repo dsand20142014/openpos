@@ -1,0 +1,435 @@
+PROVIDE_FAIL:
+	case CAM_REQ_TERMIO:
+	case CAM_UNREC_HBA_ERROR:
+	case CAM_REQ_TOO_BIG:
+		new_status = DID_ERROR;
+		break;
+	case CAM_REQUEUE_REQ:
+		new_status = DID_REQUEUE;
+		break;
+	default:
+		/* We should never get here */
+		new_status = DID_ERROR;
+		break;
+	}
+
+	if (do_fallback) {
+		printf("%s: device overrun (status %x) on %d:%d:%d\n",
+		       ahd_name(ahd), status, cmd->device->channel,
+		       cmd->device->id, cmd->device->lun);
+	}
+
+	ahd_cmd_set_transaction_status(cmd, new_status);
+
+	cmd->scsi_done(cmd);
+}
+
+static void
+ahd_freeze_simq(struct ahd_softc *ahd)
+{
+	scsi_block_requests(ahd->platform_data->host);
+}
+
+static void
+ahd_release_simq(struct ahd_softc *ahd)
+{
+	scsi_unblock_requests(ahd->platform_data->host);
+}
+
+static int
+ahd_linux_queue_abort_cmd(struct scsi_cmnd *cmd)
+{
+	struct ahd_softc *ahd;
+	struct ahd_linux_device *dev;
+	struct scb *pending_scb;
+	u_int  saved_scbptr;
+	u_int  active_scbptr;
+	u_int  last_phase;
+	u_int  saved_scsiid;
+	u_int  cdb_byte;
+	int    retval;
+	int    was_paused;
+	int    paused;
+	int    wait;
+	int    disconnected;
+	ahd_mode_state saved_modes;
+	unsigned long flags;
+
+	pending_scb = NULL;
+	paused = FALSE;
+	wait = FALSE;
+	ahd = *(struct ahd_softc **)cmd->device->host->hostdata;
+
+	scmd_printk(KERN_INFO, cmd,
+		    "Attempting to queue an ABORT message:");
+
+	printf("CDB:");
+	for (cdb_byte = 0; cdb_byte < cmd->cmd_len; cdb_byte++)
+		printf(" 0x%x", cmd->cmnd[cdb_byte]);
+	printf("\n");
+
+	ahd_lock(ahd, &flags);
+
+	/*
+	 * First determine if we currently own this command.
+	 * Start by searching the device queue.  If not found
+	 * there, check the pending_scb list.  If not found
+	 * at all, and the system wanted us to just abort the
+	 * command, return success.
+	 */
+	dev = scsi_transport_device_data(cmd->device);
+
+	if (dev == NULL) {
+		/*
+		 * No target device for this command exists,
+		 * so we must not still own the command.
+		 */
+		scmd_printk(KERN_INFO, cmd, "Is not an active device\n");
+		retval = SUCCESS;
+		goto no_cmd;
+	}
+
+	/*
+	 * See if we can find a matching cmd in the pending list.
+	 */
+	LIST_FOREACH(pending_scb, &ahd->pending_scbs, pending_links) {
+		if (pending_scb->io_ctx == cmd)
+			break;
+	}
+
+	if (pending_scb == NULL) {
+		scmd_printk(KERN_INFO, cmd, "Command not found\n");
+		goto no_cmd;
+	}
+
+	if ((pending_scb->flags & SCB_RECOVERY_SCB) != 0) {
+		/*
+		 * We can't queue two recovery actions using the same SCB
+		 */
+		retval = FAILED;
+		goto  done;
+	}
+
+	/*
+	 * Ensure that the card doesn't do anything
+	 * behind our back.  Also make sure that we
+	 * didn't "just" miss an interrupt that would
+	 * affect this cmd.
+	 */
+	was_paused = ahd_is_paused(ahd);
+	ahd_pause_and_flushwork(ahd);
+	paused = TRUE;
+
+	if ((pending_scb->flags & SCB_ACTIVE) == 0) {
+		scmd_printk(KERN_INFO, cmd, "Command already completed\n");
+		goto no_cmd;
+	}
+
+	printf("%s: At time of recovery, card was %spaused\n",
+	       ahd_name(ahd), was_paused ? "" : "not ");
+	ahd_dump_card_state(ahd);
+
+	disconnected = TRUE;
+	if (ahd_search_qinfifo(ahd, cmd->device->id, 
+			       cmd->device->channel + 'A',
+			       cmd->device->lun, 
+			       pending_scb->hscb->tag,
+			       ROLE_INITIATOR, CAM_REQ_ABORTED,
+			       SEARCH_COMPLETE) > 0) {
+		printf("%s:%d:%d:%d: Cmd aborted from QINFIFO\n",
+		       ahd_name(ahd), cmd->device->channel, 
+		       cmd->device->id, cmd->device->lun);
+		retval = SUCCESS;
+		goto done;
+	}
+
+	saved_modes = ahd_save_modes(ahd);
+	ahd_set_modes(ahd, AHD_MODE_SCSI, AHD_MODE_SCSI);
+	last_phase = ahd_inb(ahd, LASTPHASE);
+	saved_scbptr = ahd_get_scbptr(ahd);
+	active_scbptr = saved_scbptr;
+	if (disconnected && (ahd_inb(ahd, SEQ_FLAGS) & NOT_IDENTIFIED) == 0) {
+		struct scb *bus_scb;
+
+		bus_scb = ahd_lookup_scb(ahd, active_scbptr);
+		if (bus_scb == pending_scb)
+			disconnected = FALSE;
+	}
+
+	/*
+	 * At this point, pending_scb is the scb associated with the
+	 * passed in command.  That command is currently active on the
+	 * bus or is in the disconnected state.
+	 */
+	saved_scsiid = ahd_inb(ahd, SAVED_SCSIID);
+	if (last_phase != P_BUSFREE
+	    && SCB_GET_TAG(pending_scb) == active_scbptr) {
+
+		/*
+		 * We're active on the bus, so assert ATN
+		 * and hope that the target responds.
+		 */
+		pending_scb = ahd_lookup_scb(ahd, active_scbptr);
+		pending_scb->flags |= SCB_RECOVERY_SCB|SCB_ABORT;
+		ahd_outb(ahd, MSG_OUT, HOST_MSG);
+		ahd_outb(ahd, SCSISIGO, last_phase|ATNO);
+		scmd_printk(KERN_INFO, cmd, "Device is active, asserting ATN\n");
+		wait = TRUE;
+	} else if (disconnected) {
+
+		/*
+		 * Actually re-queue this SCB in an attempt
+		 * to select the device before it reconnects.
+		 */
+		pending_scb->flags |= SCB_RECOVERY_SCB|SCB_ABORT;
+		ahd_set_scbptr(ahd, SCB_GET_TAG(pending_scb));
+		pending_scb->hscb->cdb_len = 0;
+		pending_scb->hscb->task_attribute = 0;
+		pending_scb->hscb->task_management = SIU_TASKMGMT_ABORT_TASK;
+
+		if ((pending_scb->flags & SCB_PACKETIZED) != 0) {
+			/*
+			 * Mark the SCB has having an outstanding
+			 * task management function.  Should the command
+			 * complete normally before the task management
+			 * function can be sent, the host will be notified
+			 * to abort our requeued SCB.
+			 */
+			ahd_outb(ahd, SCB_TASK_MANAGEMENT,
+				 pending_scb->hscb->task_management);
+		} else {
+			/*
+			 * If non-packetized, set the MK_MESSAGE control
+			 * bit indicating that we desire to send a message.
+			 * We also set the disconnected flag since there is
+			 * no guarantee that our SCB control byte matches
+			 * the version on the card.  We don't want the
+			 * sequencer to abort the command thinking an
+			 * unsolicited reselection occurred.
+			 */
+			pending_scb->hscb->control |= MK_MESSAGE|DISCONNECTED;
+
+			/*
+			 * The sequencer will never re-reference the
+			 * in-core SCB.  To make sure we are notified
+			 * during reslection, set the MK_MESSAGE flag in
+			 * the card's copy of the SCB.
+			 */
+			ahd_outb(ahd, SCB_CONTROL,
+				 ahd_inb(ahd, SCB_CONTROL)|MK_MESSAGE);
+		}
+
+		/*
+		 * Clear out any entries in the QINFIFO first
+		 * so we are the next SCB for this target
+		 * to run.
+		 */
+		ahd_search_qinfifo(ahd, cmd->device->id,
+				   cmd->device->channel + 'A', cmd->device->lun,
+				   SCB_LIST_NULL, ROLE_INITIATOR,
+				   CAM_REQUEUE_REQ, SEARCH_COMPLETE);
+		ahd_qinfifo_requeue_tail(ahd, pending_scb);
+		ahd_set_scbptr(ahd, saved_scbptr);
+		ahd_print_path(ahd, pending_scb);
+		printf("Device is disconnected, re-queuing SCB\n");
+		wait = TRUE;
+	} else {
+		scmd_printk(KERN_INFO, cmd, "Unable to deliver message\n");
+		retval = FAILED;
+		goto done;
+	}
+
+no_cmd:
+	/*
+	 * Our assumption is that if we don't have the command, no
+	 * recovery action was required, so we return success.  Again,
+	 * the semantics of the mid-layer recovery engine are not
+	 * well defined, so this may change in time.
+	 */
+	retval = SUCCESS;
+done:
+	if (paused)
+		ahd_unpause(ahd);
+	if (wait) {
+		DECLARE_COMPLETION_ONSTACK(done);
+
+		ahd->platform_data->eh_done = &done;
+		ahd_unlock(ahd, &flags);
+
+		printf("%s: Recovery code sleeping\n", ahd_name(ahd));
+		if (!wait_for_completion_timeout(&done, 5 * HZ)) {
+			ahd_lock(ahd, &flags);
+			ahd->platform_data->eh_done = NULL;
+			ahd_unlock(ahd, &flags);
+			printf("%s: Timer Expired (active %d)\n",
+			       ahd_name(ahd), dev->active);
+			retval = FAILED;
+		}
+		printf("Recovery code awake\n");
+	} else
+		ahd_unlock(ahd, &flags);
+
+	if (retval != SUCCESS)
+		printf("%s: Command abort returning 0x%x\n",
+		       ahd_name(ahd), retval);
+
+	return retval;
+}
+
+static void ahd_linux_set_width(struct scsi_target *starget, int width)
+{
+	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
+	struct ahd_softc *ahd = *((struct ahd_softc **)shost->hostdata);
+	struct ahd_devinfo devinfo;
+	unsigned long flags;
+
+	ahd_compile_devinfo(&devinfo, shost->this_id, starget->id, 0,
+			    starget->channel + 'A', ROLE_INITIATOR);
+	ahd_lock(ahd, &flags);
+	ahd_set_width(ahd, &devinfo, width, AHD_TRANS_GOAL, FALSE);
+	ahd_unlock(ahd, &flags);
+}
+
+static void ahd_linux_set_period(struct scsi_target *starget, int period)
+{
+	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
+	struct ahd_softc *ahd = *((struct ahd_softc **)shost->hostdata);
+	struct ahd_tmode_tstate *tstate;
+	struct ahd_initiator_tinfo *tinfo 
+		= ahd_fetch_transinfo(ahd,
+				      starget->channel + 'A',
+				      shost->this_id, starget->id, &tstate);
+	struct ahd_devinfo devinfo;
+	unsigned int ppr_options = tinfo->goal.ppr_options;
+	unsigned int dt;
+	unsigned long flags;
+	unsigned long offset = tinfo->goal.offset;
+
+#ifdef AHD_DEBUG
+	if ((ahd_debug & AHD_SHOW_DV) != 0)
+		printf("%s: set period to %d\n", ahd_name(ahd), period);
+#endif
+	if (offset == 0)
+		offset = MAX_OFFSET;
+
+	if (period < 8)
+		period = 8;
+	if (period < 10) {
+		if (spi_max_width(starget)) {
+			ppr_options |= MSG_EXT_PPR_DT_REQ;
+			if (period == 8)
+				ppr_options |= MSG_EXT_PPR_IU_REQ;
+		} else
+			period = 10;
+	}
+
+	dt = ppr_options & MSG_EXT_PPR_DT_REQ;
+
+	ahd_compile_devinfo(&devinfo, shost->this_id, starget->id, 0,
+			    starget->channel + 'A', ROLE_INITIATOR);
+
+	/* all PPR requests apart from QAS require wide transfers */
+	if (ppr_options & ~MSG_EXT_PPR_QAS_REQ) {
+		if (spi_width(starget) == 0)
+			ppr_options &= MSG_EXT_PPR_QAS_REQ;
+	}
+
+	ahd_find_syncrate(ahd, &period, &ppr_options,
+			  dt ? AHD_SYNCRATE_MAX : AHD_SYNCRATE_ULTRA2);
+
+	ahd_lock(ahd, &flags);
+	ahd_set_syncrate(ahd, &devinfo, period, offset,
+			 ppr_options, AHD_TRANS_GOAL, FALSE);
+	ahd_unlock(ahd, &flags);
+}
+
+static void ahd_linux_set_offset(struct scsi_target *starget, int offset)
+{
+	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
+	struct ahd_softc *ahd = *((struct ahd_softc **)shost->hostdata);
+	struct ahd_tmode_tstate *tstate;
+	struct ahd_initiator_tinfo *tinfo 
+		= ahd_fetch_transinfo(ahd,
+				      starget->channel + 'A',
+				      shost->this_id, starget->id, &tstate);
+	struct ahd_devinfo devinfo;
+	unsigned int ppr_options = 0;
+	unsigned int period = 0;
+	unsigned int dt = ppr_options & MSG_EXT_PPR_DT_REQ;
+	unsigned long flags;
+
+#ifdef AHD_DEBUG
+	if ((ahd_debug & AHD_SHOW_DV) != 0)
+		printf("%s: set offset to %d\n", ahd_name(ahd), offset);
+#endif
+
+	ahd_compile_devinfo(&devinfo, shost->this_id, starget->id, 0,
+			    starget->channel + 'A', ROLE_INITIATOR);
+	if (offset != 0) {
+		period = tinfo->goal.period;
+		ppr_options = tinfo->goal.ppr_options;
+		ahd_find_syncrate(ahd, &period, &ppr_options, 
+				  dt ? AHD_SYNCRATE_MAX : AHD_SYNCRATE_ULTRA2);
+	}
+
+	ahd_lock(ahd, &flags);
+	ahd_set_syncrate(ahd, &devinfo, period, offset, ppr_options,
+			 AHD_TRANS_GOAL, FALSE);
+	ahd_unlock(ahd, &flags);
+}
+
+static void ahd_linux_set_dt(struct scsi_target *starget, int dt)
+{
+	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
+	struct ahd_softc *ahd = *((struct ahd_softc **)shost->hostdata);
+	struct ahd_tmode_tstate *tstate;
+	struct ahd_initiator_tinfo *tinfo 
+		= ahd_fetch_transinfo(ahd,
+				      starget->channel + 'A',
+				      shost->this_id, starget->id, &tstate);
+	struct ahd_devinfo devinfo;
+	unsigned int ppr_options = tinfo->goal.ppr_options
+		& ~MSG_EXT_PPR_DT_REQ;
+	unsigned int period = tinfo->goal.period;
+	unsigned int width = tinfo->goal.width;
+	unsigned long flags;
+
+#ifdef AHD_DEBUG
+	if ((ahd_debug & AHD_SHOW_DV) != 0)
+		printf("%s: %s DT\n", ahd_name(ahd), 
+		       dt ? "enabling" : "disabling");
+#endif
+	if (dt && spi_max_width(starget)) {
+		ppr_options |= MSG_EXT_PPR_DT_REQ;
+		if (!width)
+			ahd_linux_set_width(starget, 1);
+	} else {
+		if (period <= 9)
+			period = 10; /* If resetting DT, period must be >= 25ns */
+		/* IU is invalid without DT set */
+		ppr_options &= ~MSG_EXT_PPR_IU_REQ;
+	}
+	ahd_compile_devinfo(&devinfo, shost->this_id, starget->id, 0,
+			    starget->channel + 'A', ROLE_INITIATOR);
+	ahd_find_syncrate(ahd, &period, &ppr_options,
+			  dt ? AHD_SYNCRATE_MAX : AHD_SYNCRATE_ULTRA2);
+
+	ahd_lock(ahd, &flags);
+	ahd_set_syncrate(ahd, &devinfo, period, tinfo->goal.offset,
+			 ppr_options, AHD_TRANS_GOAL, FALSE);
+	ahd_unlock(ahd, &flags);
+}
+
+static void ahd_linux_set_qas(struct scsi_target *starget, int qas)
+{
+	struct Scsi_Host *shost = dev_to_shost(starget->dev.parent);
+	struct ahd_softc *ahd = *((struct ahd_softc **)shost->hostdata);
+	struct ahd_tmode_tstate *tstate;
+	struct ahd_initiator_tinfo *tinfo 
+		= ahd_fetch_transinfo(ahd,
+				      starget->channel + 'A',
+				      shost->this_id, starget->id, &tstate);
+	struct ahd_devinfo devinfo;
+	unsigned int ppr_options = tinfo->goal.ppr_options
+		& ~MSG_EXT_PPR_QAS_REQ;
+	unsigned int p

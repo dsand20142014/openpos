@@ -1,0 +1,1281 @@
+:10000000F0360002001E021AFBFFFFFFFFFF023363
+:10001000F9FFFFFFFFFFFFFFFFFFFFFFFFFF0234BE
+:10002000A47581D490FDE88583A0123618EC4D604C
+:100030007378AF8003760018B8A0FA787F800376D3
+:100040000018B865FA78208003760018B820FA788E
+:10005000208003760018B81FFA90FDDDAE83AF82D2
+:1000600090FBF81200AA6005E4F0A380F690FDE88A
+:10007000A88290FDE8A982E8696005E4F20880F7AB
+:100080009001081200B390010C1200B390011012FD
+:1000900000B39001141200D190011A1200D1900106
+:1000A000201200D175D0001234F6020126EF6582CD
+:1000B0007003EE658322E493F8740193F97402935C
+:1000C000FE740393F5828E83E869700122E493F64F
+:1000D000A30880F4E493FC740193FD740293FE740E
+:1000E0000393FF740493F8740593F58288831200D8
+:1000F000AA700122E493A3A883A9828C838D82F045
+:10010000A3AC83AD828883898280E32121049B8014
+:1001100080049BB0B4049BFDE8049F049FFBF304A0
+:10012000A4049FFBF30504050480FED0F030F00921
+:1001300020F303F68010F7800D30F10920F303F26D
+:100140008004F38001F020F404FCD0E0CC22CCC089
+:10015000E0120163020154BC0005D0F0ACF022C3F0
+:1001600013DCFC02012ABF0009ED258275F001F8BD
+:10017000E622BF010FED2582F582EE3583F583750A
+:10018000F004E022ED258275F002F8E222D083D05F
+:1001900082F5F0C3E493A3C5F095F0C0E0C3D0F0BE
+:1001A000E493A395F04012A3A3C3E5F033500205F6
+:1001B000832582F58250020583740193C0E0E493A5
+:1001C000C0E022D083D082F5F0E4937009740193EB
+:1001D0007004A3A3800C74029365F06005A3A3A32D
+:1001E00080E7740193C0E0E493C0E022120264024D
+:1001F00001FB1202B80201FB1202DC0201FB30E03B
+:100200000720E302E622E72230E10720E302E222B0
+:10021000E32230E202E022E493221202DC02022313
+:100220001202B8020223ABF012022DCBC5F0CB2292
+:1002300030E01020E306E6F5F008E622E7F5F009E5
+:10024000E7192230E11020E306E2F5F008E222E3AC
+:10025000F5F009E3192230E206E0F5F0A3E022E42C
+:1002600093F5F074019322BB0003740922BB0107CC
+:1002700089828A83740422BB020789828A8374106C
+:1002800022740A22020284BB0007E92582F8740165
+:1002900022BB010DE92582F582EA3583F5837404DA
+:1002A00022BB020DE92582F582EA3583F5837410BD
+:1002B00022E92582F87402220202B8BF0005EDF897
+:1002C000740122BF01078D828E83740422BF02074E
+:1002D0008D828E83741022EDF87402220202DCBF3C
+:1002E0000007ED2582F8740122BF010DED2582F58E
+:1002F00082EE3583F583740422BF020DED2582F56D
+:1003000082EE3583F583741022ED2582F874022283
+:10031000020310C0E0120264020328C0E01202B817
+:10032000020328C0E01202DC02032830E00B20E3C5
+:1003300004D0E0F622D0E0F72230E10B20E304D035
+:10034000E0F222D0E0F322D0E0F022C9CDC9CACE3B
+:10035000CACBCFCB12035BEDF9EEFAEFFB22BB0069
+:100360002FBF000AFAEDF8E7F60809DAFA22BF0112
+:10037000128D828E83F802037809A3E7F0D8FA225F
+:10038000020383FAEDF8E7F20809DAFA2202038D94
+:10039000BB014DBF001489828A83F9EDF802039FE7
+:1003A00008A3E0F6D9FA220203B0BF01228D828EA3
+:1003B00083FB08C9C582C9CAC583CAE0A3C9C5826F
+:1003C000C9CAC583CAF0A3DBEAD8E8220203D38DE9
+:1003D000828E83F9EDF8E0F208A3D9FA220203DD58
+:1003E000BB024DBF001289828A83F9EDF80203EF48
+:1003F00008A3E493F6D9F922BF01238D828E83FBF3
+:1004000008C9C582C9CAC583CAE493A3C9C582C93C
+:10041000CAC583CAF0A3DBE9D8E722020422898295
+:100420008A83F9EDF8E493F208A3D9F922020433A0
+:10043000BF000DFAEDF8E3F60809DAFA2202043DEE
+:10044000BF01128D828E83F802044A09A3E3F0D81B
+:10045000FA22020455FAEDF8E3F20809DAFA220268
+:10046000045FE6FB08E6FA08E6F904F618700106F0
+:1004700022E6FF08E6FE08E6FD22EFF0A3EEF0A379
+:10048000EDF022EBF0A3EAF0A3E9F022E0FFA3E015
+:10049000FEA3E0FD22E0FBA3E0FAA3E0F9220000C6
+:1004A000000000000000000504006105730026053F
+:1004B0009A00330A0B00610A770066154600610C4A
+:1004C000FB006109AB006109E200610DC200610B34
+:1004D000F300610A1E00610A530061173E003317E2
+:1004E0005100341E1600431EBC0044202900442045
+:1004F0001700471EE300471F88004D1FD9004F1FFC
+:10050000050058338400617CCC7DFF121CC722900B
+:10051000FFFCE020E72DC2AFAE59AF58755A20E579
+:100520005A14C55A6019E4FE7F05EE4FCE24FFCE63
+:10053000CF34FFCF6007E490FF92F080ED80E08E33
+:10054000598F582212050C7D077CB71233A07D0FFE
+:100550007C6E1233BA78A17A06E4F608DAFC7A06E1
+:100560001205CF7C03120E57122165E4FEFF7C0FAB
+:10057000123329D2A822123214E490FC38F090FFF2
+:10058000F0E030E408740190FC39F08005E490FC60
+:1005900039F07D0A7C00122547123297221232145C
+:1005A00090FC39E014700E90FFF0E04410F07C00F5
+:1005B0001225E0801990FC39E0700E90FFF0E054B5
+:1005C000EFF07C001225E080057C171225E0123246
+:1005D000972290FFF0E054ABF090FFF0E04420F061
+:1005E000228C378D367882EDF608ECF6EDFEECFDC8
+:1005F0007F019000051201F57880F67882E6FD080B
+:10060000E6FCEDFEECFD7F019000041201F5540FB5
+:10061000FC7D8012176F7880E6700DAD3AAE39AF71
+:1006200038E41203187C082290FFF0E054FEF090AA
+:10063000FFF0E054FDF0801E7882E6FD08E6FCED58
+:10064000FEECFD7F0190000812021725E0440190A6
+:10065000FFF3F00206DB7882E6FD08E6FCEDFEEC37
+:10066000FD7F0190000612021754FE90FFF3F08008
+:100670002B7882E6FD08E6FCEDFEECFD7F019000A4
+:1006800008120217FAEB90FFF1F01208CA400DAD04
+:100690003AAE39AF38E41203187C18227882E6FDAE
+:1006A00008E6FCEDFEECFD7F0190000812021790B9
+:1006B000FFF1F01208CA400DAD3AAE39AF38E4127E
+:1006C00003187C18227882E6FD08E6FCEDFEECFDBE
+:1006D0007F01900006120217440190FFF3F0788327
+:1006E000E62403F618E63400F67880E624FE500986
+:1006F00090FFF0E054FDF0800790FFF0E04402F03E
+:10070000E490FFF1F0788176007880E624FFFCE445
+:1007100034FFFD7881E67F00FEECD39EEF6480CD50
+:1007200064809D402F1208AF400F7881E6AD3AAE4D
+:1007300039AF381203187C182290FFF2E0FC78825F
+:100740008683088682ECF0788106A37882A68308E7
+:10075000A68280B51208AF400F7881E6AD3AAE3977
+:10076000AF381203187C182290FFF2E0FC788286E2
+:1007700083088682ECF07880E6AD3AAE39AF381265
+:1007800003187C00228C378D367882EDF608ECF663
+:10079000EDFEECFD7F019000051201F57881F67801
+:1007A00082E6FD08E6FCEDFEECFD7F019000041200
+:1007B00001F5540FFC7D8112176F7881E670037C80
+:1007C000082290FFF0E054FEF090FFF0E054FDF0BE
+:1007D000801B7882E6FD08E6FCEDFEECFD7F0190D3
+:1007E000000812021725E090FFF3F0805B7882E6A4
+:1007F000FD08E6FCEDFEECFD7F01900006120217FD
+:1008000054FE90FFF3F080217882E6FD08E6FCEDCF
+:10081000FEECFD7F01900008120217FAEB90FFF149
+:10082000F01208CA40037C18227882E6FD08E6FC34
+:10083000EDFEECFD7F0190000812021790FFF1F031
+:100840001208CA40037C18227883E6240AF618E6C8
+:100850003400F6788076007881E624FFFCE434FFEB
+:10086000FD7880E67F00FEECD39EEF6480CD64804F
+:100870009D402178828683088682E090FFF1F01205
+:1008800008CA40037C1822788006788306E6187030
+:10089000010680C390FFF0E04401F078828683086F
+:1008A0008682E090FFF1F01208CA40037C18227C97
+:1008B000002290FFF0E020E71290FFF0E030E50921
+:1008C00090FFF0E04420F0C32280E7D32290FFF0B5
+:1008D000E020E31290FFF0E030E50990FFF0E04403
+:1008E00020F0C32280E7D3228C428D417C00ED545E
+:1008F000F0FDEC7003ED64307005753E0380037508
+:100900003E04AC3E120F74758300858340E541546C
+:100910000FF53FE5407004E53F64037035E53E2484
+:10092000FD75F00AA42402F582E434FCF583E0307E
+:10093000E60512105B8019E53E24A1F8E654FBF6AB
+:1009400078ADE62405F58218E63400F583740FF0DF
+:100950008059E5407004E53F64047048E53E24FD9D
+:1009600075F00AA42402F582E434FCF583E030E556
+:1009700007AC42AD41121C5CE54230E21578B1E6AD
+:1009800030E00F78B1E630E109E4FF04FE7C0412A8
+:10099000332978ADE62406F58218E63400F5837431
+:1009A0000FF08007E4FC7DEE121C5CC203221232C1
+:1009B00014120F7478ADE62406F58218E63400F5BB
+:1009C00083E090FC38F078ADE62405F58218E63433
+:1009D00000F583E090FC39F0C2037D027C00122513
+:1009E00047123297221232147899ECF6EC24A1F8CF
+:1009F000E630E1077C131225E0800F90FC39E0FD22
+:100A00007899E6FC1213F11225E012329722123285
+:100A1000147899ECF67D00120F141225E01232972B
+:100A2000221232147899ECF6EC24A1F8E630E207B1
+:100A30007C131225E0801B7899E624A1F8E620E1DA
+:100A4000077C121225E0800A7899E6FC1214151230
+:100A500025E0123297221232147899ECF6EC24A198
+:100A6000F8E620E2077C111225E0800A7899E6FC7E
+:100A70001215161225E0123297221232147899ECD0
+:100A8000F6120F7478ADE62409F58218E63400F505
+:100A900083E090FC3FF078ADE6240AF58218E63456
+:100AA00000F583E090FC40F078ADE62403F5821871
+:100AB000E63400F583E0FC78ADE62404F58218E620
+:100AC0003400F583E0F56278ADE62402F58218E69D
+:100AD0003400F583E0F5638C61E4EC333354017842
+:100AE00099F66008E56230E1037899067899E69016
+:100AF000FC41F078ABE62402F58218E63400F58379
+:100B0000E0FDA3E0540CFCED54E68C65F564E56172
+:100B100030E503436501E56220E50EE561547F7031
+:100B200008E56120E703436502E56130E3034365BF
+:100B300010E56130E203436520E56154036003433F
+:100B40006540E56130E103436580E56130E40343DE
+:100B50006401E56130E603436408E56220E40EE5E4
+:100B600061547F7008E56120E7034364105365FB1F
+:100B70005364F9AD64E56590FC3ACDF0A3CDF0E5A2
+:100B80006330E30DE5635430C4540F90FC3DF080B6
+:100B900005E490FC3DF0E563540390FC3CF0E56314
+:100BA00st_data	- ptr to host data register value
+ *
+ * Functional Description:
+ *   Send generic port control command to adapter by writing
+ *   to various PDQ port registers, then polling for completion.
+ *
+ * Return Codes:
+ *   DFX_K_SUCCESS	  - port control command succeeded
+ *   DFX_K_HW_TIMEOUT - port control command timed out
+ *
+ * Assumptions:
+ *   None
+ *
+ * Side Effects:
+ *   None
+ */
+
+static int dfx_hw_port_ctrl_req(
+	DFX_board_t	*bp,
+	PI_UINT32	command,
+	PI_UINT32	data_a,
+	PI_UINT32	data_b,
+	PI_UINT32	*host_data
+	)
+
+	{
+	PI_UINT32	port_cmd;		/* Port Control command register value */
+	int			timeout_cnt;	/* used in for loops */
+
+	/* Set Command Error bit in command longword */
+
+	port_cmd = (PI_UINT32) (command | PI_PCTRL_M_CMD_ERROR);
+
+	/* Issue port command to the adapter */
+
+	dfx_port_write_long(bp, PI_PDQ_K_REG_PORT_DATA_A, data_a);
+	dfx_port_write_long(bp, PI_PDQ_K_REG_PORT_DATA_B, data_b);
+	dfx_port_write_long(bp, PI_PDQ_K_REG_PORT_CTRL, port_cmd);
+
+	/* Now wait for command to complete */
+
+	if (command == PI_PCTRL_M_BLAST_FLASH)
+		timeout_cnt = 600000;	/* set command timeout count to 60 seconds */
+	else
+		timeout_cnt = 20000;	/* set command timeout count to 2 seconds */
+
+	for (; timeout_cnt > 0; timeout_cnt--)
+		{
+		dfx_port_read_long(bp, PI_PDQ_K_REG_PORT_CTRL, &port_cmd);
+		if (!(port_cmd & PI_PCTRL_M_CMD_ERROR))
+			break;
+		udelay(100);			/* wait for 100 microseconds */
+		}
+	if (timeout_cnt == 0)
+		return(DFX_K_HW_TIMEOUT);
+
+	/*
+	 * If the address of host_data is non-zero, assume caller has supplied a
+	 * non NULL pointer, and return the contents of the HOST_DATA register in
+	 * it.
+	 */
+
+	if (host_data != NULL)
+		dfx_port_read_long(bp, PI_PDQ_K_REG_HOST_DATA, host_data);
+	return(DFX_K_SUCCESS);
+	}
+
+
+/*
+ * =====================
+ * = dfx_hw_adap_reset =
+ * =====================
+ *
+ * Overview:
+ *   Resets adapter
+ *
+ * Returns:
+ *   None
+ *
+ * Arguments:
+ *   bp   - pointer to board information
+ *   type - type of reset to perform
+ *
+ * Functional Description:
+ *   Issue soft reset to adapter by writing to PDQ Port Reset
+ *   register.  Use incoming reset type to tell adapter what
+ *   kind of reset operation to perform.
+ *
+ * Return Codes:
+ *   None
+ *
+ * Assumptions:
+ *   This routine merely issues a soft reset to the adapter.
+ *   It is expected that after this routine returns, the caller
+ *   will appropriately poll the Port Status register for the
+ *   adapter to enter the proper state.
+ *
+ * Side Effects:
+ *   Internal adapter registers are cleared.
+ */
+
+static void dfx_hw_adap_reset(
+	DFX_board_t	*bp,
+	PI_UINT32	type
+	)
+
+	{
+	/* Set Reset type and assert reset */
+
+	dfx_port_write_long(bp, PI_PDQ_K_REG_PORT_DATA_A, type);	/* tell adapter type of reset */
+	dfx_port_write_long(bp, PI_PDQ_K_REG_PORT_RESET, PI_RESET_M_ASSERT_RESET);
+
+	/* Wait for at least 1 Microsecond according to the spec. We wait 20 just to be safe */
+
+	udelay(20);
+
+	/* Deassert reset */
+
+	dfx_port_write_long(bp, PI_PDQ_K_REG_PORT_RESET, 0);
+	}
+
+
+/*
+ * ========================
+ * = dfx_hw_adap_state_rd =
+ * ========================
+ *
+ * Overview:
+ *   Returns current adapter state
+ *
+ * Returns:
+ *   Adapter state per PDQ Port Specification
+ *
+ * Arguments:
+ *   bp - pointer to board information
+ *
+ * Functional Description:
+ *   Reads PDQ Port Status register and returns adapter state.
+ *
+ * Return Codes:
+ *   None
+ *
+ * Assumptions:
+ *   None
+ *
+ * Side Effects:
+ *   None
+ */
+
+static int dfx_hw_adap_state_rd(DFX_board_t *bp)
+	{
+	PI_UINT32 port_status;		/* Port Status register value */
+
+	dfx_port_read_long(bp, PI_PDQ_K_REG_PORT_STATUS, &port_status);
+	return((port_status & PI_PSTATUS_M_STATE) >> PI_PSTATUS_V_STATE);
+	}
+
+
+/*
+ * =====================
+ * = dfx_hw_dma_uninit =
+ * =====================
+ *
+ * Overview:
+ *   Brings adapter to DMA_UNAVAILABLE state
+ *
+ * Returns:
+ *   Condition code
+ *
+ * Arguments:
+ *   bp   - pointer to board information
+ *   type - type of reset to perform
+ *
+ * Functional Description:
+ *   Bring adapter to DMA_UNAVAILABLE state by performing the following:
+ *		1. Set reset type bit in Port Data A Register then reset adapter.
+ *		2. Check that adapter is in DMA_UNAVAILABLE state.
+ *
+ * Return Codes:
+ *   DFX_K_SUCCESS	  - adapter is in DMA_UNAVAILABLE state
+ *   DFX_K_HW_TIMEOUT - adapter did not reset properly
+ *
+ * Assumptions:
+ *   None
+ *
+ * Side Effects:
+ *   Internal adapter registers are cleared.
+ */
+
+static int dfx_hw_dma_uninit(DFX_board_t *bp, PI_UINT32 type)
+	{
+	int timeout_cnt;	/* used in for loops */
+
+	/* Set reset type bit and reset adapter */
+
+	dfx_hw_adap_reset(bp, type);
+
+	/* Now wait for adapter to enter DMA_UNAVAILABLE state */
+
+	for (timeout_cnt = 100000; timeout_cnt > 0; timeout_cnt--)
+		{
+		if (dfx_hw_adap_state_rd(bp) == PI_STATE_K_DMA_UNAVAIL)
+			break;
+		udelay(100);					/* wait for 100 microseconds */
+		}
+	if (timeout_cnt == 0)
+		return(DFX_K_HW_TIMEOUT);
+	return(DFX_K_SUCCESS);
+	}
+
+/*
+ *	Align an sk_buff to a boundary power of 2
+ *
+ */
+
+static void my_skb_align(struct sk_buff *skb, int n)
+{
+	unsigned long x = (unsigned long)skb->data;
+	unsigned long v;
+
+	v = ALIGN(x, n);	/* Where we want to be */
+
+	skb_reserve(skb, v - x);
+}
+
+
+/*
+ * ================
+ * = dfx_rcv_init =
+ * ================
+ *
+ * Overview:
+ *   Produces buffers to adapter LLC Host receive descriptor block
+ *
+ * Returns:
+ *   None
+ *
+ * Arguments:
+ *   bp - pointer to board information
+ *   get_buffers - non-zero if buffers to be allocated
+ *
+ * Functional Description:
+ *   This routine can be called during dfx_adap_init() or during an adapter
+ *	 reset.  It initializes the descriptor block and produces all allocated
+ *   LLC Host queue receive buffers.
+ *
+ * Return Codes:
+ *   Return 0 on success or -ENOMEM if buffer allocation failed (when using
+ *   dynamic buffer allocation). If the buffer allocation failed, the
+ *   already allocated buffers will not be released and the caller should do
+ *   this.
+ *
+ * Assumptions:
+ *   The PDQ has been reset and the adapter and driver maintained Type 2
+ *   register indices are cleared.
+ *
+ * Side Effects:
+ *   Receive buffers are posted to the adapter LLC queue and the adapter
+ *   is notified.
+ */
+
+static int dfx_rcv_init(DFX_board_t *bp, int get_buffers)
+	{
+	int	i, j;					/* used in for loop */
+
+	/*
+	 *  Since each receive buffer is a single fragment of same length, initialize
+	 *  first longword in each receive descriptor for entire LLC Host descriptor
+	 *  block.  Also initialize second longword in each receive descriptor with
+	 *  physical address of receive buffer.  We'll always allocate receive
+	 *  buffers in powers of 2 so that we can easily fill the 256 entry descriptor
+	 *  block and produce new receive buffers by simply updating the receive
+	 *  producer index.
+	 *
+	 * 	Assumptions:
+	 *		To support all shipping versions of PDQ, the receive buffer size
+	 *		must be mod 128 in length and the physical address must be 128 byte
+	 *		aligned.  In other words, bits 0-6 of the length and address must
+	 *		be zero for the following descriptor field entries to be correct on
+	 *		all PDQ-based boards.  We guaranteed both requirements during
+	 *		driver initialization when we allocated memory for the receive buffers.
+	 */
+
+	if (get_buffers) {
+#ifdef DYNAMIC_BUFFERS
+	for (i = 0; i < (int)(bp->rcv_bufs_to_post); i++)
+		for (j = 0; (i + j) < (int)PI_RCV_DATA_K_NUM_ENTRIES; j += bp->rcv_bufs_to_post)
+		{
+			struct sk_buff *newskb = __netdev_alloc_skb(bp->dev, NEW_SKB_SIZE, GFP_NOIO);
+			if (!newskb)
+				return -ENOMEM;
+			bp->descr_block_virt->rcv_data[i+j].long_0 = (u32) (PI_RCV_DESCR_M_SOP |
+				((PI_RCV_DATA_K_SIZE_MAX / PI_ALIGN_K_RCV_DATA_BUFF) << PI_RCV_DESCR_V_SEG_LEN));
+			/*
+			 * align to 128 bytes for compatibility with
+			 * the old EISA boards.
+			 */
+
+			my_skb_align(newskb, 128);
+			bp->descr_block_virt->rcv_data[i + j].long_1 =
+				(u32)dma_map_single(bp->bus_dev, newskb->data,
+						    NEW_SKB_SIZE,
+						    DMA_FROM_DEVICE);
+			/*
+			 * p_rcv_buff_va is only used inside the
+			 * kernel so we put the skb pointer here.
+			 */
+			bp->p_rcv_buff_va[i+j] = (char *) newskb;
+		}
+#else
+	for (i=0; i < (int)(bp->rcv_bufs_to_post); i++)
+		for (j=0; (i + j) < (int)PI_RCV_DATA_K_NUM_ENTRIES; j += bp->rcv_bufs_to_post)
+			{
+			bp->descr_block_virt->rcv_data[i+j].long_0 = (u32) (PI_RCV_DESCR_M_SOP |
+				((PI_RCV_DATA_K_SIZE_MAX / PI_ALIGN_K_RCV_DATA_BUFF) << PI_RCV_DESCR_V_SEG_LEN));
+			bp->descr_block_virt->rcv_data[i+j].long_1 = (u32) (bp->rcv_block_phys + (i * PI_RCV_DATA_K_SIZE_MAX));
+			bp->p_rcv_buff_va[i+j] = (char *) (bp->rcv_block_virt + (i * PI_RCV_DATA_K_SIZE_MAX));
+			}
+#endif
+	}
+
+	/* Update receive producer and Type 2 register */
+
+	bp->rcv_xmt_reg.index.rcv_prod = bp->rcv_bufs_to_post;
+	dfx_port_write_long(bp, PI_PDQ_K_REG_TYPE_2_PROD, bp->rcv_xmt_reg.lword);
+	return 0;
+	}
+
+
+/*
+ * =========================
+ * = dfx_rcv_queue_process =
+ * =========================
+ *
+ * Overview:
+ *   Process received LLC frames.
+ *
+ * Returns:
+ *   None
+ *
+ * Arguments:
+ *   bp - pointer to board information
+ *
+ * Functional Description:
+ *   Received LLC frames are processed until there are no more consumed frames.
+ *   Once all frames are processed, the receive buffers are returned to the
+ *   adapter.  Note that this algorithm fixes the length of time that can be spent
+ *   in this routine, because there are a fixed number of receive buffers to
+ *   process and buffers are not produced until this routine exits and returns
+ *   to the ISR.
+ *
+ * Return Codes:
+ *   None
+ *
+ * Assumptions:
+ *   None
+ *
+ * Side Effects:
+ *   None
+ */
+
+static void dfx_rcv_queue_process(
+	DFX_board_t *bp
+	)
+
+	{
+	PI_TYPE_2_CONSUMER	*p_type_2_cons;		/* ptr to rcv/xmt consumer block register */
+	char				*p_buff;			/* ptr to start of packet receive buffer (FMC descriptor) */
+	u32					descr, pkt_len;		/* FMC descriptor field and packet length */
+	struct sk_buff		*skb;				/* pointer to a sk_buff to hold incoming packet data */
+
+	/* Service all consumed LLC receive frames */
+
+	p_type_2_cons = (PI_TYPE_2_CONSUMER *)(&bp->cons_block_virt->xmt_rcv_data);
+	while (bp->rcv_xmt_reg.index.rcv_comp != p_type_2_cons->index.rcv_cons)
+		{
+		/* Process any errors */
+
+		int entry;
+
+		entry = bp->rcv_xmt_reg.index.rcv_comp;
+#ifdef DYNAMIC_BUFFERS
+		p_buff = (char *) (((struct sk_buff *)bp->p_rcv_buff_va[entry])->data);
+#else
+		p_buff = (char *) bp->p_rcv_buff_va[entry];
+#endif
+		memcpy(&descr, p_buff + RCV_BUFF_K_DESCR, sizeof(u32));
+
+		if (descr & PI_FMC_DESCR_M_RCC_FLUSH)
+			{
+			if (descr & PI_FMC_DESCR_M_RCC_CRC)
+				bp->rcv_crc_errors++;
+			else
+				bp->rcv_frame_status_errors++;
+			}
+		else
+		{
+			int rx_in_place = 0;
+
+			/* The frame was received without errors - verify packet length */
+
+			pkt_len = (u32)((descr & PI_FMC_DESCR_M_LEN) >> PI_FMC_DESCR_V_LEN);
+			pkt_len -= 4;				/* subtract 4 byte CRC */
+			if (!IN_RANGE(pkt_len, FDDI_K_LLC_ZLEN, FDDI_K_LLC_LEN))
+				bp->rcv_length_errors++;
+			else{
+#ifdef DYNAMIC_BUFFERS
+				if (pkt_len > SKBUFF_RX_COPYBREAK) {
+					struct sk_buff *newskb;
+
+					newskb = dev_alloc_skb(NEW_SKB_SIZE);
+					if (newskb){
+						rx_in_place = 1;
+
+						my_skb_align(newskb, 128);
+						skb = (struct sk_buff *)bp->p_rcv_buff_va[entry];
+						dma_unmap_single(bp->bus_dev,
+							bp->descr_block_virt->rcv_data[entry].long_1,
+							NEW_SKB_SIZE,
+							DMA_FROM_DEVICE);
+						skb_reserve(skb, RCV_BUFF_K_PADDING);
+						bp->p_rcv_buff_va[entry] = (char *)newskb;
+						bp->descr_block_virt->rcv_data[entry].long_1 =
+							(u32)dma_map_single(bp->bus_dev,
+								newskb->data,
+								NEW_SKB_SIZE,
+								DMA_FROM_DEVICE);
+					} else
+						skb = NULL;
+				} else
+#endif
+					skb = dev_alloc_skb(pkt_len+3);	/* alloc new buffer to pass up, add room for PRH */
+				if (skb == NULL)
+					{
+					printk("%s: Could not allocate receive buffer.  Dropping packet.\n", bp->dev->name);
+					bp->rcv_discards++;
+					break;
+					}
+				else {
+#ifndef DYNAMIC_BUFFERS
+					if (! rx_in_place)
+#endif
+					{
+						/* Receive buffer allocated, pass receive packet up */
+
+						skb_copy_to_linear_data(skb,
+							       p_buff + RCV_BUFF_K_PADDING,
+							       pkt_len + 3);
+					}
+
+					skb_reserve(skb,3);		/* adjust data field so that it points to FC byte */
+					skb_put(skb, pkt_len);		/* pass up packet length, NOT including CRC */
+					skb->protocol = fddi_type_trans(skb, bp->dev);
+					bp->rcv_total_bytes += skb->len;
+					netif_rx(skb);
+
+					/* Update the rcv counters */
+					bp->rcv_total_frames++;
+					if (*(p_buff + RCV_BUFF_K_DA) & 0x01)
+						bp->rcv_multicast_frames++;
+				}
+			}
+			}
+
+		/*
+		 * Advance the producer (for recycling) and advance the completion
+		 * (for servicing received frames).  Note that it is okay to
+		 * advance the producer without checking that it passes the
+		 * completion index because they are both advanced at the same
+		 * rate.
+		 */
+
+		bp->rcv_xmt_reg.index.rcv_prod += 1;
+		bp->rcv_xmt_reg.index.rcv_comp += 1;
+		}
+	}
+
+
+/*
+ * =====================
+ * = dfx_xmt_queue_pkt =
+ * =====================
+ *
+ * Overview:
+ *   Queues packets for transmission
+ *
+ * Returns:
+ *   Condition code
+ *
+ * Arguments:
+ *   skb - pointer to sk_buff to queue for transmission
+ *   dev - pointer to device information
+ *
+ * Functional Description:
+ *   Here we assume that an incoming skb transmit request
+ *   is contained in a single physically contiguous buffer
+ *   in which the virtual address of the start of packet
+ *   (skb->data) can be converted to a physical address
+ *   by using pci_map_single().
+ *
+ *   Since the adapter architecture requires a three byte
+ *   packet request header to prepend the start of packet,
+ *   we'll write the three byte field immediately prior to
+ *   the FC byte.  This assumption is valid because we've
+ *   ensured that dev->hard_header_len includes three pad
+ *   bytes.  By posting a single fragment to the adapter,
+ *   we'll reduce the number of descriptor fetches and
+ *   bus traffic needed to send the request.
+ *
+ *   Also, we can't free the skb until after it's been DMA'd
+ *   out by the adapter, so we'll queue it in the driver and
+ *   return it in dfx_xmt_done.
+ *
+ * Return Codes:
+ *   0 - driver queued packet, link is unavailable, or skbuff was bad
+ *	 1 - caller should requeue the sk_buff for later transmission
+ *
+ * Assumptions:
+ *	 First and foremost, we assume the incoming skb pointer
+ *   is NOT NULL and is pointing to a valid sk_buff structure.
+ *
+ *   The outgoing packet is complete, starting with the
+ *   frame control byte including the last byte of data,
+ *   but NOT including the 4 byte CRC.  We'll let the
+ *   adapter hardware generate and append the CRC.
+ *
+ *   The entire packet is stored in one physically
+ *   contiguous buffer which is not cached and whose
+ *   32-bit physical address can be determined.
+ *
+ *   It's vital that this routine is NOT reentered for the
+ *   same board and that the OS is not in another section of
+ *   code (eg. dfx_int_common) for the same board on a
+ *   different thread.
+ *
+ * Side Effects:
+ *   None
+ */
+
+static int dfx_xmt_queue_pkt(
+	struct sk_buff	*skb,
+	struct net_device	*dev
+	)
+
+	{
+	DFX_board_t		*bp = netdev_priv(dev);
+	u8			prod;				/* local transmit producer index */
+	PI_XMT_DESCR		*p_xmt_descr;		/* ptr to transmit descriptor block entry */
+	XMT_DRIVER_DESCR	*p_xmt_drv_descr;	/* ptr to transmit driver descriptor */
+	unsigned long		flags;
+
+	netif_stop_queue(dev);
+
+	/*
+	 * Verify that incoming transmit request is OK
+	 *
+	 * Note: The packet size check is consistent with other
+	 *		 Linux device drivers, although the correct packet
+	 *		 size should be verified before calling the
+	 *		 transmit routine.
+	 */
+
+	if (!IN_RANGE(skb->len, FDDI_K_LLC_ZLEN, FDDI_K_LLC_LEN))
+	{
+		printk("%s: Invalid packet length - %u bytes\n",
+			dev->name, skb->len);
+		bp->xmt_length_errors++;		/* bump error counter */
+		netif_wake_queue(dev);
+		dev_kfree_skb(skb);
+		return(0);				/* return "success" */
+	}
+	/*
+	 * See if adapter link is available, if not, free buffer
+	 *
+	 * Note: If the link isn't available, free buffer and return 0
+	 *		 rather than tell the upper layer to requeue the packet.
+	 *		 The methodology here is that by the time the link
+	 *		 becomes available, the packet to be sent will be
+	 *		 fairly stale.  By simply dropping the packet, the
+	 *		 higher layer protocols will eventually time out
+	 *		 waiting for response packets which it won't receive.
+	 */
+
+	if (bp->link_available == PI_K_FALSE)
+		{
+		if (dfx_hw_adap_state_rd(bp) == PI_STATE_K_LINK_AVAIL)	/* is link really available? */
+			bp->link_available = PI_K_TRUE;		/* if so, set flag and continue */
+		else
+			{
+			bp->xmt_discards++;					/* bump error counter */
+			dev_kfree_skb(skb);		/* free sk_buff now */
+			netif_wake_queue(dev);
+			return(0);							/* return "success" */
+			}
+		}
+
+	spin_lock_irqsave(&bp->lock, flags);
+
+	/* Get the current producer and the next free xmt data descriptor */
+
+	prod		= bp->rcv_xmt_reg.index.xmt_prod;
+	p_xmt_descr = &(bp->descr_block_virt->xmt_data[prod]);
+
+	/*
+	 * Get pointer to auxiliary queue entry to contain information
+	 * for this packet.
+	 *
+	 * Note: The current xmt producer index will become the
+	 *	 current xmt completion index when we complete this
+	 *	 packet later on.  So, we'll get the pointer to the
+	 *	 next auxiliary queue entry now before we bump the
+	 *	 producer index.
+	 */
+
+	p_xmt_drv_descr = &(bp->xmt_drv_descr_blk[prod++]);	/* also bump producer index */
+
+	/* Write the three PRH bytes immediately before the FC byte */
+
+	skb_push(skb,3);
+	skb->data[0] = DFX_PRH0_BYTE;	/* these byte values are defined */
+	skb->data[1] = DFX_PRH1_BYTE;	/* in the Motorola FDDI MAC chip */
+	skb->data[2] = DFX_PRH2_BYTE;	/* specification */
+
+	/*
+	 * Write the descriptor with buffer info and bump producer
+	 *
+	 * Note: Since we need to start DMA from the packet request
+	 *		 header, we'll add 3 bytes to the DMA buffer length,
+	 *		 and we'll determine the physical address of the
+	 *		 buffer from the PRH, not skb->data.
+	 *
+	 * Assumptions:
+	 *		 1. Packet starts with the frame control (FC) byte
+	 *		    at skb->data.
+	 *		 2. The 4-byte CRC is not appended to the buffer or
+	 *			included in the length.
+	 *		 3. Packet length (skb->len) is from FC to end of
+	 *			data, inclusive.
+	 *		 4. The packet length does not exceed the maximum
+	 *			FDDI LLC frame length of 4491 bytes.
+	 *		 5. The entire packet is contained in a physically
+	 *			contiguous, non-cached, locked memory space
+	 *			comprised of a single buffer pointed to by
+	 *			skb->data.
+	 *		 6. The physical address of the start of packet
+	 *			can be determined from the virtual address
+	 *			by using pci_map_single() and is only 32-bits
+	 *			wide.
+	 */
+
+	p_xmt_descr->long_0	= (u32) (PI_XMT_DESCR_M_SOP | PI_XMT_DESCR_M_EOP | ((skb->len) << PI_XMT_DESCR_V_SEG_LEN));
+	p_xmt_descr->long_1 = (u32)dma_map_single(bp->bus_dev, skb->data,
+						  skb->len, DMA_TO_DEVICE);
+
+	/*
+	 * Verify that descriptor is actually available
+	 *
+	 * Note: If descriptor isn't available, return 1 which tells
+	 *	 the upper layer to requeue the packet for later
+	 *	 transmission.
+	 *
+	 *       We need to ensure that the producer never reaches the
+	 *	 completion, except to indicate that the queue is empty.
+	 */
+
+	if (prod == bp->rcv_xmt_reg.index.xmt_comp)
+	{
+		skb_pull(skb,3);
+		spin_unlock_irqrestore(&bp->lock, flags);
+		return NETDEV_TX_BUSY;	/* requeue packet for later */
+	}
+
+	/*
+	 * Save info for this packet for xmt done indication routine
+	 *
+	 * Normally, we'd save the producer index in the p_xmt_drv_descr
+	 * structure so that we'd have it handy when we complete this
+	 * packet later (in dfx_xmt_done).  However, since the current
+	 * transmit architecture guarantees a single fragment for the
+	 * entire packet, we can simply bump the completion index by
+	 * one (1) for each completed packet.
+	 *
+	 * Note: If this assumption changes and we're presented with
+	 *	 an inconsistent number of transmit fragments for packet
+	 *	 data, we'll need to modify this code to save the current
+	 *	 transmit producer index.
+	 */
+
+	p_xmt_drv_descr->p_skb = skb;
+
+	/* Update Type 2 register */
+
+	bp->rcv_xmt_reg.index.xmt_prod = prod;
+	dfx_port_write_long(bp, PI_PDQ_K_REG_TYPE_2_PROD, bp->rcv_xmt_reg.lword);
+	spin_unlock_irqrestore(&bp->lock, flags);
+	netif_wake_queue(dev);
+	return(0);							/* packet queued to adapter */
+	}
+
+
+/*
+ * ================
+ * = dfx_xmt_done =
+ * ================
+ *
+ * Overview:
+ *   Processes all frames that have been transmitted.
+ *
+ * Returns:
+ *   None
+ *
+ * Arguments:
+ *   bp - pointer to board information
+ *
+ * Functional Description:
+ *   For all consumed transmit descriptors that have not
+ *   yet been completed, we'll free the skb we were holding
+ *   onto using dev_kfree_skb and bump the appropriate
+ *   counters.
+ *
+ * Return Codes:
+ *   None
+ *
+ * Assumptions:
+ *   The Type 2 register is not updated in this routine.  It is
+ *   assumed that it will be updated in the ISR when dfx_xmt_done
+ *   returns.
+ *
+ * Side Effects:
+ *   None
+ */
+
+static int dfx_xmt_done(DFX_board_t *bp)
+	{
+	XMT_DRIVER_DESCR	*p_xmt_drv_descr;	/* ptr to transmit driver descriptor */
+	PI_TYPE_2_CONSUMER	*p_type_2_cons;		/* ptr to rcv/xmt consumer block register */
+	u8			comp;			/* local transmit completion index */
+	int 			freed = 0;		/* buffers freed */
+
+	/* Service all consumed transmit frames */
+
+	p_type_2_cons = (PI_TYPE_2_CONSUMER *)(&bp->cons_block_virt->xmt_rcv_data);
+	while (bp->rcv_xmt_reg.index.xmt_comp != p_type_2_cons->index.xmt_cons)
+		{
+		/* Get pointer to the transmit driver descriptor block information */
+
+		p_xmt_drv_descr = &(bp->xmt_drv_descr_blk[bp->rcv_xmt_reg.index.xmt_comp]);
+
+		/* Increment transmit counters */
+
+		bp->xmt_total_frames++;
+		bp->xmt_total_bytes += p_xmt_drv_descr->p_skb->len;
+
+		/* Return skb to operating system */
+		comp = bp->rcv_xmt_reg.index.xmt_comp;
+		dma_unmap_single(bp->bus_dev,
+				 bp->descr_block_virt->xmt_data[comp].long_1,
+				 p_xmt_drv_descr->p_skb->len,
+				 DMA_TO_DEVICE);
+		dev_kfree_skb_irq(p_xmt_drv_descr->p_skb);
+
+		/*
+		 * Move to start of next packet by updating completion index
+		 *
+		 * Here we assume that a transmit packet request is always
+		 * serviced by posting one fragment.  We can therefore
+		 * simplify the completion code by incrementing the
+		 * completion index by one.  This code will need to be
+		 * modified if this assumption changes.  See comments
+		 * in dfx_xmt_queue_pkt for more details.
+		 */
+
+		bp->rcv_xmt_reg.index.xmt_comp += 1;
+		freed++;
+		}
+	return freed;
+	}
+
+
+/*
+ * =================
+ * = dfx_rcv_flush =
+ * =================
+ *
+ * Overview:
+ *   Remove all skb's in the receive ring.
+ *
+ * Returns:
+ *   None
+ *
+ * Arguments:
+ *   bp - pointer to board information
+ *
+ * Functional Description:
+ *   Free's all the dynamically allocated skb's that are
+ *   currently attached to the device receive ring. This
+ *   function is typically only used when the device is
+ *   initialized or reinitialized.
+ *
+ * Return Codes:
+ *   None
+ *
+ * Side Effects:
+ *   None
+ */
+#ifdef DYNAMIC_BUFFERS
+static void dfx_rcv_flush( DFX_board_t *bp )
+	{
+	int i, j;
+
+	for (i = 0; i < (int)(bp->rcv_bufs_to_post); i++)
+		for (j = 0; (i + j) < (int)PI_RCV_DATA_K_NUM_ENTRIES; j += bp->rcv_bufs_to_post)
+		{
+			struct sk_buff *skb;
+			skb = (struct sk_buff *)bp->p_rcv_buff_va[i+j];
+			if (skb)
+				dev_kfree_skb(skb);
+			bp->p_rcv_buff_va[i+j] = NULL;
+		}
+
+	}
+#else
+static inline void dfx_rcv_flush( DFX_board_t *bp )
+{
+}
+#endif /* DYNAMIC_BUFFERS */
+
+/*
+ * =================
+ * = dfx_xmt_flush =
+ * =================
+ *
+ * Overview:
+ *   Processes all frames whether they've been transmitted
+ *   or not.
+ *
+ * Returns:
+ *   None
+ *
+ * Arguments:
+ *   bp - pointer to board information
+ *
+ * Functional Description:
+ *   For all produced transmit descriptors that have not
+ *   yet been completed, we'll free the skb we were holding
+ *   onto using dev_kfree_skb and bump the appropriate
+ *   counters.  Of course, it's possible that some of
+ *   these transmit requests actually did go out, but we
+ *   won't make that distinction here.  Finally, we'll
+ *   update the consumer index to match the producer.
+ *
+ * Return Codes:
+ *   None
+ *
+ * Assumptions:
+ *   This routine does NOT update the Type 2 register.  It
+ *   is assumed that this routine is being called during a
+ *   transmit flush interrupt, or a shutdown or close routine.
+ *
+ * Side Effects:
+ *   None
+ */
+
+static void dfx_xmt_flush( DFX_board_t *bp )
+	{
+	u32			prod_cons;		/* rcv/xmt consumer block longword */
+	XMT_DRIVER_DESCR	*p_xmt_drv_descr;	/* ptr to transmit driver descriptor */
+	u8			comp;			/* local transmit completion index */
+
+	/* Flush all outstanding transmit frames */
+
+	while (bp->rcv_xmt_reg.index.xmt_comp != bp->rcv_xmt_reg.index.xmt_prod)
+		{
+		/* Get pointer to the transmit driver descriptor block information */
+
+		p_xmt_drv_descr = &(bp->xmt_drv_descr_blk[bp->rcv_xmt_reg.index.xmt_comp]);
+
+		/* Return skb to operating system */
+		comp = bp->rcv_xmt_reg.index.xmt_comp;
+		dma_unmap_single(bp->bus_dev,
+				 bp->descr_block_virt->xmt_data[comp].long_1,
+				 p_xmt_drv_descr->p_skb->len,
+				 DMA_TO_DEVICE);
+		dev_kfree_skb(p_xmt_drv_descr->p_skb);
+
+		/* Increment transmit error counter */
+
+		bp->xmt_discards++;
+
+		/*
+		 * Move to start of next packet by updating completion index
+		 *
+		 * Here we assume that a transmit packet request is always
+		 * serviced by posting one fragment.  We can therefore
+		 * simplify the completion code by incrementing the
+		 * completion index by one.  This code will need to be
+		 * modified if this assumption changes.  See comments
+		 * in dfx_xmt_queue_pkt for more details.
+		 */
+
+		bp->rcv_xmt_reg.index.xmt_comp += 1;
+		}
+
+	/* Update the transmit consumer index in the consumer block */
+
+	prod_cons = (u32)(bp->cons_block_virt->xmt_rcv_data & ~PI_CONS_M_XMT_INDEX);
+	prod_cons |= (u32)(bp->rcv_xmt_reg.index.xmt_prod << PI_CONS_V_XMT_INDEX);
+	bp->cons_block_virt->xmt_rcv_data = prod_cons;
+	}
+
+/*
+ * ==================
+ * = dfx_unregister =
+ * ==================
+ *
+ * Overview:
+ *   Shuts down an FDDI controller
+ *
+ * Returns:
+ *   Condition code
+ *
+ * Arguments:
+ *   bdev - pointer to device information
+ *
+ * Functional Description:
+ *
+ * Return Codes:
+ *   None
+ *
+ * Assumptions:
+ *   It compiles so it should work :-( (PCI cards do :-)
+ *
+ * Side Effects:
+ *   Device structures for FDDI adapters (fddi0, fddi1, etc) are
+ *   freed.
+ */
+static void __devexit dfx_unregister(struct device *bdev)
+{
+	struct net_device *dev = dev_get_drvdata(bdev);
+	DFX_board_t *bp = netdev_priv(dev);
+	int dfx_bus_pci = DFX_BUS_PCI(bdev);
+	int dfx_bus_tc = DFX_BUS_TC(bdev);
+	int dfx_use_mmio = DFX_MMIO || dfx_bus_tc;
+	resource_size_t bar_start = 0;		/* pointer to port */
+	resource_size_t bar_len = 0;		/* resource length */
+	int		alloc_size;		/* total buffer size used */
+
+	unregister_netdev(dev);
+
+	alloc_size = sizeof(PI_DESCR_BLOCK) +
+		     PI_CMD_REQ_K_SIZE_MAX + PI_CMD_RSP_K_SIZE_MAX +
+#ifndef DYNAMIC_BUFFERS
+		     (bp->rcv_bufs_to_post * PI_RCV_DATA_K_SIZE_MAX) +
+#endif
+		     sizeof(PI_CONSUMER_BLOCK) +
+		     (PI_ALIGN_K_DESC_BLK - 1);
+	if (bp->kmalloced)
+		dma_free_coherent(bdev, alloc_size,
+				  bp->kmalloced, bp->kmalloced_dma);
+
+	dfx_bus_uninit(dev);
+
+	dfx_get_bars(bdev, &bar_start, &bar_len);
+	if (dfx_use_mmio) {
+		iounmap(bp->base.mem);
+		release_mem_region(bar_start, bar_len);
+	} else
+		release_region(bar_start, bar_len);
+
+	if (dfx_bus_pci)
+		pci_disable_device(to_pci_dev(bdev));
+
+	free_netdev(dev);
+}
+
+
+static int __devinit __maybe_unused dfx_dev_register(struct device *);
+static int __devexit __maybe_unused dfx_dev_unregister(struct device *);
+
+#ifdef CONFIG_PCI
+static int __devinit dfx_pci_register(struct pci_dev *,
+				      const struct pci_device_id *);
+static void __devexit dfx_pci_unregister(struct pci_dev *);
+
+static struct pci_device_id dfx_pci_table[] = {
+	{ PCI_DEVICE(PCI_VENDOR_ID_DEC, PCI_DEVICE_ID_DEC_FDDI) },
+	{ }
+};
+MODULE_DEVICE_TABLE(pci, dfx_pci_table);
+
+static struct pci_driver dfx_pci_driver = {
+	.name		= "defxx",
+	.id_table	= dfx_pci_table,
+	.probe		= dfx_pci_register,
+	.remove		= __devexit_p(dfx_pci_unregister),
+};
+
+static __devinit int dfx_pci_register(struct pci_dev *pdev,
+				      const struct pci_device_id *ent)
+{
+	return dfx_register(&pdev->dev);
+}
+
+static void __devexit dfx_pci_unregister(struct pci_dev *pdev)
+{
+	dfx_unregister(&pdev->dev);
+}
+#endif /* CONFIG_PCI */
+
+#ifdef CONFIG_EISA
+static struct eisa_device_id dfx_eisa_table[] = {
+        { "DEC3001", DEFEA_PROD_ID_1 },
+        { "DEC3002", DEFEA_PROD_ID_2 },
+        { "DEC3003", DEFEA_PROD_ID_3 },
+        { "DEC3004", DEFEA_PROD_ID_4 },
+        { }
+};
+MODULE_DEVICE_TABLE(eisa, dfx_eisa_table);
+
+static struct eisa_driver dfx_eisa_driver = {
+	.id_table	= dfx_eisa_table,
+	.driver		= {
+		.name	= "defxx",
+		.bus	= &eisa_bus_type,
+		.probe	= dfx_dev_register,
+		.remove	= __devexit_p(dfx_dev_unregister),
+	},
+};
+#endif /* CONFIG_EISA */
+
+#ifdef CONFIG_TC
+static struct tc_device_id const dfx_tc_table[] = {
+	{ "DEC     ", "PMAF-FA " },
+	{ "DEC     ", "PMAF-FD " },
+	{ "DEC     ", "PMAF-FS " },
+	{ "DEC     ", "PMAF-FU " },
+	{ }
+};
+MODULE_DEVICE_TABLE(tc, dfx_tc_table);
+
+static struct tc_driver dfx_tc_driver = {
+	.id_table	= dfx_tc_table,
+	.driver		= {
+		.name	= "defxx",
+		.bus	= &tc_bus_type,
+		.probe	= dfx_dev_register,
+		.remove	= __devexit_p(dfx_dev_unregister),
+	},
+};
+#endif /* CONFIG_TC */
+
+static int __devinit __maybe_unused dfx_dev_register(struct device *dev)
+{
+	int status;
+
+	status = dfx_register(dev);
+	if (!status)
+		get_device(dev);
+	return status;
+}
+
+static int __devexit __maybe_unused dfx_dev_unregister(struct device *dev)
+{
+	put_device(dev);
+	dfx_unregister(dev);
+	return 0;
+}
+
+
+static int __devinit dfx_init(void)
+{
+	int status;
+
+	status = pci_register_driver(&dfx_pci_driver);
+	if (!status)
+		status = eisa_driver_register(&dfx_eisa_driver);
+	if (!status)
+		status = tc_register_driver(&dfx_tc_driver);
+	return status;
+}
+
+static void __devexit dfx_cleanup(void)
+{
+	tc_unregister_driver(&dfx_tc_driver);
+	eisa_driver_unregister(&dfx_eisa_driver);
+	pci_unregister_driver(&dfx_pci_driver);
+}
+
+module_init(dfx_init);
+module_exit(dfx_cleanup);
+MODULE_AUTHOR("Lawrence V. Stefani");
+MODULE_DESCRIPTION("DEC FDDIcontroller TC/EISA/PCI (DEFTA/DEFEA/DEFPA) driver "
+		   DRV_VERSION " " DRV_RELDATE);
+MODULE_LICENSE("GPL");
+                                                                                                                                                                                           

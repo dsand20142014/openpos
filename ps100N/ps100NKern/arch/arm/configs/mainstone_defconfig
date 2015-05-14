@@ -1,0 +1,678 @@
+
+	uint8_t format;
+	port_id_t d_id;
+
+	rval = QLA_RSCNS_HANDLED;
+
+	while (vha->rscn_out_ptr != vha->rscn_in_ptr ||
+	    vha->flags.rscn_queue_overflow) {
+
+		rscn_entry = vha->rscn_queue[vha->rscn_out_ptr];
+		format = MSB(MSW(rscn_entry));
+		d_id.b.domain = LSB(MSW(rscn_entry));
+		d_id.b.area = MSB(LSW(rscn_entry));
+		d_id.b.al_pa = LSB(LSW(rscn_entry));
+
+		DEBUG(printk("scsi(%ld): RSCN queue entry[%d] = "
+		    "[%02x/%02x%02x%02x].\n",
+		    vha->host_no, vha->rscn_out_ptr, format, d_id.b.domain,
+		    d_id.b.area, d_id.b.al_pa));
+
+		vha->rscn_out_ptr++;
+		if (vha->rscn_out_ptr == MAX_RSCN_COUNT)
+			vha->rscn_out_ptr = 0;
+
+		/* Skip duplicate entries. */
+		for (rscn_out_iter = vha->rscn_out_ptr;
+		    !vha->flags.rscn_queue_overflow &&
+		    rscn_out_iter != vha->rscn_in_ptr;
+		    rscn_out_iter = (rscn_out_iter ==
+			(MAX_RSCN_COUNT - 1)) ? 0: rscn_out_iter + 1) {
+
+			if (rscn_entry != vha->rscn_queue[rscn_out_iter])
+				break;
+
+			DEBUG(printk("scsi(%ld): Skipping duplicate RSCN queue "
+			    "entry found at [%d].\n", vha->host_no,
+			    rscn_out_iter));
+
+			vha->rscn_out_ptr = rscn_out_iter;
+		}
+
+		/* Queue overflow, set switch default case. */
+		if (vha->flags.rscn_queue_overflow) {
+			DEBUG(printk("scsi(%ld): device_resync: rscn "
+			    "overflow.\n", vha->host_no));
+
+			format = 3;
+			vha->flags.rscn_queue_overflow = 0;
+		}
+
+		switch (format) {
+		case 0:
+			mask = 0xffffff;
+			break;
+		case 1:
+			mask = 0xffff00;
+			break;
+		case 2:
+			mask = 0xff0000;
+			break;
+		default:
+			mask = 0x0;
+			d_id.b24 = 0;
+			vha->rscn_out_ptr = vha->rscn_in_ptr;
+			break;
+		}
+
+		rval = QLA_SUCCESS;
+
+		list_for_each_entry(fcport, &vha->vp_fcports, list) {
+			if ((fcport->flags & FCF_FABRIC_DEVICE) == 0 ||
+			    (fcport->d_id.b24 & mask) != d_id.b24 ||
+			    fcport->port_type == FCT_BROADCAST)
+				continue;
+
+			if (atomic_read(&fcport->state) == FCS_ONLINE) {
+				if (format != 3 ||
+				    fcport->port_type != FCT_INITIATOR) {
+					qla2x00_mark_device_lost(vha, fcport,
+					    0, 0);
+				}
+			}
+		}
+	}
+	return (rval);
+}
+
+/*
+ * qla2x00_fabric_dev_login
+ *	Login fabric target device and update FC port database.
+ *
+ * Input:
+ *	ha:		adapter state pointer.
+ *	fcport:		port structure list pointer.
+ *	next_loopid:	contains value of a new loop ID that can be used
+ *			by the next login attempt.
+ *
+ * Returns:
+ *	qla2x00 local function return status code.
+ *
+ * Context:
+ *	Kernel context.
+ */
+static int
+qla2x00_fabric_dev_login(scsi_qla_host_t *vha, fc_port_t *fcport,
+    uint16_t *next_loopid)
+{
+	int	rval;
+	int	retry;
+	uint8_t opts;
+	struct qla_hw_data *ha = vha->hw;
+
+	rval = QLA_SUCCESS;
+	retry = 0;
+
+	rval = qla2x00_fabric_login(vha, fcport, next_loopid);
+	if (rval == QLA_SUCCESS) {
+		/* Send an ADISC to tape devices.*/
+		opts = 0;
+		if (fcport->flags & FCF_TAPE_PRESENT)
+			opts |= BIT_1;
+		rval = qla2x00_get_port_database(vha, fcport, opts);
+		if (rval != QLA_SUCCESS) {
+			ha->isp_ops->fabric_logout(vha, fcport->loop_id,
+			    fcport->d_id.b.domain, fcport->d_id.b.area,
+			    fcport->d_id.b.al_pa);
+			qla2x00_mark_device_lost(vha, fcport, 1, 0);
+		} else {
+			qla2x00_update_fcport(vha, fcport);
+		}
+	}
+
+	return (rval);
+}
+
+/*
+ * qla2x00_fabric_login
+ *	Issue fabric login command.
+ *
+ * Input:
+ *	ha = adapter block pointer.
+ *	device = pointer to FC device type structure.
+ *
+ * Returns:
+ *      0 - Login successfully
+ *      1 - Login failed
+ *      2 - Initiator device
+ *      3 - Fatal error
+ */
+int
+qla2x00_fabric_login(scsi_qla_host_t *vha, fc_port_t *fcport,
+    uint16_t *next_loopid)
+{
+	int	rval;
+	int	retry;
+	uint16_t tmp_loopid;
+	uint16_t mb[MAILBOX_REGISTER_COUNT];
+	struct qla_hw_data *ha = vha->hw;
+
+	retry = 0;
+	tmp_loopid = 0;
+
+	for (;;) {
+		DEBUG(printk("scsi(%ld): Trying Fabric Login w/loop id 0x%04x "
+ 		    "for port %02x%02x%02x.\n",
+		    vha->host_no, fcport->loop_id, fcport->d_id.b.domain,
+		    fcport->d_id.b.area, fcport->d_id.b.al_pa));
+
+		/* Login fcport on switch. */
+		ha->isp_ops->fabric_login(vha, fcport->loop_id,
+		    fcport->d_id.b.domain, fcport->d_id.b.area,
+		    fcport->d_id.b.al_pa, mb, BIT_0);
+		if (mb[0is not set
+# CONFIG_MTD_MAP_BANK_WIDTH_16 is not set
+# CONFIG_MTD_MAP_BANK_WIDTH_32 is not set
+# CONFIG_MTD_CFI_I1 is not set
+CONFIG_MTD_CFI_I2=y
+# CONFIG_MTD_CFI_I4 is not set
+# CONFIG_MTD_CFI_I8 is not set
+CONFIG_MTD_CFI_INTELEXT=y
+# CONFIG_MTD_CFI_AMDSTD is not set
+# CONFIG_MTD_CFI_STAA is not set
+CONFIG_MTD_CFI_UTIL=y
+# CONFIG_MTD_RAM is not set
+# CONFIG_MTD_ROM is not set
+# CONFIG_MTD_ABSENT is not set
+# CONFIG_MTD_XIP is not set
+
+#
+# Mapping drivers for chip access
+#
+# CONFIG_MTD_COMPLEX_MAPPINGS is not set
+# CONFIG_MTD_PHYSMAP is not set
+# CONFIG_MTD_ARM_INTEGRATOR is not set
+# CONFIG_MTD_EDB7312 is not set
+# CONFIG_MTD_SHARP_SL is not set
+
+#
+# Self-contained MTD device drivers
+#
+# CONFIG_MTD_SLRAM is not set
+# CONFIG_MTD_PHRAM is not set
+# CONFIG_MTD_MTDRAM is not set
+# CONFIG_MTD_BLKMTD is not set
+# CONFIG_MTD_BLOCK2MTD is not set
+
+#
+# Disk-On-Chip Device Drivers
+#
+# CONFIG_MTD_DOC2000 is not set
+# CONFIG_MTD_DOC2001 is not set
+# CONFIG_MTD_DOC2001PLUS is not set
+
+#
+# NAND Flash Device Drivers
+#
+# CONFIG_MTD_NAND is not set
+
+#
+# Parallel port support
+#
+# CONFIG_PARPORT is not set
+
+#
+# Plug and Play support
+#
+
+#
+# Block devices
+#
+# CONFIG_BLK_DEV_FD is not set
+# CONFIG_BLK_DEV_COW_COMMON is not set
+# CONFIG_BLK_DEV_LOOP is not set
+# CONFIG_BLK_DEV_NBD is not set
+# CONFIG_BLK_DEV_RAM is not set
+CONFIG_BLK_DEV_RAM_COUNT=16
+CONFIG_INITRAMFS_SOURCE=""
+# CONFIG_CDROM_PKTCDVD is not set
+
+#
+# IO Schedulers
+#
+CONFIG_IOSCHED_NOOP=y
+CONFIG_IOSCHED_AS=y
+CONFIG_IOSCHED_DEADLINE=y
+CONFIG_IOSCHED_CFQ=y
+# CONFIG_ATA_OVER_ETH is not set
+
+#
+# ATA/ATAPI/MFM/RLL support
+#
+CONFIG_IDE=y
+CONFIG_BLK_DEV_IDE=y
+
+#
+# Please see Documentation/ide.txt for help/info on IDE drives
+#
+# CONFIG_BLK_DEV_IDE_SATA is not set
+CONFIG_BLK_DEV_IDEDISK=y
+# CONFIG_IDEDISK_MULTI_MODE is not set
+# CONFIG_BLK_DEV_IDECD is not set
+# CONFIG_BLK_DEV_IDETAPE is not set
+# CONFIG_BLK_DEV_IDEFLOPPY is not set
+# CONFIG_IDE_TASK_IOCTL is not set
+
+#
+# IDE chipset support/bugfixes
+#
+# CONFIG_IDE_GENERIC is not set
+# CONFIG_IDE_ARM is not set
+# CONFIG_BLK_DEV_IDEDMA is not set
+# CONFIG_IDEDMA_AUTO is not set
+# CONFIG_BLK_DEV_HD is not set
+
+#
+# SCSI device support
+#
+# CONFIG_SCSI is not set
+
+#
+# Multi-device support (RAID and LVM)
+#
+# CONFIG_MD is not set
+
+#
+# Fusion MPT device support
+#
+
+#
+# IEEE 1394 (FireWire) support
+#
+
+#
+# I2O device support
+#
+
+#
+# Networking support
+#
+CONFIG_NET=y
+
+#
+# Networking options
+#
+# CONFIG_PACKET is not set
+# CONFIG_NETLINK_DEV is not set
+CONFIG_UNIX=y
+# CONFIG_NET_KEY is not set
+CONFIG_INET=y
+# CONFIG_IP_MULTICAST is not set
+# CONFIG_IP_ADVANCED_ROUTER is not set
+CONFIG_IP_PNP=y
+# CONFIG_IP_PNP_DHCP is not set
+CONFIG_IP_PNP_BOOTP=y
+# CONFIG_IP_PNP_RARP is not set
+# CONFIG_NET_IPIP is not set
+# CONFIG_NET_IPGRE is not set
+# CONFIG_ARPD is not set
+# CONFIG_SYN_COOKIES is not set
+# CONFIG_INET_AH is not set
+# CONFIG_INET_ESP is not set
+# CONFIG_INET_IPCOMP is not set
+# CONFIG_INET_TUNNEL is not set
+CONFIG_IP_TCPDIAG=y
+# CONFIG_IP_TCPDIAG_IPV6 is not set
+# CONFIG_IPV6 is not set
+# CONFIG_NETFILTER is not set
+
+#
+# SCTP Configuration (EXPERIMENTAL)
+#
+# CONFIG_IP_SCTP is not set
+# CONFIG_ATM is not set
+# CONFIG_BRIDGE is not set
+# CONFIG_VLAN_8021Q is not set
+# CONFIG_DECNET is not set
+# CONFIG_LLC2 is not set
+# CONFIG_IPX is not set
+# CONFIG_ATALK is not set
+# CONFIG_X25 is not set
+# CONFIG_LAPB is not set
+# CONFIG_NET_DIVERT is not set
+# CONFIG_ECONET is not set
+# CONFIG_WAN_ROUTER is not set
+
+#
+# QoS and/or fair queueing
+#
+# CONFIG_NET_SCHED is not set
+# CONFIG_NET_CLS_ROUTE is not set
+
+#
+# Network testing
+#
+# CONFIG_NET_PKTGEN is not set
+# CONFIG_NETPOLL is not set
+# CONFIG_NET_POLL_CONTROLLER is not set
+# CONFIG_HAMRADIO is not set
+# CONFIG_IRDA is not set
+# CONFIG_BT is not set
+CONFIG_NETDEVICES=y
+# CONFIG_DUMMY is not set
+# CONFIG_BONDING is not set
+# CONFIG_EQUALIZER is not set
+# CONFIG_TUN is not set
+
+#
+# Ethernet (10 or 100Mbit)
+#
+CONFIG_NET_ETHERNET=y
+CONFIG_MII=y
+CONFIG_SMC91X=y
+
+#
+# Ethernet (1000 Mbit)
+#
+
+#
+# Ethernet (10000 Mbit)
+#
+
+#
+# Token Ring devices
+#
+
+#
+# Wireless LAN (non-hamradio)
+#
+# CONFIG_NET_RADIO is not set
+
+#
+# Wanes on Loop. */
+				clear_bit(LOOP_RESYNC_NEEDED, &vha->dpc_flags);
+
+				qla2x00_configure_loop(vha);
+				wait_time--;
+			} while (!atomic_read(&vha->loop_down_timer) &&
+				!(test_bit(ISP_ABORT_NEEDED, &vha->dpc_flags))
+				&& wait_time && (test_bit(LOOP_RESYNC_NEEDED,
+				&vha->dpc_flags)));
+		}
+	}
+
+	if (test_bit(ISP_ABORT_NEEDED, &vha->dpc_flags))
+		return (QLA_FUNCTION_FAILED);
+
+	if (rval)
+		DEBUG2_3(printk("%s(): **** FAILED ****\n", __func__));
+
+	return (rval);
+}
+
+void
+qla2x00_update_fcports(scsi_qla_host_t *vha)
+{
+	fc_port_t *fcport;
+
+	/* Go with deferred removal of rport references. */
+	list_for_each_entry(fcport, &vha->vp_fcports, list)
+		if (fcport && fcport->drport &&
+		    atomic_read(&fcport->state) != FCS_UNCONFIGURED)
+			qla2x00_rport_del(fcport);
+}
+
+/*
+*  qla2x00_abort_isp
+*      Resets ISP and aborts all outstanding commands.
+*
+* Input:
+*      ha           = adapter block pointer.
+*
+* Returns:
+*      0 = success
+*/
+int
+qla2x00_abort_isp(scsi_qla_host_t *vha)
+{
+	int rval;
+	uint8_t        status = 0;
+	struct qla_hw_data *ha = vha->hw;
+	struct scsi_qla_host *vp;
+	struct scsi_qla_host *tvp;
+	struct req_que *req = ha->req_q_map[0];
+
+	if (vha->flags.online) {
+		vha->flags.online = 0;
+		ha->flags.chip_reset_done = 0;
+		clear_bit(ISP_ABORT_NEEDED, &vha->dpc_flags);
+		ha->qla_stats.total_isp_aborts++;
+
+		qla_printk(KERN_INFO, ha,
+		    "Performing ISP error recovery - ha= %p.\n", ha);
+		ha->isp_ops->reset_chip(vha);
+
+		atomic_set(&vha->loop_down_timer, LOOP_DOWN_TIME);
+		if (atomic_read(&vha->loop_state) != LOOP_DOWN) {
+			atomic_set(&vha->loop_state, LOOP_DOWN);
+			qla2x00_mark_all_devices_lost(vha, 0);
+			list_for_each_entry_safe(vp, tvp, &ha->vp_list, list)
+			       qla2x00_mark_all_devices_lost(vp, 0);
+		} else {
+			if (!atomic_read(&vha->loop_down_timer))
+				atomic_set(&vha->loop_down_timer,
+				    LOOP_DOWN_TIME);
+		}
+
+		/* Requeue all commands in outstanding command list. */
+		qla2x00_abort_all_cmds(vha, DID_RESET << 16);
+
+		ha->isp_ops->get_flash_version(vha, req->ring);
+
+		ha->isp_ops->nvram_config(vha);
+
+		if (!qla2x00_restart_isp(vha)) {
+			clear_bit(RESET_MARKER_NEEDED, &vha->dpc_flags);
+
+			if (!atomic_read(&vha->loop_down_timer)) {
+				/*
+				 * Issue marker command only when we are going
+				 * to start the I/O .
+				 */
+				vha->marker_needed = 1;
+			}
+
+			vha->flags.online = 1;
+
+			ha->isp_ops->enable_intrs(ha);
+
+			ha->isp_abort_cnt = 0;
+			clear_bit(ISP_ABORT_RETRY, &vha->dpc_flags);
+
+			if (ha->fce) {
+				ha->flags.fce_enabled = 1;
+				memset(ha->fce, 0,
+				    fce_calc_size(ha->fce_bufs));
+				rval = qla2x00_enable_fce_trace(vha,
+				    ha->fce_dma, ha->fce_bufs, ha->fce_mb,
+				    &ha->fce_bufs);
+				if (rval) {
+					qla_printk(KERN_WARNING, ha,
+					    "Unable to reinitialize FCE "
+					    "(%d).\n", rval);
+					ha->flags.fce_enabled = 0;
+				}
+			}
+
+			if (ha->eft) {
+				memset(ha->eft, 0, EFT_SIZE);
+				rval = qla2x00_enable_eft_trace(vha,
+				    ha->eft_dma, EFT_NUM_BUFFERS);
+				if (rval) {
+					qla_printk(KERN_WARNING, ha,
+					    "Unable to reinitialize EFT "
+					    "(%d).\n", rval);
+				}
+			}
+		} else {	/* failed the ISP abort */
+			vha->flags.online = 1;
+			if (test_bit(ISP_ABORT_RETRY, &vha->dpc_flags)) {
+				if (ha->isp_abort_cnt == 0) {
+ 					qla_printk(KERN_WARNING, ha,
+					    "ISP error recovery failed - "
+					    "board disabled\n");
+					/*
+					 * The next call disables the board
+					 * completely.
+					 */
+					ha->isp_ops->reset_adapter(vha);
+					vha->flags.online = 0;
+					clear_bit(ISP_ABORT_RETRY,
+					    &vha->dpc_flags);
+					status = 0;
+				} else { /* schedule another ISP abort */
+					ha->isp_abort_cnt--;
+					DEBUG(printk("qla%ld: ISP abort - "
+					    "retry remaining %d\n",
+					    vha->host_no, ha->isp_abort_cnt));
+					status = 1;
+				}
+			} else {
+				ha->isp_abort_cnt = MAX_RETRIES_OF_ISP_ABORT;
+				DEBUG(printk("qla2x00(%ld): ISP error recovery "
+				    "- retrying (%d) more times\n",
+				    vha->host_no, ha->isp_abort_cnt));
+				set_bit(ISP_ABORT_RETRY, &vha->dpc_flags);
+				status = 1;
+			}
+		}
+
+	}
+
+	if (!status) {
+		DEBUG(printk(KERN_INFO
+				"qla2x00_abort_isp(%ld): succeeded.\n",
+				vha->host_no));
+		list_for_each_entry_safe(vp, tvp, &ha->vp_list, list) {
+			if (vp->vp_idx)
+				qla2x00_vp_abort_isp(vp);
+		}
+	} else {
+		qla_printk(KERN_INFO, ha,
+			"qla2x00_abort_isp: **** FAILED ****\n");
+	}
+
+	return(status);
+}
+
+/*
+*  qla2x00_restart_isp
+*      restarts the ISP after a reset
+*
+* Input:
+*      ha = adapter block pointer.
+*
+* Returns:
+*      0 = success
+*/
+static int
+qla2x00_restart_isp(scsi_qla_host_t *vha)
+{
+	int status = 0;
+	uint32_t wait_time;
+	struct qla_hw_data *ha = vha->hw;
+	struct req_que *req = ha->req_q_map[0];
+	struct rsp_que *rsp = ha->rsp_q_map[0];
+
+	/* If firmware needs to be loaded */
+	if (qla2x00_isp_firmware(vha)) {
+		vha->flags.online = 0;
+		status = ha->isp_ops->chip_diag(vha);
+		if (!status)
+			status = qla2x00_setup_chip(vha);
+	}
+
+	if (!status && !(status = qla2x00_init_rings(vha))) {
+		clear_bit(RESET_MARKER_NEEDED, &vha->dpc_flags);
+		ha->flags.chip_reset_done = 1;
+		/* Initialize the queues in use */
+		qla25xx_init_queues(ha);
+
+		status = qla2x00_fw_ready(vha);
+		if (!status) {
+			DEBUG(printk("%s(): Start configure loop, "
+			    "status = %d\n", __func__, status));
+
+			/* Issue a marker after FW becomes ready. */
+			qla2x00_marker(vha, req, rsp, 0, 0, MK_SYNC_ALL);
+
+			vha->flags.online = 1;
+			/* Wait at most MAX_TARGET RSCNs for a stable link. */
+			wait_time = 256;
+			do {
+				clear_bit(LOOP_RESYNC_NEEDED, &vha->dpc_flags);
+				qla2x00_configure_loop(vha);
+				wait_time--;
+			} while (!atomic_read(&vha->loop_down_timer) &&
+				!(test_bit(ISP_ABORT_NEEDED, &vha->dpc_flags))
+				&& wait_time && (test_bit(LOOP_RESYNC_NEEDED,
+				&vha->dpc_flags)));
+		}
+
+		/* if no cable then assume it's good */
+		if ((vha->device_flags & DFLG_NO_CABLE))
+			status = 0;
+
+		DEBUG(printk("%s(): Configure loop done, status = 0x%x\n",
+				__func__,
+				status));
+	}
+	return (status);
+}
+
+static int
+qla25xx_init_queues(struct qla_hw_data *ha)
+{
+	struct rsp_que *rsp = NULL;
+	struct req_que *req = NULL;
+	struct scsi_qla_host *base_vha = pci_get_drvdata(ha->pdev);
+	int ret = -1;
+	int i;
+
+	for (i = 1; i < ha->max_rsp_queues; i++) {
+		rsp = ha->rsp_q_map[i];
+		if (rsp) {
+			rsp->options &= ~BIT_0;
+			ret = qla25xx_init_rsp_que(base_vha, rsp);
+			if (ret != QLA_SUCCESS)
+				DEBUG2_17(printk(KERN_WARNING
+					"%s Rsp que:%d init failed\n", __func__,
+						rsp->id));
+			else
+				DEBUG2_17(printk(KERN_INFO
+					"%s Rsp que:%d inited\n", __func__,
+						rsp->id));
+		}
+	}
+	for (i = 1; i < ha->max_req_queues; i++) {
+		req = ha->req_q_map[i];
+		if (req) {
+		/* Clear outstanding commands array. */
+			req->options &= ~BIT_0;
+			ret = qla25xx_init_req_que(base_vha, req);
+			if (ret != QLA_SUCCESS)
+				DEBUG2_17(printk(KERN_WARNING
+					"%s Req que:%d init failed\n", __func__,
+						req->id));
+			else
+				DEBUG2_17(printk(KERN_WARNING
+					"%s Req que:%d inited\n", __func__,
+						req->id));
+		}
+	}
+	return ret;
+}
+
+/*
+* qla2x00_reset_adapter
+*      Reset adap

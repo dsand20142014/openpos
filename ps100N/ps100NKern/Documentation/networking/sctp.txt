@@ -1,0 +1,57 @@
+			pr_debug
+				    ("VIDIOC_QUERYBUFS: wrong buffer type\n");
+				retval = -EINVAL;
+				break;
+			}
+
+			memset(buf, 0, sizeof(buf));
+			buf->index = index;
+
+			down(&cam->param_lock);
+			retval = mxc_v4l2_buffer_status(cam, buf);
+			up(&cam->param_lock);
+			break;
+		}
+
+		/*!
+		 * V4l2 VIDIOC_QBUF ioctl
+		 */
+	case VIDIOC_QBUF:{
+			struct v4l2_buffer *buf = arg;
+			int index = buf->index;
+
+			pr_debug("VIDIOC_QBUF: %d\n", buf->index);
+
+			spin_lock_irqsave(&cam->int_lock, lock_flags);
+			if ((cam->frame[index].buffer.flags & 0x7) ==
+			    V4L2_BUF_FLAG_MAPPED) {
+				cam->frame[index].buffer.flags |=
+				    V4L2_BUF_FLAG_QUEUED;
+				if (cam->skip_frame > 0) {
+					list_add_tail(&cam->frame[index].queue,
+						      &cam->working_q);
+					retval =
+					    cam->enc_update_eba(cam->
+								frame[index].
+								paddress,
+								&cam->
+								ping_pong_csi);
+					cam->skip_frame = 0;
+				} else {
+					list_add_tail(&cam->frame[index].queue,
+						      &cam->ready_q);
+				}
+			} else if (cam->frame[index].buffer.flags &
+				   V4L2_BUF_FLAG_QUEUED) {
+				pr_debug
+				    ("VIDIOC_QBUF: buffer already queued\n");
+			} else if (cam->frame[index].buffer.
+				   flags & V4L2_BUF_FLAG_DONE) {
+				pr_debug
+				    ("VIDIOC_QBUF: overwrite done buffer.\n");
+				cam->frame[index].buffer.flags &=
+				    ~V4L2_BUF_FLAG_DONE;
+				cam->frame[index].buffer.flags |=
+				    V4L2_BUF_FLAG_QUEUED;
+			}
+			buf->flags = cam-

@@ -1,0 +1,212 @@
+uct hso_device *hso_dev =
+	    container_of(data, struct hso_device, async_put_intf);
+	usb_autopm_put_interface(hso_dev->interface);
+}
+
+static int hso_get_activity(struct hso_device *hso_dev)
+{
+	if (hso_dev->usb->state == USB_STATE_SUSPENDED) {
+		if (!hso_dev->is_active) {
+			hso_dev->is_active = 1;
+			schedule_work(&hso_dev->async_get_intf);
+		}
+	}
+
+	if (hso_dev->usb->state != USB_STATE_CONFIGURED)
+		return -EAGAIN;
+
+	usb_mark_last_busy(hso_dev->usb);
+
+	return 0;
+}
+
+static int hso_put_activity(struct hso_device *hso_dev)
+{
+	if (hso_dev->usb->state != USB_STATE_SUSPENDED) {
+		if (hso_dev->is_active) {
+			hso_dev->is_active = 0;
+			schedule_work(&hso_dev->async_put_intf);
+			return -EAGAIN;
+		}
+	}
+	hso_dev->is_active = 0;
+	return 0;
+}
+
+/* called by kernel when we need to suspend device */
+static int hso_suspend(struct usb_interface *iface, pm_message_t message)
+{
+	int i, result;
+
+	/* Stop all serial ports */
+	for (i = 0; i < HSO_SERIAL_TTY_MINORS; i++) {
+		if (serial_table[i] && (serial_table[i]->interface == iface)) {
+			result = hso_stop_serial_device(serial_table[i]);
+			if (result)
+				goto out;
+		}
+	}
+
+	/* Stop all network ports */
+	for (i = 0; i < HSO_MAX_NET_DEVICES; i++) {
+		if (network_table[i] &&
+		    (network_table[i]->interface == iface)) {
+			result = hso_stop_net_device(network_table[i]);
+			if (result)
+				goto out;
+		}
+	}
+
+out:
+	return 0;
+}
+
+/* called by kernel when we need to resume device */
+static int hso_resume(struct usb_interface *iface)
+{
+	int i, result = 0;
+	struct hso_net *hso_net;
+
+	/* Start all serial ports */
+	for (i = 0; i < HSO_SERIAL_TTY_MINORS; i++) {
+		if (serial_table[i] && (serial_table[i]->interface == iface)) {
+			if (dev2ser(serial_table[i])->open_count) {
+				result =
+				    hso_start_serial_device(serial_table[i], GFP_NOIO);
+				hso_kick_transmit(dev2ser(serial_table[i]));
+				if (result)
+					goto out;
+			}
+		}
+	}
+
+	/* Start all network ports */
+	for (i = 0; i < HSO_MAX_NET_DEVICES; i++) {
+		if (network_table[i] &&
+		    (network_table[i]->interface == iface)) {
+			hso_net = dev2net(network_table[i]);
+			if (hso_net->flags & IFF_UP) {
+				/* First transmit any lingering data,
+				   then restart the device. */
+				if (hso_net->skb_tx_buf) {
+					dev_dbg(&iface->dev,
+						"Transmitting"
+						" lingering data\n");
+					hso_net_start_xmit(hso_net->skb_tx_buf,
+							   hso_net->net);
+					hso_net->skb_tx_buf = NULL;
+				}
+				result = hso_start_net_device(network_table[i]);
+				if (result)
+					goto out;
+			}
+		}
+	}
+
+out:
+	return result;
+}
+
+static void hso_serial_ref_free(struct kref *ref)
+{
+	struct hso_device *hso_dev = container_of(ref, struct hso_device, ref);
+
+	hso_free_serial_device(hso_dev);
+}
+
+static void hso_free_interface(struct usb_interface *interface)
+{
+	struct hso_serial *hso_dev;
+	struct tty_struct *tty;
+	int i;
+
+	for (i = 0; i < HSO_SERIAL_TTY_MINORS; i++) {
+		if (serial_table[i]
+		    && (serial_table[i]->interface == interface)) {
+			hso_dev = dev2ser(serial_table[i]);
+			spin_lock_irq(&hso_dev->serial_lock);
+			tty = tty_kref_get(hso_dev->tty);
+			spin_unlock_irq(&hso_dev->serial_lock);
+			if (tty)
+				tty_hangup(tty);
+			mutex_lock(&hso_dev->parent->mutex);
+			tty_kref_put(tty);
+			hso_dev->parent->usb_gone = 1;
+			mutex_unlock(&hso_dev->parent->mutex);
+			kref_put(&serial_table[i]->ref, hso_serial_ref_free);
+		}
+	}
+
+	for (i = 0; i < HSO_MAX_NET_DEVICES; i++) {
+		if (network_table[i]
+		    && (network_table[i]->interface == interface)) {
+			struct rfkill *rfk = dev2net(network_table[i])->rfkill;
+			/* hso_stop_net_device doesn't stop the net queue since
+			 * traffic needs to start it again when suspended */
+			netif_stop_queue(dev2net(network_table[i])->net);
+			hso_stop_net_device(network_table[i]);
+			cancel_work_sync(&network_table[i]->async_put_intf);
+			cancel_work_sync(&network_table[i]->async_get_intf);
+			if (rfk) {
+				rfkill_unregister(rfk);
+				rfkill_destroy(rfk);
+			}
+			hso_free_net_device(network_table[i]);
+		}
+	}
+}
+
+/* Helper functions */
+
+/* Get the endpoint ! */
+static struct usb_endpoint_descriptor *hso_get_ep(struct usb_interface *intf,
+						  int type, int dir)
+{
+	int i;
+	struct usb_host_interface *iface = intf->cur_altsetting;
+	struct usb_endpoint_descriptor *endp;
+
+	for (i = 0; i < iface->desc.bNumEndpoints; i++) {
+		endp = &iface->endpoint[i].desc;
+		if (((endp->bEndpointAddress & USB_ENDPOINT_DIR_MASK) == dir) &&
+		    (usb_endpoint_type(endp) == type))
+			return endp;
+	}
+
+	return NULL;
+}
+
+/* Get the byte that describes which ports are enabled */
+static int hso_get_mux_ports(struct usb_interface *intf, unsigned char *ports)
+{
+	int i;
+	struct usb_host_interface *iface = intf->cur_altsetting;
+
+	if (iface->extralen == 3) {
+		*ports = iface->extra[2];
+		return 0;
+	}
+
+	for (i = 0; i < iface->desc.bNumEndpoints; i++) {
+		if (iface->endpoint[i].extralen == 3) {
+			*ports = iface->endpoint[i].extra[2];
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
+/* interrupt urb needs to be submitted, used for serial read of muxed port */
+static int hso_mux_submit_intr_urb(struct hso_shared_int *shared_int,
+				   struct usb_device *usb, gfp_t gfp)
+{
+	int result;
+
+	usb_fill_int_urb(shared_int->shared_intr_urb, usb,
+			 usb_rcvintpipe(usb,
+				shared_int->intr_endp->bEndpointAddress & 0x7F),
+			 shared_int->shared_intr_buf,
+			 shared_int->intr_endp->wMaxPacketSize,
+			 intr_callback, shared_int,
+			 shared_int->int

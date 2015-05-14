@@ -1,0 +1,164 @@
+#include "splc501c.h"
+#include <linux/device.h>
+#include <linux/autoconf.h>
+#include <linux/module.h>
+#include <linux/moduleparam.h>
+#include <linux/init.h>
+#include <linux/kernel.h>	/* printk() */
+#include <linux/slab.h>		/* kmalloc() */
+#include <linux/fs.h>		/* everything... */
+#include <linux/errno.h>	/* error codes */
+#include <linux/types.h>	/* size_t */
+#include <linux/proc_fs.h>
+#include <linux/fcntl.h>	/* O_ACCMODE */
+#include <linux/aio.h>
+#include <asm/uaccess.h>
+#include <linux/delay.h>
+#include <asm/io.h>
+#include <linux/spinlock.h>	//for request_irq
+#include <linux/irq.h>
+#include <linux/delay.h>
+#include <linux/interrupt.h>
+#include <linux/ioctl.h>
+#include <linux/cdev.h>
+#include <linux/mm.h>
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/errno.h>
+#include <linux/mm.h>
+
+#include <asm/io.h> /* for virt_to_phys */
+#include <linux/slab.h> /* for kmalloc and kfree */
+
+#include <linux/interrupt.h>
+
+#include <linux/timer.h>
+
+#include <linux/io.h>
+#include <linux/module.h>
+#include <linux/spinlock.h>
+#include <linux/gpio.h>
+#include <mach/hardware.h>
+#include <mach/irqs.h>
+
+
+#include <linux/types.h>
+#include <mach/gpio.h>
+#include "../../arch/arm/mach-mx25/mx25_pins.h"
+#include "osdriver.h"
+
+#include <linux/io.h>
+#include <linux/module.h>
+#include <linux/spinlock.h>
+#include <linux/gpio.h>
+#include <linux/platform_device.h>
+#include <mach/hardware.h>
+#include <mach/irqs.h>
+#include "../../arch/arm/mach-mx25/iomux.h"
+#include <asm/uaccess.h>
+
+#define SPLC501C_MAJOR 179
+#define SPLC501C_MINOR 3
+
+#define SPLC_NAME    "linux_splc"
+
+#define LCD_INITNB      18
+
+char ucLCDUsedFlag;
+char *graph_buffer;
+
+extern unsigned int spi_lcd128_write(unsigned int reg_val);
+extern struct semaphore sem;
+//extern spinlock_t spilock;
+
+#define IMX258_SPLC501_IOCTL_BASE	'C'
+#define SPLC501_ZI _IOW(IMX258_SPLC501_IOCTL_BASE, 0, char *)
+#define SPLC501_ASCII _IOW(IMX258_SPLC501_IOCTL_BASE, 1, char *)
+#define SPLC501_BMP _IOW(IMX258_SPLC501_IOCTL_BASE, 2, char *)
+#define SPLC501_CLR _IOW(IMX258_SPLC501_IOCTL_BASE, 3, char *)
+#define SPLC501_ASCII5x7 _IOW(IMX258_SPLC501_IOCTL_BASE, 4, char *)
+#define SPLC501_LCDON _IOW(IMX258_SPLC501_IOCTL_BASE, 5, char *)
+#define SPLC501_LCDOFF _IOW(IMX258_SPLC501_IOCTL_BASE, 6, char *)
+
+
+const unsigned char aucLCDInitTab[LCD_INITNB]=
+{
+	0xE2,		//DB	11100010B		;RESET
+	0x2C,		//DB	00101100B
+	0x2E,
+	0x2F,		//DB	00101111B		;SET POWER CONTROL
+	0xA3,		//DB	10100011B		;SET LCD BIAS
+	0x24,		//DB	00100100B		;SET V5 VOLTAGE RATIO
+//	0x23,		//DB	00100100B		;SET V5 VOLTAGE RATIO
+	0x81,		//DB	10000001B		;SET ELECTRONIC VOLUME MODE
+	0x2C,		//DB	00110010B		;SET ELECTRONIC VOLUME REGISTER
+//	0x22,		//DB	00110010B		;SET ELECTRONIC VOLUME REGISTER
+	0x00,		//DB	00000000B		;INITIAL DISPLAY LINE
+	0xA0,		//DB	10100000B		;ADC SELECT
+//123	0xC0,		//DB	11000000B		;COMMON OUTPUT MODE
+	0xC8,		//DB	11000000B		;COMMON OUTPUT MODE
+	0xA2,		//DB	10100010B		;DISPLAY ALL POINTS OFF
+	0xA6,		//DB	10100110B		;NORMAL DISPLAY
+	0xAD,       //                      ;STATIC INDICATOR
+	0x00,
+//	0xA5,       //                      ;PAGE BLANK
+//	0x00,
+	0xAF,		//DB	10101111B		;DISPLAY ON
+	0xAF,		//DB	10101111B
+	0x03		//DB	00000011B
+};
+
+ICONDEF IconSingalDef[] =
+{
+	{0,  	"\x03\x00"},
+	{1,  	"\x03\x05\x00"},
+	{2,  	"\x03\x05\x07\x00"},
+	{3,  	"\x03\x05\x07\x09\x00"},
+	{4,  	"\x03\x05\x07\x09\x0B\x00"},
+	{5,  	"\x03\x05\x07\x09\x0B\x0D\x00"},
+	{0xFF,  0},
+};
+
+ICONDEF IconTelephoneDef[] =
+{
+	{0,  	"\x12\x00"},
+	{0xFF,  0},
+};
+
+ICONDEF IconMessageDef[] =
+{
+	{0,  	"\x1C\x00"},
+	{0xFF,  0},
+};
+
+ICONDEF IconMagCardDef[] =
+{
+	{0,  	"\x25\x00"},
+	{0xFF,  0},
+};
+
+ICONDEF IconICCCardDef[] =
+{
+	{0,  	"\x2F\x00"},
+	{0xFF,  0},
+};
+
+ICONDEF IconBatteryDef[] =
+{
+	{0,  	"\x7B\x00"},
+	{1,  	"\x7B\x7D\x00"},
+	{2,  	"\x7B\x7D\x7C\x00"},
+	{3,  	"\x7B\x7D\x7C\x7E\x00"},
+	{4,  	"\x7B\x7D\x7C\x7E\x7F\x00"},
+	{0xFF,  0},
+};
+
+ICONTBL IconTable[LCDICONTYPE_MAXNB] =
+{
+	{LCDICONTYPE_SIGNAL,		IconSingalDef,		"\x03\x05\x07\x09\x0B\x0D\x00"},
+	{LCDICONTYPE_TELEPHONE,		IconTelephoneDef,	"\x12\x00"},
+	{LCDICONTYPE_MESSAGE,		IconMessageDef,		"\x1C\x00"},
+	{LCDICONTYPE_MAGCARD,		IconMagCardDef,		"\x25\x00"},
+	{LCDICONTYPE_ICCCARD,		IconICCCardDef,		"\x2F\x00"},
+	{LCDICONTYPE_BATTER

@@ -1,0 +1,271 @@
+rintk(KERN_DEBUG "%s: <-wv_82586_stop()\n", dev->name);
+#endif
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * Totally reset the WaveLAN and restart it.
+ * Performs the following actions:
+ *	1. A power reset (reset DMA)
+ *	2. Initialize the radio modem (using wv_mmc_init)
+ *	3. Reset & Configure LAN controller (using wv_82586_start)
+ *	4. Start the LAN controller's command unit
+ *	5. Start the LAN controller's receive unit
+ * (called by wavelan_interrupt(), wavelan_watchdog() & wavelan_open())
+ */
+static int wv_hw_reset(struct net_device * dev)
+{
+	net_local *lp = netdev_priv(dev);
+	unsigned long ioaddr = dev->base_addr;
+
+#ifdef DEBUG_CONFIG_TRACE
+	printk(KERN_DEBUG "%s: ->wv_hw_reset(dev=0x%x)\n", dev->name,
+	       (unsigned int) dev);
+#endif
+
+	/* Increase the number of resets done. */
+	lp->nresets++;
+
+	wv_hacr_reset(ioaddr);
+	lp->hacr = HACR_DEFAULT;
+
+	if ((wv_mmc_init(dev) < 0) || (wv_82586_start(dev) < 0))
+		return -1;
+
+	/* Enable the card to send interrupts. */
+	wv_ints_on(dev);
+
+	/* Start card functions */
+	if (wv_cu_start(dev) < 0)
+		return -1;
+
+	/* Setup the controller and parameters */
+	wv_82586_config(dev);
+
+	/* Finish configuration with the receive unit */
+	if (wv_ru_start(dev) < 0)
+		return -1;
+
+#ifdef DEBUG_CONFIG_TRACE
+	printk(KERN_DEBUG "%s: <-wv_hw_reset()\n", dev->name);
+#endif
+	return 0;
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * Check if there is a WaveLAN at the specific base address.
+ * As a side effect, this reads the MAC address.
+ * (called in wavelan_probe() and init_module())
+ */
+static int wv_check_ioaddr(unsigned long ioaddr, u8 * mac)
+{
+	int i;			/* Loop counter */
+
+	/* Check if the base address if available. */
+	if (!request_region(ioaddr, sizeof(ha_t), "wavelan probe"))
+		return -EBUSY;		/* ioaddr already used */
+
+	/* Reset host interface */
+	wv_hacr_reset(ioaddr);
+
+	/* Read the MAC address from the parameter storage area. */
+	psa_read(ioaddr, HACR_DEFAULT, psaoff(0, psa_univ_mac_addr),
+		 mac, 6);
+
+	release_region(ioaddr, sizeof(ha_t));
+
+	/*
+	 * Check the first three octets of the address for the manufacturer's code.
+	 * Note: if this can't find your WaveLAN card, you've got a
+	 * non-NCR/AT&T/Lucent ISA card.  See wavelan.p.h for detail on
+	 * how to configure your card.
+	 */
+	for (i = 0; i < ARRAY_SIZE(MAC_ADDRESSES); i++)
+		if ((mac[0] == MAC_ADDRESSES[i][0]) &&
+		    (mac[1] == MAC_ADDRESSES[i][1]) &&
+		    (mac[2] == MAC_ADDRESSES[i][2]))
+			return 0;
+
+#ifdef DEBUG_CONFIG_INFO
+	printk(KERN_WARNING
+	       "WaveLAN (0x%3X): your MAC address might be %02X:%02X:%02X.\n",
+	       ioaddr, mac[0], mac[1], mac[2]);
+#endif
+	return -ENODEV;
+}
+
+/************************ INTERRUPT HANDLING ************************/
+
+/*
+ * This function is the interrupt handler for the WaveLAN card. This
+ * routine will be called whenever: 
+ */
+static irqreturn_t wavelan_interrupt(int irq, void *dev_id)
+{
+	struct net_device *dev;
+	unsigned long ioaddr;
+	net_local *lp;
+	u16 hasr;
+	u16 status;
+	u16 ack_cmd;
+
+	dev = dev_id;
+
+#ifdef DEBUG_INTERRUPT_TRACE
+	printk(KERN_DEBUG "%s: ->wavelan_interrupt()\n", dev->name);
+#endif
+
+	lp = netdev_priv(dev);
+	ioaddr = dev->base_addr;
+
+#ifdef DEBUG_INTERRUPT_INFO
+	/* Check state of our spinlock */
+	if(spin_is_locked(&lp->spinlock))
+		printk(KERN_DEBUG
+		       "%s: wavelan_interrupt(): spinlock is already locked !!!\n",
+		       dev->name);
+#endif
+
+	/* Prevent reentrancy. We need to do that because we may have
+	 * multiple interrupt handler running concurrently.
+	 * It is safe because interrupts are disabled before acquiring
+	 * the spinlock. */
+	spin_lock(&lp->spinlock);
+
+	/* We always had spurious interrupts at startup, but lately I
+	 * saw them comming *between* the request_irq() and the
+	 * spin_lock_irqsave() in wavelan_open(), so the spinlock
+	 * protection is no enough.
+	 * So, we also check lp->hacr that will tell us is we enabled
+	 * irqs or not (see wv_ints_on()).
+	 * We can't use netif_running(dev) because we depend on the
+	 * proper processing of the irq generated during the config. */
+
+	/* Which interrupt it is ? */
+	hasr = hasr_read(ioaddr);
+
+#ifdef DEBUG_INTERRUPT_INFO
+	printk(KERN_INFO
+	       "%s: wavelan_interrupt(): hasr 0x%04x; hacr 0x%04x.\n",
+	       dev->name, hasr, lp->hacr);
+#endif
+
+	/* Check modem interrupt */
+	if ((hasr & HASR_MMC_INTR) && (lp->hacr & HACR_MMC_INT_ENABLE)) {
+		u8 dce_status;
+
+		/*
+		 * Interrupt from the modem management controller.
+		 * This will clear it -- ignored for now.
+		 */
+		mmc_read(ioaddr, mmroff(0, mmr_dce_status), &dce_status,
+			 sizeof(dce_status));
+
+#ifdef DEBUG_INTERRUPT_ERROR
+		printk(KERN_INFO
+		       "%s: wavelan_interrupt(): unexpected mmc interrupt: status 0x%04x.\n",
+		       dev->name, dce_status);
+#endif
+	}
+
+	/* Check if not controller interrupt */
+	if (((hasr & HASR_82586_INTR) == 0) ||
+	    ((lp->hacr & HACR_82586_INT_ENABLE) == 0)) {
+#ifdef DEBUG_INTERRUPT_ERROR
+		printk(KERN_INFO
+		       "%s: wavelan_interrupt(): interrupt not coming from i82586 - hasr 0x%04x.\n",
+		       dev->name, hasr);
+#endif
+		spin_unlock (&lp->spinlock);
+		return IRQ_NONE;
+	}
+
+	/* Read interrupt data. */
+	obram_read(ioaddr, scboff(OFFSET_SCB, scb_status),
+		   (unsigned char *) &status, sizeof(status));
+
+	/*
+	 * Acknowledge the interrupt(s).
+	 */
+	ack_cmd = status & SCB_ST_INT;
+	obram_write(ioaddr, scboff(OFFSET_SCB, scb_command),
+		    (unsigned char *) &ack_cmd, sizeof(ack_cmd));
+	set_chan_attn(ioaddr, lp->hacr);
+
+#ifdef DEBUG_INTERRUPT_INFO
+	printk(KERN_DEBUG "%s: wavelan_interrupt(): status 0x%04x.\n",
+	       dev->name, status);
+#endif
+
+	/* Command completed. */
+	if ((status & SCB_ST_CX) == SCB_ST_CX) {
+#ifdef DEBUG_INTERRUPT_INFO
+		printk(KERN_DEBUG
+		       "%s: wavelan_interrupt(): command completed.\n",
+		       dev->name);
+#endif
+		wv_complete(dev, ioaddr, lp);
+	}
+
+	/* Frame received. */
+	if ((status & SCB_ST_FR) == SCB_ST_FR) {
+#ifdef DEBUG_INTERRUPT_INFO
+		printk(KERN_DEBUG
+		       "%s: wavelan_interrupt(): received packet.\n",
+		       dev->name);
+#endif
+		wv_receive(dev);
+	}
+
+	/* Check the state of the command unit. */
+	if (((status & SCB_ST_CNA) == SCB_ST_CNA) ||
+	    (((status & SCB_ST_CUS) != SCB_ST_CUS_ACTV) &&
+	     (netif_running(dev)))) {
+#ifdef DEBUG_INTERRUPT_ERROR
+		printk(KERN_INFO
+		       "%s: wavelan_interrupt(): CU inactive -- restarting\n",
+		       dev->name);
+#endif
+		wv_hw_reset(dev);
+	}
+
+	/* Check the state of the command unit. */
+	if (((status & SCB_ST_RNR) == SCB_ST_RNR) ||
+	    (((status & SCB_ST_RUS) != SCB_ST_RUS_RDY) &&
+	     (netif_running(dev)))) {
+#ifdef DEBUG_INTERRUPT_ERROR
+		printk(KERN_INFO
+		       "%s: wavelan_interrupt(): RU not ready -- restarting\n",
+		       dev->name);
+#endif
+		wv_hw_reset(dev);
+	}
+
+	/* Release spinlock */
+	spin_unlock (&lp->spinlock);
+
+#ifdef DEBUG_INTERRUPT_TRACE
+	printk(KERN_DEBUG "%s: <-wavelan_interrupt()\n", dev->name);
+#endif
+	return IRQ_HANDLED;
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * Watchdog: when we start a transmission, a timer is set for us in the
+ * kernel.  If the transmission completes, this timer is disabled. If
+ * the timer expires, we are called and we try to unlock the hardware.
+ */
+static void wavelan_watchdog(struct net_device *	dev)
+{
+	net_local *lp = netdev_priv(dev);
+	u_long		ioaddr = dev->base_addr;
+	unsigned long	flags;
+	unsigned int	nreaped;
+
+#ifdef DEBUG_INTERRUPT_TRACE
+	printk(KERN_DEBUG "%s: ->wavelan_watchdog()\n", dev->name);
+#endif
+
+#ifdef DEBU

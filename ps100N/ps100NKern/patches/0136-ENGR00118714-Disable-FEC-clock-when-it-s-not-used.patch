@@ -1,0 +1,46 @@
+_UP   ? 0 : 1));
+			input_report_key(dev2, BTN_TRIGGER, ~data & DB9_FIRE1);
+
+		case DB9_MULTI_0802:
+
+			data = parport_read_status(port) >> 3;
+
+			input_report_abs(dev, ABS_X, (data & DB9_RIGHT ? 0 : 1) - (data & DB9_LEFT ? 0 : 1));
+			input_report_abs(dev, ABS_Y, (data & DB9_DOWN  ? 0 : 1) - (data & DB9_UP   ? 0 : 1));
+			input_report_key(dev, BTN_TRIGGER, data & DB9_FIRE1);
+			break;
+
+		case DB9_MULTI_STICK:
+
+			data = parport_read_data(port);
+
+			input_report_abs(dev, ABS_X, (data & DB9_RIGHT ? 0 : 1) - (data & DB9_LEFT ? 0 : 1));
+			input_report_abs(dev, ABS_Y, (data & DB9_DOWN  ? 0 : 1) - (data & DB9_UP   ? 0 : 1));
+			input_report_key(dev, BTN_TRIGGER, ~data & DB9_FIRE1);
+			break;
+
+		case DB9_MULTI2_STICK:
+
+			data = parport_read_data(port);
+
+			input_report_abs(dev, ABS_X, (data & DB9_RIGHT ? 0 : 1) - (data & DB9_LEFT ? 0 : 1));
+			input_report_abs(dev, ABS_Y, (data & DB9_DOWN  ? 0 : 1) - (data & DB9_UP   ? 0 : 1));
+			input_report_key(dev, BTN_TRIGGER, ~data & DB9_FIRE1);
+			input_report_key(dev, BTN_THUMB,   ~data & DB9_FIRE2);
+			break;
+
+		case DB9_GENESIS_PAD:
+
+			parport_write_control(port, DB9_NOSELECT);
+			data = parport_read_data(port);
+
+			input_report_abs(dev, ABS_X, (data & DB9_RIGHT ? 0 : 1) - (data & DB9_LEFT ? 0 : 1));
+			input_report_abs(dev, ABS_Y, (data & DB9_DOWN  ? 0 : 1) - (data & DB9_UP   ? 0 : 1));
+			input_report_key(dev, BTN_B, ~data & DB9_FIRE1);
+			input_report_key(dev, BTN_C, ~data & DB9_FIRE2);
+
+			parport_write_control(port, DB9_NORMAL);
+			data = parport_read_data(port);
+
+			input_report_key(dev, BTN_A,     ~data & DB9_FIRE1);
+			inp

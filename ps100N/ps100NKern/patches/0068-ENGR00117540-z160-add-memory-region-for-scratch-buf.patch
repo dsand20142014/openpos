@@ -1,0 +1,53 @@
+el (const struct maven_data* md,
+				   int *bl, int *wl) {
+	const int b = md->primary_head->altout.tvo_params.brightness + BLMIN;
+	const int c = md->primary_head->altout.tvo_params.contrast;
+
+	*bl = max(b - c, BLMIN);
+	*wl = min(b + c, WLMAX);
+}
+
+static const struct maven_gamma* maven_compute_gamma (const struct maven_data* md) {
+ 	return maven_gamma + md->primary_head->altout.tvo_params.gamma;
+}
+
+
+static void maven_init_TVdata(const struct maven_data* md, struct mavenregs* data) {
+	static struct mavenregs palregs = { {
+		0x2A, 0x09, 0x8A, 0xCB,	/* 00: chroma subcarrier */
+		0x00,
+		0x00,	/* ? not written */
+		0x00,	/* modified by code (F9 written...) */
+		0x00,	/* ? not written */
+		0x7E,	/* 08 */
+		0x44,	/* 09 */
+		0x9C,	/* 0A */
+		0x2E,	/* 0B */
+		0x21,	/* 0C */
+		0x00,	/* ? not written */
+		0x3F, 0x03, /* 0E-0F */
+		0x3F, 0x03, /* 10-11 */
+		0x1A,	/* 12 */
+		0x2A,	/* 13 */
+		0x1C, 0x3D, 0x14, /* 14-16 */
+		0x9C, 0x01, /* 17-18 */
+		0x00,	/* 19 */
+		0xFE,	/* 1A */
+		0x7E,	/* 1B */
+		0x60,	/* 1C */
+		0x05,	/* 1D */
+		0x89, 0x03, /* 1E-1F */
+		0x72,	/* 20 */
+		0x07,	/* 21 */
+		0x72,	/* 22 */
+		0x00,	/* 23 */
+		0x00,	/* 24 */
+		0x00,	/* 25 */
+		0x08,	/* 26 */
+		0x04,	/* 27 */
+		0x00,	/* 28 */
+		0x1A,	/* 29 */
+		0x55, 0x01, /* 2A-2B */
+		0x26,	/* 2C */
+		0x07, 0x7E, /* 2D-2E */
+		0x02, 0x

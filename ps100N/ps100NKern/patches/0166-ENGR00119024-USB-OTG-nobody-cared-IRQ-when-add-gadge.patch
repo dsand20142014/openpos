@@ -1,0 +1,94 @@
+ode;
+
+	readConfigRid(local, 1);
+	mode = local->config.powerSaveMode;
+	if ((vwrq->disabled = (mode == POWERSAVE_CAM)))
+		return 0;
+	if ((vwrq->flags & IW_POWER_TYPE) == IW_POWER_TIMEOUT) {
+		vwrq->value = le16_to_cpu(local->config.fastListenDelay) * 1024;
+		vwrq->flags = IW_POWER_TIMEOUT;
+	} else {
+		vwrq->value = le16_to_cpu(local->config.fastListenInterval) * 1024;
+		vwrq->flags = IW_POWER_PERIOD;
+	}
+	if ((local->config.rmode & RXMODE_MASK) == RXMODE_ADDR)
+		vwrq->flags |= IW_POWER_UNICAST_R;
+	else
+		vwrq->flags |= IW_POWER_ALL_R;
+
+	return 0;
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * Wireless Handler : set Sensitivity
+ */
+static int airo_set_sens(struct net_device *dev,
+			 struct iw_request_info *info,
+			 struct iw_param *vwrq,
+			 char *extra)
+{
+	struct airo_info *local = dev->ml_priv;
+
+	readConfigRid(local, 1);
+	local->config.rssiThreshold =
+		cpu_to_le16(vwrq->disabled ? RSSI_DEFAULT : vwrq->value);
+	set_bit (FLAG_COMMIT, &local->flags);
+
+	return -EINPROGRESS;		/* Call commit handler */
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * Wireless Handler : get Sensitivity
+ */
+static int airo_get_sens(struct net_device *dev,
+			 struct iw_request_info *info,
+			 struct iw_param *vwrq,
+			 char *extra)
+{
+	struct airo_info *local = dev->ml_priv;
+
+	readConfigRid(local, 1);
+	vwrq->value = le16_to_cpu(local->config.rssiThreshold);
+	vwrq->disabled = (vwrq->value == 0);
+	vwrq->fixed = 1;
+
+	return 0;
+}
+
+/*------------------------------------------------------------------*/
+/*
+ * Wireless Handler : get AP List
+ * Note : this is deprecated in favor of IWSCAN
+ */
+static int airo_get_aplist(struct net_device *dev,
+			   struct iw_request_info *info,
+			   struct iw_point *dwrq,
+			   char *extra)
+{
+	struct airo_info *local = dev->ml_priv;
+	struct sockaddr *address = (struct sockaddr *) extra;
+	struct iw_quality *qual;
+	BSSListRid BSSList;
+	int i;
+	int loseSync = capable(CAP_NET_ADMIN) ? 1: -1;
+
+	qual = kmalloc(IW_MAX_AP * sizeof(*qual), GFP_KERNEL);
+	if (!qual)
+		return -ENOMEM;
+
+	for (i = 0; i < IW_MAX_AP; i++) {
+		u16 dBm;
+		if (readBSSListRid(local, loseSync, &BSSList))
+			break;
+		loseSync = 0;
+		memcpy(address[i].sa_data, BSSList.bssid, ETH_ALEN);
+		address[i].sa_family = ARPHRD_ETHER;
+		dBm = le16_to_cpu(BSSList.dBm);
+		if (local->rssi) {
+			qual[i].level = 0x100 - dBm;
+			qual[i].qual = airo_dbm_to_pct(local->rssi, dBm);
+			qual[i].updated = IW_QUAL_QUAL_UPDATED
+					| IW_QUAL_LEVEL_UPDATED
+					| IW

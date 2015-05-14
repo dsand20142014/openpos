@@ -1,0 +1,225 @@
+field	SPLTINT		0x01
+	mask	INT_PEND 0xFF
+}
+
+/*
+ * Sequencer Interrupt Code
+ */
+register SEQINTCODE {
+	address			0x002
+	access_mode	RW
+	field {
+		NO_SEQINT,			/* No seqint pending. */
+		BAD_PHASE,			/* unknown scsi bus phase */
+		SEND_REJECT,			/* sending a message reject */
+		PROTO_VIOLATION, 		/* Protocol Violation */
+		NO_MATCH,			/* no cmd match for reconnect */
+		IGN_WIDE_RES,			/* Complex IGN Wide Res Msg */
+		PDATA_REINIT,			/*
+						 * Returned to data phase
+						 * that requires data
+						 * transfer pointers to be
+						 * recalculated from the
+						 * transfer residual.
+						 */
+		HOST_MSG_LOOP,			/*
+						 * The bus is ready for the
+						 * host to perform another
+						 * message transaction.  This
+						 * mechanism is used for things
+						 * like sync/wide negotiation
+						 * that require a kernel based
+						 * message state engine.
+						 */
+		BAD_STATUS,			/* Bad status from target */
+		DATA_OVERRUN,			/*
+						 * Target attempted to write
+						 * beyond the bounds of its
+						 * command.
+						 */
+		MKMSG_FAILED,			/*
+						 * Target completed command
+						 * without honoring our ATN
+						 * request to issue a message. 
+						 */
+		MISSED_BUSFREE,			/*
+						 * The sequencer never saw
+						 * the bus go free after
+						 * either a command complete
+						 * or disconnect message.
+						 */
+		DUMP_CARD_STATE,
+		ILLEGAL_PHASE,
+		INVALID_SEQINT,
+		CFG4ISTAT_INTR,
+		STATUS_OVERRUN,
+		CFG4OVERRUN,
+		ENTERING_NONPACK,
+		TASKMGMT_FUNC_COMPLETE,		/*
+						 * Task management function
+						 * request completed with
+						 * an expected busfree.
+						 */
+		TASKMGMT_CMD_CMPLT_OKAY,	/*
+						 * A command with a non-zero
+						 * task management function
+						 * has completed via the normal
+						 * command completion method
+						 * for commands with a zero
+						 * task management function.
+						 * This happens when an attempt
+						 * to abort a command loses
+						 * the race for the command to
+						 * complete normally.
+						 */
+		TRACEPOINT0,
+		TRACEPOINT1,
+		TRACEPOINT2,
+		TRACEPOINT3,
+		SAW_HWERR,
+		BAD_SCB_STATUS
+	}
+	dont_generate_debug_code
+}
+
+/*
+ * Clear Host Interrupt
+ */
+register CLRINT {
+	address			0x003
+	access_mode	WO
+	count		19
+	field	CLRHWERRINT	0x80 /* Rev B or greater */
+	field	CLRBRKADRINT	0x40
+	field	CLRSWTMINT	0x20
+	field	CLRPCIINT	0x10
+	field	CLRSCSIINT	0x08
+	field	CLRSEQINT	0x04
+	field	CLRCMDINT	0x02
+	field	CLRSPLTINT	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * Error Register
+ */
+register ERROR {
+	address			0x004
+	access_mode	RO
+	field	CIOPARERR	0x80
+	field	CIOACCESFAIL	0x40 /* Rev B or greater */
+	field	MPARERR		0x20
+	field	DPARERR		0x10
+	field	SQPARERR	0x08
+	field	ILLOPCODE	0x04
+	field	DSCTMOUT	0x02
+	dont_generate_debug_code
+}
+
+/*
+ * Clear Error
+ */
+register CLRERR {
+	address			0x004
+	access_mode 	WO
+	field	CLRCIOPARERR	0x80
+	field	CLRCIOACCESFAIL	0x40 /* Rev B or greater */
+	field	CLRMPARERR	0x20
+	field	CLRDPARERR	0x10
+	field	CLRSQPARERR	0x08
+	field	CLRILLOPCODE	0x04
+	field	CLRDSCTMOUT	0x02
+}
+
+/*
+ * Host Control Register
+ * Overall host control of the device.
+ */
+register HCNTRL {
+	address			0x005
+	access_mode	RW
+	count		12
+	field	SEQ_RESET	0x80 /* Rev B or greater */
+	field	POWRDN		0x40
+	field	SWINT		0x10
+	field	SWTIMER_START_B	0x08 /* Rev B or greater */
+	field	PAUSE		0x04
+	field	INTEN		0x02
+	field	CHIPRST		0x01
+	field	CHIPRSTACK	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * Host New SCB Queue Offset
+ */
+register HNSCB_QOFF {
+	address			0x006
+	access_mode	RW
+	size		2
+	count		2
+	dont_generate_debug_code
+}
+
+/*
+ * Host Empty SCB Queue Offset
+ */
+register HESCB_QOFF {
+	address			0x008
+	access_mode	RW
+	count		2
+	dont_generate_debug_code
+}
+
+/*
+ * Host Mailbox
+ */
+register HS_MAILBOX {
+	address			0x00B
+	access_mode	RW
+	mask	HOST_TQINPOS	0x80	/* Boundary at either 0 or 128 */
+	mask	ENINT_COALESCE	0x40	/* Perform interrupt coalescing */
+}
+
+/*
+ * Sequencer Interupt Status
+ */
+register SEQINTSTAT {
+	address			0x00C
+	count		1
+	access_mode	RO
+	field	SEQ_SWTMRTO	0x10
+	field	SEQ_SEQINT	0x08
+	field	SEQ_SCSIINT	0x04
+	field	SEQ_PCIINT	0x02
+	field	SEQ_SPLTINT	0x01
+}
+
+/*
+ * Clear SEQ Interrupt
+ */
+register CLRSEQINTSTAT {
+	address			0x00C
+	access_mode	WO
+	field	CLRSEQ_SWTMRTO	0x10
+	field	CLRSEQ_SEQINT	0x08
+	field	CLRSEQ_SCSIINT	0x04
+	field	CLRSEQ_PCIINT	0x02
+	field	CLRSEQ_SPLTINT	0x01
+	dont_generate_debug_code
+}
+
+/*
+ * Software Timer
+ */
+register SWTIMER {
+	address			0x00E
+	access_mode	RW
+	size		2
+	dont_generate_debug_code
+}
+
+/*
+ * SEQ New SCB Queue Offset
+ */
+register SNSCB

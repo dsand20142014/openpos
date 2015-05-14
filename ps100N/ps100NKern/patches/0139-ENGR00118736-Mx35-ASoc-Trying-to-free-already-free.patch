@@ -1,0 +1,48 @@
+y.
+
+config KEYBOARD_SPITZ
+	tristate "Spitz keyboard"
+	depends on PXA_SHARPSL
+	default y
+	help
+	  Say Y here to enable the keyboard on the Sharp Zaurus SL-C1000,
+	  SL-C3000 and Sl-C3100 series of PDAs.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called spitzkbd.
+
+config KEYBOARD_STOWAWAY
+	tristate "Stowaway keyboard"
+	select SERIO
+	help
+	  Say Y here if you have a Stowaway keyboard on a serial port.
+	  Stowaway compatible keyboards like Dicota Input-PDA keyboard
+	  are also supported by this driver.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called stowaway.
+
+config KEYBOARD_SUNKBD
+	tristate "Sun Type 4 and Type 5 keyboard"
+	select SERIO
+	help
+	  Say Y here if you want to use a Sun Type 4 or Type 5 keyboard,
+	  connected either to the Sun keyboard connector or to an serial
+	  (RS-232) port via a simple adapter.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called sunkbd.
+
+config KEYBOARD_MPR084
+	tristate "Freescale MPR084 Touch Keypad Driver"
+	depends on ARCH_MX37
+	help
+	  This is the Keypad driver for the Freescale Proximity Capacitive
+	  Touch Sensor controller chip.
+
+config KEYBOARD_SH_KEYSC
+	tristate "SuperH KEYSC keypad support"
+	depends on SUPERH
+	help
+	  Say Y here if you want to use a keypad attached to the KEYSC block
+	  on SuperH processors such as sh7722 an

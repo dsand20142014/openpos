@@ -1,0 +1,1642 @@
+oc(sizeof *reg_req, GFP_KERNEL);
+		if (!reg_req) {
+			ret = ERR_PTR(-ENOMEM);
+			goto error3;
+		}
+		/* Make a copy of the MAD registration request */
+		memcpy(reg_req, mad_reg_req, sizeof *reg_req);
+	}
+
+	/* Now, fill in the various structures */
+	mad_agent_priv->qp_info = &port_priv->qp_info[qpn];
+	mad_agent_priv->reg_req = reg_req;
+	mad_agent_priv->agent.rmpp_version = rmpp_version;
+	mad_agent_priv->agent.device = device;
+	mad_agent_priv->agent.recv_handler = recv_handler;
+	mad_agent_priv->agent.send_handler = send_handler;
+	mad_agent_priv->agent.context = context;
+	mad_agent_priv->agent.qp = port_priv->qp_info[qpn].qp;
+	mad_agent_priv->agent.port_num = port_num;
+	spin_lock_init(&mad_agent_priv->lock);
+	INIT_LIST_HEAD(&mad_agent_priv->send_list);
+	INIT_LIST_HEAD(&mad_agent_priv->wait_list);
+	INIT_LIST_HEAD(&mad_agent_priv->done_list);
+	INIT_LIST_HEAD(&mad_agent_priv->rmpp_list);
+	INIT_DELAYED_WORK(&mad_agent_priv->timed_work, timeout_sends);
+	INIT_LIST_HEAD(&mad_agent_priv->local_list);
+	INIT_WORK(&mad_agent_priv->local_work, local_completions);
+	atomic_set(&mad_agent_priv->refcount, 1);
+	init_completion(&mad_agent_priv->comp);
+
+	spin_lock_irqsave(&port_priv->reg_lock, flags);
+	mad_agent_priv->agent.hi_tid = ++ib_mad_client_id;
+
+	/*
+	 * Make sure MAD registration (if supplied)
+	 * is non overlapping with any existing ones
+	 */
+	if (mad_reg_req) {
+		mgmt_class = convert_mgmt_class(mad_reg_req->mgmt_class);
+		if (!is_vendor_class(mgmt_class)) {
+			class = port_priv->version[mad_reg_req->
+						   mgmt_class_version].class;
+			if (class) {
+				method = class->method_table[mgmt_class];
+				if (method) {
+					if (method_in_use(&method,
+							   mad_reg_req))
+						goto error4;
+				}
+			}
+			ret2 = add_nonoui_reg_req(mad_reg_req, mad_agent_priv,
+						  mgmt_class);
+		} else {
+			/* "New" vendor class range */
+			vendor = port_priv->version[mad_reg_req->
+						    mgmt_class_version].vendor;
+			if (vendor) {
+				vclass = vendor_class_index(mgmt_class);
+				vendor_class = vendor->vendor_class[vclass];
+				if (vendor_class) {
+					if (is_vendor_method_in_use(
+							vendor_class,
+							mad_reg_req))
+						goto error4;
+				}
+			}
+			ret2 = add_oui_reg_req(mad_reg_req, mad_agent_priv);
+		}
+		if (ret2) {
+			ret = ERR_PTR(ret2);
+			goto error4;
+		}
+	}
+
+	/* Add mad agent into port's agent list */
+	list_add_tail(&mad_agent_priv->agent_list, &port_priv->agent_list);
+	spin_unlock_irqrestore(&port_priv->reg_lock, flags);
+
+	return &mad_agent_priv->agent;
+
+error4:
+	spin_unlock_irqrestore(&port_priv->reg_lock, flags);
+	kfree(reg_req);
+error3:
+	ib_dereg_mr(mad_agent_priv->agent.mr);
+error2:
+	kfree(mad_agent_priv);
+error1:
+	return ret;
+}
+EXPORT_SYMBOL(ib_register_mad_agent);
+
+static inline int is_snooping_sends(int mad_snoop_flags)
+{
+	return (mad_snoop_flags &
+		(/*IB_MAD_SNOOP_POSTED_SENDS |
+		 IB_MAD_SNOOP_RMPP_SENDS |*/
+		 IB_MAD_SNOOP_SEND_COMPLETIONS /*|
+		 IB_MAD_SNOOP_RMPP_SEND_COMPLETIONS*/));
+}
+
+static inline int is_snooping_recvs(int mad_snoop_flags)
+{
+	return (mad_snoop_flags &
+		(IB_MAD_SNOOP_RECVS /*|
+		 IB_MAD_SNOOP_RMPP_RECVS*/));
+}
+
+static int register_snoop_agent(struct ib_mad_qp_info *qp_info,
+				struct ib_mad_snoop_private *mad_snoop_priv)
+{
+	struct ib_mad_snoop_private **new_snoop_table;
+	unsigned long flags;
+	int i;
+
+	spin_lock_irqsave(&qp_info->snoop_lock, flags);
+	/* Check for empty slot in array. */
+	for (i = 0; i < qp_info->snoop_table_size; i++)
+		if (!qp_info->snoop_table[i])
+			break;
+
+	if (i == qp_info->snoop_table_size) {
+		/* Grow table. */
+		new_snoop_table = krealloc(qp_info->snoop_table,
+					   sizeof mad_snoop_priv *
+					   (qp_info->snoop_table_size + 1),
+					   GFP_ATOMIC);
+		if (!new_snoop_table) {
+			i = -ENOMEM;
+			goto out;
+		}
+
+		qp_info->snoop_table = new_snoop_table;
+		qp_info->snoop_table_size++;
+	}
+	qp_info->snoop_table[i] = mad_snoop_priv;
+	atomic_inc(&qp_info->snoop_count);
+out:
+	spin_unlock_irqrestore(&qp_info->snoop_lock, flags);
+	return i;
+}
+
+struct ib_mad_agent *ib_register_mad_snoop(struct ib_device *device,
+					   u8 port_num,
+					   enum ib_qp_type qp_type,
+					   int mad_snoop_5D0001C6B146A9120018008277800B711C4773A
+:1005E00078109216912000800869186A106B91208B
+:1005F00001807800B711C47182A11000C800B21147
+:100600007810BC1A7800B711C47182A11000C8001C
+:10061000B2111120413504227E0012217810751A82
+:100620007F017800B911C47111203113A92008008D
+:10063000042206A1400023131082700021137800C9
+:1006400018137800B21192A231137E0211204235A4
+:10065000042212217F017E007810811A7F01780028
+:10066000B911E803FA00F401EE0264001900320047
+:100670004B00612040350C611062C4700E60C87080
+:1006800012607800B811612040351461C4701660A2
+:100690007800B911C471112004001920121286A12A
+:1006A000280040006313112005001920121286A1B2
+:1006B000320040006313112006001920131386A195
+:1006C0003C00C000B2116120403518607E001A6104
+:1006D000B8237810921A7810BA337F017800B911D4
+:1006E000C47184A1CFFFC000B2111120473504228C
+:1006F00012217E007810B41A7F017800B911C471FC
+:1007000082A11000C800B2111120483504227E00D9
+:1007100012217810A31A7F017800B911C471C87230
+:1007200084A1FDFFC000B11184A2FDFFC000B11182
+:10073000002108790A7800220C7A0E787800B81126
+:10074000C471078184A00F00038003800380E8A0A8
+:10075000003619200000C87200687E0026A2400002
+:10076000CF13026A84A400204000B8139DA3100098
+:1007700084A400104000BE139DA3080084A4004080
+:100780004000CF130F8184A200404000CB137810AB
+:10079000D61A7800CF137810C81A7800CF13CC720D
+:1007A000FF8240000114086806A240000114A4A2C0
+:1007B000FF0061204035186186A128004000E81341
+:1007C00086A132004000EE1386A13C004000F413E5
+:1007D00082A464004800FE137800F81382A450003D
+:1007E0004800FE137800F81382A443004800FE136B
+:1007F000C471C6717F02CA727800B3110A6A9DA3E0
+:100800000A00046805A306687F020C6BC4717800B7
+:10081000B711C4777810921691200080146A1C6B6F
+:1008200091200180C8701668CC701E680827780077
+:10083000B711C471C872CC7382A11000C800B21184
+:100840007810E41A7800B711C477781092169120C6
+:100850000080086A95A202000A6A91200180082798
+:100860007800B811C4777810921691200080086A39
+:1008700094A2F9FF0A6A046805A0400041147810A8
+:10088000191A9120018008277800B811C4777810D0
+:10089000921691200080086A95A204000A6A0468F2
+:1008A00005A0400055147810191A912001800827DE
+:1008B0007800B811C477412001004920050051207B
+:1008C00020009120008078109F1691200180082739
+:1008D000086A7800B811C477C872CC73C677CA7238
+:1008E000CE7378101817C0008914186805A040004E
+:1008F000831408277810F41AC00083141778FFFFB8
+:10090000912001807C009120018001200540780029
+:10091000BC11912001807800BA11C477C6774120BC
+:1009200021004920050051202000912000807810EE
+:100930009F1661204035A3600300B667A7600000E2
+:100940001778FFFF912001807810191A7C00C87772
+:10095000CA77C477C677BCA700FF912000806120CA
+:100960004035A3600200A7600000B6671778FFFF5C
+:100970007810191A9120018041202100492004009B
+:10098000512010009120008078109F16C8703668A2
+:10099000388784A70700C000C414912001807C0020
+:1009A000987884A00300C000F4143920000041208E
+:1009B000210049200400512008007810921691204F
+:1009C000008008680DA80A6991200180388784A7F3
+:1009D0000700C000DD14BCA700FF3F8738873F87B2
+:1009E00084A7000FC000DD14912000806920000161
+:1009F000306884A0400040001D154B680400A92009
+:100A00001400486884A0040040000A1570000A150C
+:100A1000780001154B680900A9201400486884A0DB
+:100A20000100400017157000171578000E15A92059
+:100A3000FA0070001D157800191579200035177817
+:100A4000010061204035A3600100A7600000C36081
+:100A50000F00987885A002009A78086884A0FDFFAE
+:100A60000A681B684600912001807C00987884A069
+:100A7000FDFF9A7884A00100C0004015781060172F
+:100A8000C471C6714A797C00C474C873CC72C674D0
+:100A9000CA73CE72792000350920400078106F1695
+:100AA0004000861578103F1640005A1578107816C9
+:100AB000780086151060912001801778FFFF0920CB
+:100AC00068350B20050008810B20000008810A23EF
+:100AD00008810A2208810A2408810A2008810B2043
+:100AE000000008810A2C2EA030257E0E7810132FCE
+:100AF0007F0E9265A2659666A666AB600000AF6049
+:100B00000000912001807810191A7C00C370054004
+:100B10007800BD11C471C770000006797800BA1161
+:100B2000C471C671682178009715692000100C699E
+:100B300016A0042D10A2688D0981C000991585A208
+:100B40000000C000A715C37000407800A915C3704D
+:100B50000340CA707800BD11C471C872CC73002103
+:100B600084A1FCFFC000C61100217900B715CE1585
+:100B7000E315E515E715C3700340CE71D272D67345
+:100B80007800CA15C3700040CF700000D370000019
+:100B9000D7700000C677CA717800BA113120E91504
+:100BA00 *mad_list)
+{
+	struct ib_mad_queue *mad_queue;
+	unsigned long flags;
+
+	BUG_ON(!mad_list->mad_queue);
+	mad_queue = mad_list->mad_queue;
+	spin_lock_irqsave(&mad_queue->lock, flags);
+	list_del(&mad_list->list);
+	mad_queue->count--;
+	spin_unlock_irqrestore(&mad_queue->lock, flags);
+}
+
+static void snoop_send(struct ib_mad_qp_info *qp_info,
+		       struct ib_mad_send_buf *send_buf,
+		       struct ib_mad_send_wc *mad_send_wc,
+		       int mad_snoop_flags)
+{
+	struct ib_mad_snoop_private *mad_snoop_priv;
+	unsigned long flags;
+	int i;
+
+	spin_lock_irqsave(&qp_info->snoop_lock, flags);
+	for (i = 0; i < qp_info->snoop_table_size; i++) {
+		mad_snoop_priv = qp_info->snoop_table[i];
+		if (!mad_snoop_priv ||
+		    !(mad_snoop_priv->mad_snoop_flags & mad_snoop_flags))
+			continue;
+
+		atomic_inc(&mad_snoop_priv->refcount);
+		spin_unlock_irqrestore(&qp_info->snoop_lock, flags);
+		mad_snoop_priv->agent.snoop_handler(&mad_snoop_priv->agent,
+						    send_buf, mad_send_wc);
+		deref_snoop_agent(mad_snoop_priv);
+		spin_lock_irqsave(&qp_info->snoop_lock, flags);
+	}
+	spin_unlock_irqrestore(&qp_info->snoop_lock, flags);
+}
+
+static void snoop_recv(struct ib_mad_qp_info *qp_info,
+		       struct ib_mad_recv_wc *mad_recv_wc,
+		       int mad_snoop_flags)
+{
+	struct ib_mad_snoop_private *mad_snoop_priv;
+	unsigned long flags;
+	int i;
+
+	spin_lock_irqsave(&qp_info->snoop_lock, flags);
+	for (i = 0; i < qp_info->snoop_table_size; i++) {
+		mad_snoop_priv = qp_info->snoop_table[i];
+		if (!mad_snoop_priv ||
+		    !(mad_snoop_priv->mad_snoop_flags & mad_snoop_flags))
+			continue;
+
+		atomic_inc(&mad_snoop_priv->refcount);
+		spin_unlock_irqrestore(&qp_info->snoop_lock, flags);
+		mad_snoop_priv->agent.recv_handler(&mad_snoop_priv->agent,
+						   mad_recv_wc);
+		deref_snoop_agent(mad_snoop_priv);
+		spin_lock_irqsave(&qp_info->snoop_lock, flags);
+	}
+	spin_unlock_irqrestore(&qp_info->snoop_lock, flags);
+}
+
+static void build_smp_wc(struct ib_qp *qp,
+			 u64 wr_id, u16 slid, u16 pkey_index, u8 port_num,
+			 struct ib_wc *wc)
+{
+	memset(wc, 0, sizeof *wc);
+	wc->wr_id = wr_id;
+	wc->status = IB_WC_SUCCESS;
+	wc->opcode = IB_WC_RECV;
+	wc->pkey_index = pkey_index;
+	wc->byte_len = sizeof(struct ib_mad) + sizeof(struct ib_grh);
+	wc->src_qp = IB_QP0;
+	wc->qp = qp;
+	wc->slid = slid;
+	wc->sl = 0;
+	wc->dlid_path_bits = 0;
+	wc->port_num = port_num;
+}
+
+/*
+ * Return 0 if SMP is to be sent
+ * Return 1 if SMP was consumed locally (whether or not solicited)
+ * Return < 0 if error
+ */
+static int handle_outgoing_dr_smp(struct ib_mad_agent_private *mad_agent_priv,
+				  struct ib_mad_send_wr_private *mad_send_wr)
+{
+	int ret = 0;
+	struct ib_smp *smp = mad_send_wr->send_buf.mad;
+	unsigned long flags;
+	struct ib_mad_local_private *local;
+	struct ib_mad_private *mad_priv;
+	struct ib_mad_port_private *port_priv;
+	struct ib_mad_agent_private *recv_mad_agent = NULL;
+	struct ib_device *device = mad_agent_priv->agent.device;
+	u8 port_num;
+	struct ib_wc mad_wc;
+	struct ib_send_wr *send_wr = &mad_send_wr->send_wr;
+
+	if (device->node_type == RDMA_NODE_IB_SWITCH &&
+	    smp->mgmt_class == IB_MGMT_CLASS_SUBN_DIRECTED_ROUTE)
+		port_num = send_wr->wr.ud.port_num;
+	else
+		port_num = mad_agent_priv->agent.port_num;
+
+	/*
+	 * Directed route handling starts if the initial LID routed part of
+	 * a request or the ending LID routed part of a response is empty.
+	 * If we are at the start of the LID routed part, don't update the
+	 * hop_ptr or hop_cnt.  See section 14.2.2, Vol 1 IB spec.
+	 */
+	if ((ib_get_smp_direction(smp) ? smp->dr_dlid : smp->dr_slid) ==
+	     IB_LID_PERMISSIVE &&
+	     smi_handle_dr_smp_send(smp, device->node_type, port_num) ==
+	     IB_SMI_DISCARD) {
+		ret = -EINVAL;
+		printk(KERN_ERR PFX "Invalid directed route\n");
+		goto out;
+	}
+
+	/* Check to post send on QP or process locally */
+	if (smi_check_local_smp(smp, device) == IB_SMI_DISCARD &&
+	    smi_check_local_returning_smp(smp, device) == IB_SMI_DISCARD)
+		goto out;
+
+	local = kmalloc(sizeof *local, GFP_ATOMIC);
+	if (!local) {
+		ret = -ENOMEM;
+		printk(KERN_ERR PFX "No memory for ib_mad_local_private\n");
+		goto out;
+	}
+	local->mad_priv = NULL;
+	local->recv_mad_agent = NULL;
+	mad_priv = kmem_cache_alloc(ib_mad_cache, GFP_ATOMIC);
+	if (!mad_priv) {
+		ret = -ENOMEM;
+		printk(KERN_ERR PFX "No memory for local response MAD\n");
+		kfree(local);
+		goto out;
+	}
+
+	build_smp_wc(mad_agent_priv->agent.qp,
+		     send_wr->wr_id, be16_to_cpu(smp->dr_slid),
+		     send_wr->wr.ud.pkey_index,
+		     send_wr->wr.ud.port_num, &mad_wc);
+
+	/* No GRH for DR SMP */
+	ret = device->process_mad(device, 0, port_num, &mad_wc, NULL,
+				  (struct ib_mad *)smp,
+				  (struct ib_mad *)&mad_priv->mad);
+	switch (ret)
+	{
+	case IB_MAD_RESULT_SUCCESS | IB_MAD_RESULT_REPLY:
+		if (ib_response_mad(&mad_priv->mad.mad) &&
+		    mad_agent_priv->agent.recv_handler) {
+			local->mad_priv = mad_priv;
+			local->recv_mad_agent = mad_agent_priv;
+			/*
+			 * Reference MAD agent until receive
+			 * side of local completion handled
+			 */
+			atomic_inc(&mad_agent_priv->refcount);
+		} else
+			kmem_cache_free(ib_mad_cache, mad_priv);
+		break;
+	case IB_MAD_RESULT_SUCCESS | IB_MAD_RESULT_CONSUMED:
+		kmem_cache_free(ib_mad_cache, mad_priv);
+		break;
+	case IB_MAD_RESULT_SUCCESS:
+		/* Treat like an incoming receive MAD */
+		port_priv = ib_get_mad_port(mad_agent_priv->agent.device,
+					    mad_agent_priv->agent.port_num);
+		if (port_priv) {
+			memcpy(&mad_priv->mad.mad, smp, sizeof(struct ib_mad));
+			recv_mad_agent = find_mad_agent(port_priv,
+						        &mad_priv->mad.mad);
+		}
+		if (!port_priv || !recv_mad_agent) {
+			/*
+			 * No receiving agent so drop packet and
+			 * generate send completion.
+			 */
+			kmem_cache_free(ib_mad_cache, mad_priv);
+			break;
+		}
+		local->mad_priv = mad_priv;
+		local->recv_mad_agent = recv_mad_agent;
+		break;
+	default:
+		kmem_cache_free(ib_mad_cache, mad_priv);
+		kfree(local);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	local->mad_send_wr = mad_send_wr;
+	/* Reference MAD agent until send side of local completion handled */
+	atomic_inc(&mad_agent_priv->refcount);
+	/* Queue local completion to local list */
+	spin_lock_irqsave(&mad_agent_priv->lock, flags);
+	list_add_tail(&local->completion_list, &mad_agent_priv->local_list);
+	spin_unlock_irqrestore(&mad_agent_priv->lock, flags);
+	queue_work(mad_agent_priv->qp_info->port_priv->wq,
+		   &mad_agent_priv->local_work);
+	ret = 1;
+out:
+	return ret;
+}
+
+static int get_pad_size(int hdr_len, int data_len)
+{
+	int seg_size, pad;
+
+	seg_size = sizeof(struct ib_mad) - hdr_len;
+	if (data_len && seg_size) {
+		pad = seg_size - data_len % seg_size;
+		return pad == seg_size ? 0 : pad;
+	} else
+		return seg_size;
+}
+
+static void free_send_rmpp_list(struct ib_mad_send_wr_private *mad_send_wr)
+{
+	struct ib_rmpp_segment *s, *t;
+
+	list_for_each_entry_safe(s, t, &mad_send_wr->rmpp_list, list) {
+		list_del(&s->list);
+		kfree(s);
+	}
+}
+
+static int alloc_send_rmpp_list(struct ib_mad_send_wr_private *send_wr,
+				gfp_t gfp_mask)
+{
+	struct ib_mad_send_buf *send_buf = &send_wr->send_buf;
+	struct ib_rmpp_mad *rmpp_mad = send_buf->mad;
+	struct ib_rmpp_segment *seg = NULL;
+	int left, seg_size, pad;
+
+	send_buf->seg_size = sizeof (struct ib_mad) - send_buf->hdr_len;
+	seg_size = send_buf->seg_size;
+	pad = send_wr->pad;
+
+	/* Allocate data segments. */
+	for (left = send_buf->data_len + pad; left > 0; left -= seg_size) {
+		seg = kmalloc(sizeof (*seg) + seg_size, gfp_mask);
+		if (!seg) {
+			printk(KERN_ERR "alloc_send_rmpp_segs: RMPP mem "
+			       "alloc failed for len %zd, gfp %#x\n",
+			       sizeof (*seg) + seg_size, gfp_mask);
+			free_send_rmpp_list(send_wr);
+			return -ENOMEM;
+		}
+		seg->num = ++send_buf->seg_count;
+		list_add_tail(&seg->list, &send_wr->rmpp_list);
+	}
+
+	/* Zero any padding */
+	if (pad)
+		memset(seg->data + seg_size - pad, 0, pad);
+
+	rmpp_mad->rmpp_hdr.rmpp_version = send_wr->mad_agent_priv->
+					  agent.rmpp_version;
+	rmpp_mad->rmpp_hdr.rmpp_type = IB_MGMT_RMPP_TYPE_DATA;
+	ib_set_rmpp_flags(&rmpp_mad->rmpp_hdr, IB_MGMT_RMPP_FLAG_ACTIVE);
+
+	send_wr->cur_seg = container_of(send_wr->rmpp_list.next,
+					struct ib_rmpp_segment, list);
+	send_wr->last_ack_seg = send_wr->cur_seg;
+	return 0;
+}
+
+struct ib_mad_send_buf * ib_create_send_mad(struct ib_mad_agent *mad_agent,20A707F0E7C006800A51B7E00A8
+:1017500071200000187084A00100C000AA1B7F0047
+:10176000082E71201000CA707F00C670C3700280FE
+:10177000712000001B700100912080407F007020CC
+:101780007F007800C11B7E107E007E129120002316
+:101790003C7F587E307C387D94A53F0084A4004077
+:1017A0004000D81B84A77C00C0009C2D7810A51B8E
+:1017B0009CA40F0082A304005000E01B7810A51B1E
+:1017C000078584A00F007900E51BEA1F9A20C0203E
+:1017D000E6226B25B325EA256526BF2644270B1C88
+:1017E000F51B531E1D1F4A25F51B7810A51B18005D
+:1017F000C81B7F12912001807F007F107C00037046
+:1018000000003F700000307005A04000091C3370DC
+:1018100000001800C81B5C7005A0C000B61CA070BA
+:1018200084A007007900141CD61C1C1C2A1C4B1C0D
+:10183000711C9D1C9B1C1C1C087884A0FDFF0A7851
+:101840000920460078101224C000281C03700400F0
+:101850007800F71B78105E2DC000491CB47007801B
+:101860009B787E00AA789B781000AB780C009B7860
+:101870006000AB7801005B7804000920F700781065
+:101880001024C000491C03700400C3700F003370A3
+:1018900070357800F71B78105E2DC0006F1CB47196
+:1018A00007819B787E00AA789B7810008CA10700A6
+:1018B0008DA1C000AA79AB7806009B786000AB7858
+:1018C00002005B7804000920F70078101024C000A3
+:1018D0006F1C03700400C3700F0033707035780004
+:1018E000F71B78105E2DC000991CB47107819B789E
+:1018F0007E00AA789B7810008CA107008DA1C00003
+:10190000AA79AB782000B871AA79AB780D009B78E2
+:101910006000AB7804005B7804000920F7007810C1
+:101920001024C000991C03700400C3700F003370B2
+:1019300070357800F71B78004B1C78105E2DC000C6
+:10194000F71BBC7068209B781000106F7810A12CDA
+:10195000502C106884A0070085A08000AA78186E1B
+:1019600041200100012004007800DE1D78105E2D6A
+:10197000C000F71B9B7810005C706820106F781017
+:10198000A12C502C086085A010000A60106884A06B
+:10199000070085A08000AA783120200041200100A6
+:1019A0007810C52D012003007800C91D1800C81B40
+:1019B000407485A400004000F01C80A080353020D9
+:1019C000447108812AA14800E71C09208035642160
+:1019D0000465FF85C000FD1C2184C000E11C467128
+:1019E000037000003F7000007800F71B4076B0A63F
+:1019F0008035447100267800EC1C46716825582516
+:101A00003E75502C346085A00000C000FA1C0867A9
+:101A1000367784A73F0140002F1D84A72100C00016
+:101A2000FA1C84A7020040001C1D84A7040040008B
+:101A3000FA1CBCA7FBFF0A6784A70800C000FA1CB9
+:101A400084A71000C000FA1C84A7000140002F1DCD
+:101A5000186005A0C000FA1CBCA7FFFE0A671F683B
+:101A60000000186E84A60E00186140003F1D1C6027
+:101A700002A14800421D4000421D7800F61CFF8173
+:101A8000C000F61C84A78000C000481D0C702260B6
+:101A9000BCA77FFF0A67106B078384A00F00038039
+:101AA0000380038080A00036602048204A700060D8
+:101AB0004E7004605270602A1800C81B9B7810009A
+:101AC00046A078105E2DC000F71B106B9CA307008A
+:101AD0009DA3C0004C7084A000804000731D84A6AC
+:101AE00001004000751D9CA3BFFF84A610004000AC
+:101AF0007B1D9DA32000AA7B408884A60E00C00009
+:101B0000861DBDA710000A677800C71D4C718CA107
+:101B100000084000022911202100048004804800B0
+:101B20009D1D11202200048048009D1D11202000D1
+:101B3000048048009D1D4000C71DAA7A4088781087
+:101B4000772D106A0C6108818CA1FF00E0A1803E16
+:101B5000642CFF8C4000BE1D106006A2C000A81DB2
+:101B6000B4600180B660C000A31D7E0C602A0860CE
+:101B700085A000010A607F0C7800D61C78105E2DCD
+:101B8000C000F71B602A0E61AA7940882E710120DF
+:101B900001007E00507184A118004000DD1D84A169
+:101BA00010004000D71D7810CC2AC000DD1D84A194
+:101BB00008004000DD1D7810E6297F0002708CA629
+:101BC0006000FF884000E61D8DA104005A79B269CB
+:101BD0009B7860000028AA789B786100146885A033
+:101BE00000801668AA787E157E137E14A1202C0131
+:101BF0009B7800000080AC8080AD0A009820A6533E
+:101C00007F147F137F15106807809B787E00AA7869
+:101C1000906DD67DDE7D946ED27EDA7E307884A0A3
+:101C2000C000C000151E98001D1E086084A0EFFFB4
+:101C30000A607810772D7800FF1B007284A20700DD
+:101C400086A00100C0002A1E1B7849007810772D5D
+:101C500078003B1EB06A95A200205A7A1B78490092
+:101C60007810772D0072002505A640003B1E84A247
+:101C700007007910491E80AD0800327084A2070069
+:101C800086A00100C000471E186000801A6078001E
+:101C9000F71B511EF030F030DF30F030511E511E76
+:101CA000511E7810A51B087884A0FDFF0A787E0FCE
+:101CB0007920003598787F0F84A001004000791EBC
+:101CC000A07086A00100C000681EA2707800011FED
+:101CD000A07086A00500C000771EBC706820176841
+:101CE0000400136800001C6885A008001E68A3702B
+:101CF00000007E1511200400A07186A101004000A3
+:101D00009B1E86A10700C0008B1E09202B350B20CF
+:101D1000050078009B1ner_of(send_buf, struct ib_mad_send_wr_private,
+				   send_buf);
+
+	free_send_rmpp_list(mad_send_wr);
+	kfree(send_buf->mad);
+	deref_mad_agent(mad_agent_priv);
+}
+EXPORT_SYMBOL(ib_free_send_mad);
+
+int ib_send_mad(struct ib_mad_send_wr_private *mad_send_wr)
+{
+	struct ib_mad_qp_info *qp_info;
+	struct list_head *list;
+	struct ib_send_wr *bad_send_wr;
+	struct ib_mad_agent *mad_agent;
+	struct ib_sge *sge;
+	unsigned long flags;
+	int ret;
+
+	/* Set WR ID to find mad_send_wr upon completion */
+	qp_info = mad_send_wr->mad_agent_priv->qp_info;
+	mad_send_wr->send_wr.wr_id = (unsigned long)&mad_send_wr->mad_list;
+	mad_send_wr->mad_list.mad_queue = &qp_info->send_queue;
+
+	mad_agent = mad_send_wr->send_buf.mad_agent;
+	sge = mad_send_wr->sg_list;
+	sge[0].addr = ib_dma_map_single(mad_agent->device,
+					mad_send_wr->send_buf.mad,
+					sge[0].length,
+					DMA_TO_DEVICE);
+	mad_send_wr->header_mapping = sge[0].addr;
+
+	sge[1].addr = ib_dma_map_single(mad_agent->device,
+					ib_get_payload(mad_send_wr),
+					sge[1].length,
+					DMA_TO_DEVICE);
+	mad_send_wr->payload_mapping = sge[1].addr;
+
+	spin_lock_irqsave(&qp_info->send_queue.lock, flags);
+	if (qp_info->send_queue.count < qp_info->send_queue.max_active) {
+		ret = ib_post_send(mad_agent->qp, &mad_send_wr->send_wr,
+				   &bad_send_wr);
+		list = &qp_info->send_queue.list;
+	} else {
+		ret = 0;
+		list = &qp_info->overflow_list;
+	}
+
+	if (!ret) {
+		qp_info->send_queue.count++;
+		list_add_tail(&mad_send_wr->mad_list.list, list);
+	}
+	spin_unlock_irqrestore(&qp_info->send_queue.lock, flags);
+	if (ret) {
+		ib_dma_unmap_single(mad_agent->device,
+				    mad_send_wr->header_mapping,
+				    sge[0].length, DMA_TO_DEVICE);
+		ib_dma_unmap_single(mad_agent->device,
+				    mad_send_wr->payload_mapping,
+				    sge[1].length, DMA_TO_DEVICE);
+	}
+	return ret;
+}
+
+/*
+ * ib_post_send_mad - Posts MAD(s) to the send queue of the QP associated
+ *  with the registered client
+ */
+int ib_post_send_mad(struct ib_mad_send_buf *send_buf,
+		     struct ib_mad_send_buf **bad_send_buf)
+{
+	struct ib_mad_agent_private *mad_agent_priv;
+	struct ib_mad_send_buf *next_send_buf;
+	struct ib_mad_send_wr_private *mad_send_wr;
+	unsigned long flags;
+	int ret = -EINVAL;
+
+	/* Walk list of send WRs and post each on send list */
+	for (; send_buf; send_buf = next_send_buf) {
+
+		mad_send_wr = container_of(send_buf,
+					   struct ib_mad_send_wr_private,
+					   send_buf);
+		mad_agent_priv = mad_send_wr->mad_agent_priv;
+
+		if (!send_buf->mad_agent->send_handler ||
+		    (send_buf->timeout_ms &&
+		     !send_buf->mad_agent->recv_handler)) {
+			ret = -EINVAL;
+			goto error;
+		}
+
+		if (!ib_is_mad_class_rmpp(((struct ib_mad_hdr *) send_buf->mad)->mgmt_class)) {
+			if (mad_agent_priv->agent.rmpp_version) {
+				ret = -EINVAL;
+				goto error;
+			}
+		}
+
+		/*
+		 * Save pointer to next work request to post in case the
+		 * current one completes, and the user modifies the work
+		 * request associated with the completion
+		 */
+		next_send_buf = send_buf->next;
+		mad_send_wr->send_wr.wr.ud.ah = send_buf->ah;
+
+		if (((struct ib_mad_hdr *) send_buf->mad)->mgmt_class ==
+		    IB_MGMT_CLASS_SUBN_DIRECTED_ROUTE) {
+			ret = handle_outgoing_dr_smp(mad_agent_priv,
+						     mad_send_wr);
+			if (ret < 0)		/* error */
+				goto error;
+			else if (ret == 1)	/* locally consumed */
+				continue;
+		}
+
+		mad_send_wr->tid = ((struct ib_mad_hdr *) send_buf->mad)->tid;
+		/* Timeout will be updated after send completes */
+		mad_send_wr->timeout = msecs_to_jiffies(send_buf->timeout_ms);
+		mad_send_wr->max_retries = send_buf->retries;
+		mad_send_wr->retries_left = send_buf->retries;
+		send_buf->retries = 0;
+		/* Reference for work request to QP + response */
+		mad_send_wr->refcount = 1 + (mad_send_wr->timeout > 0);
+		mad_send_wr->status = IB_WC_SUCCESS;
+
+		/* Reference MAD agent until send completes */
+		atomic_inc(&mad_agent_priv->refcount);
+		spin_lock_irqsave(&mad_agent_priv->lock, flags);
+		list_add_tail(&mad_send_wr->agent_list,
+			      &mad_agent_priv->send_list);
+		spin_unlock_irqrestore(&mad_agent_priv->lock, flags);
+
+		if (mad_agent_priv->agent.rmpp_version) {
+			ret = ib_send_rmpp_mad(mad_send_wr);
+			if (ret >= 0 && ret != IB_RMPP_RESULT_CONSUMED)
+				ret = ib_send_mad(mad_send_wr);
+		} else
+			ret = ib_send_mad(mad_send_wr);
+		if (ret < 0) {
+			/* Fail send request */
+			spin_lock_irqsave(&mad_agent_priv->lock, flags);
+			list_del(&mad_send_wr->agent_list);
+			spin_unlock_irqrestore(&mad_agent_priv->lock, flags);
+			atomic_dec(&mad_agent_priv->refcount);
+			goto error;
+		}
+	}
+	return 0;
+error:
+	if (bad_send_buf)
+		*bad_send_buf = send_buf;
+	return ret;
+}
+EXPORT_SYMBOL(ib_post_send_mad);
+
+/*
+ * ib_free_recv_mad - Returns data buffers used to receive
+ *  a MAD to the access layer
+ */
+void ib_free_recv_mad(struct ib_mad_recv_wc *mad_recv_wc)
+{
+	struct ib_mad_recv_buf *mad_recv_buf, *temp_recv_buf;
+	struct ib_mad_private_header *mad_priv_hdr;
+	struct ib_mad_private *priv;
+	struct list_head free_list;
+
+	INIT_LIST_HEAD(&free_list);
+	list_splice_init(&mad_recv_wc->rmpp_list, &free_list);
+
+	list_for_each_entry_safe(mad_recv_buf, temp_recv_buf,
+					&free_list, list) {
+		mad_recv_wc = container_of(mad_recv_buf, struct ib_mad_recv_wc,
+					   recv_buf);
+		mad_priv_hdr = container_of(mad_recv_wc,
+					    struct ib_mad_private_header,
+					    recv_wc);
+		priv = container_of(mad_priv_hdr, struct ib_mad_private,
+				    header);
+		kmem_cache_free(ib_mad_cache, priv);
+	}
+}
+EXPORT_SYMBOL(ib_free_recv_mad);
+
+struct ib_mad_agent *ib_redirect_mad_qp(struct ib_qp *qp,
+					u8 rmpp_version,
+					ib_mad_send_handler send_handler,
+					ib_mad_recv_handler recv_handler,
+					void *context)
+{
+	return ERR_PTR(-EINVAL);	/* XXX: for now */
+}
+EXPORT_SYMBOL(ib_redirect_mad_qp);
+
+int ib_process_mad_wc(struct ib_mad_agent *mad_agent,
+		      struct ib_wc *wc)
+{
+	printk(KERN_ERR PFX "ib_process_mad_wc() not implemented yet\n");
+	return 0;
+}
+EXPORT_SYMBOL(ib_process_mad_wc);
+
+static int method_in_use(struct ib_mad_mgmt_method_table **method,
+			 struct ib_mad_reg_req *mad_reg_req)
+{
+	int i;
+
+	for (i = find_first_bit(mad_reg_req->method_mask, IB_MGMT_MAX_METHODS);
+	     i < IB_MGMT_MAX_METHODS;
+	     i = find_next_bit(mad_reg_req->method_mask, IB_MGMT_MAX_METHODS,
+			       1+i)) {
+		if ((*method)->agent[i]) {
+			printk(KERN_ERR PFX "Method %d already in use\n", i);
+			return -EINVAL;
+		}
+	}
+	return 0;
+}
+
+static int allocate_method_table(struct ib_mad_mgmt_method_table **method)
+{
+	/* Allocate management method table */
+	*method = kzalloc(sizeof **method, GFP_ATOMIC);
+	if (!*method) {
+		printk(KERN_ERR PFX "No memory for "
+		       "ib_mad_mgmt_method_table\n");
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+/*
+ * Check to see if there are any methods still in use
+ */
+static int check_method_table(struct ib_mad_mgmt_method_table *method)
+{
+	int i;
+
+	for (i = 0; i < IB_MGMT_MAX_METHODS; i++)
+		if (method->agent[i])
+			return 1;
+	return 0;
+}
+
+/*
+ * Check to see if there are any method tables for this class still in use
+ */
+static int check_class_table(struct ib_mad_mgmt_class_table *class)
+{
+	int i;
+
+	for (i = 0; i < MAX_MGMT_CLASS; i++)
+		if (class->method_table[i])
+			return 1;
+	return 0;
+}
+
+static int check_vendor_class(struct ib_mad_mgmt_vendor_class *vendor_class)
+{
+	int i;
+
+	for (i = 0; i < MAX_MGMT_OUI; i++)
+		if (vendor_class->method_table[i])
+			return 1;
+	return 0;
+}
+
+static int find_vendor_oui(struct ib_mad_mgmt_vendor_class *vendor_class,
+			   char *oui)
+{
+	int i;
+
+	for (i = 0; i < MAX_MGMT_OUI; i++)
+		/* Is there matching OUI for this vendor class ? */
+		if (!memcmp(vendor_class->oui[i], oui, 3))
+			return i;
+
+	return -1;
+}
+
+static int check_vendor_table(struct ib_mad_mgmt_vendor_class_table *vendor)
+{
+	int i;
+
+	for (i = 0; i < MAX_MGMT_VENDOR_RANGE2; i++)
+		if (vendor->vendor_class[i])
+			return 1;
+
+	return 0;
+}
+
+static void remove_methods_mad_agent(struct ib_mad_mgmt_method_table *method,
+				     struct ib_mad_agent_private *agent)
+{
+	int i;
+
+	/* Remove any methods for this mad agent */
+	for (i = 0; i < IB_MGMT_MAX_METHODS; i++) {
+		if (method->agent[i] == agent) {
+			method->agent[i] = NULL;
+		}
+	}
+}
+
+static int add_nonoui_reg_req(struct ib_mad_reg_req *mad_reg_req,
+			      struct ib_mad_agent_private *agent_priv,
+			      u8 mgmt_class)
+{
+	struct ib_mad_port_private *port_priv;
+	struct ib_mad_mgmt_class_table **class;
+	struct ib_mad_mgmt_method_table **method;
+	int i, ret;
+
+	port_priv = agent_priv->qp_info->port_priv;
+	class = &port_priv->version[mad_reg_req->mgmt_class_version].class;
+	if (!*class) {
+		/* Allocate management class table for "new" class version */
+		*class = kzalloc(sizeof **class, GFP_ATOMIC);
+		if (!*class) {
+			printk(KERN_ERR PFX "No memory for "
+			       "ib_mad_mgmt_class_table\n");
+			ret = -ENOMEM;
+			goto error1;
+		}
+
+		/* Allocate method table for this management class */
+		method = &(*class)->method_table[mgmt_class];
+		if ((ret = allocate_method_table(method)))
+			goto error2;
+	} else {
+		method = &(*class)->method_table[mgmt_class];
+		if (!*method) {
+			/* Allocate method table for this management class */
+			if ((ret = allocate_method_table(method)))
+				goto error1;
+		}
+	}
+
+	/* Now, make sure methods are not already in use */
+	if (method_in_use(method, mad_reg_req))
+		goto error3;
+
+	/* Finally, add in methods being registered */
+	for (i = find_first_bit(mad_reg_req->method_mask,
+				IB_MGMT_MAX_METHODS);
+	     i < IB_MGMT_MAX_METHODS;
+	     i = find_next_bit(mad_reg_req->method_mask, IB_MGMT_MAX_METHODS,
+			       1+i)) {
+		(*method)->agent[i] = agent_priv;
+	}
+	return 0;
+
+error3:
+	/* Remove any methods for this mad agent */
+	remove_methods_mad_agent(*method, agent_priv);
+	/* Now, check to see if there are any methods in use */
+	if (!check_method_table(*method)) {
+		/* If not, release management method table */
+		kfree(*method);
+		*method = NULL;
+	}
+	ret = -EINVAL;
+	goto error1;
+error2:
+	kfree(*class);
+	*class = NULL;
+error1:
+	return ret;
+}
+
+static int add_oui_reg_req(struct ib_mad_reg_req *mad_reg_req,
+			   struct ib_mad_agent_private *agent_priv)
+{
+	struct ib_mad_port_private *port_priv;
+	struct ib_mad_mgmt_vendor_class_table **vendor_table;
+	struct ib_mad_mgmt_vendor_class_table *vendor = NULL;
+	struct ib_mad_mgmt_vendor_class *vendor_class = NULL;
+	struct ib_mad_mgmt_method_table **method;
+	int i, ret = -ENOMEM;
+	u8 vclass;
+
+	/* "New" vendor (with OUI) class */
+	vclass = vendor_class_index(mad_reg_req->mgmt_class);
+	port_priv = agent_priv->qp_info->port_priv;
+	vendor_table = &port_priv->version[
+				mad_reg_req->mgmt_class_version].vendor;
+	if (!*vendor_table) {
+		/* Allocate mgmt vendor class table for "new" class version */
+		vendor = kzalloc(sizeof *vendor, GFP_ATOMIC);
+		if (!vendor) {
+			printk(KERN_ERR PFX "No memory for "
+			       "ib_mad_mgmt_vendor_class_table\n");
+			goto error1;
+		}
+
+		*vendor_table = vendor;
+	}
+	if (!(*vendor_table)->vendor_class[vclass]) {
+		/* Allocate table for this management vendor class */
+		vendor_class = kzalloc(sizeof *vendor_class, GFP_ATOMIC);
+		if (!vendor_class) {
+			printk(KERN_ERR PFX "No memory for "
+			       "ib_mad_mgmt_vendor_class\n");
+			goto error2;
+		}
+
+		(*vendor_table)->vendor_class[vclass] = vendor_class;
+	}
+	for (i = 0; i < MAX_MGMT_OUI; i++) {
+		/* Is there matching OUI for this vendor class ? */
+		if (!memcmp((*vendor_table)->vendor_class[vclass]->oui[i],
+			    mad_reg_req->oui, 3)) {
+			method = &(*vendor_table)->vendor_class[
+						vclass]->method_table[i];
+			BUG_ON(!*method);
+			goto check_in_use;
+		}
+	}
+	for (i = 0; i < MAX_MGMT_OUI; i++) {
+		/* OUI slot available ? */
+		if (!is_vendor_oui((*vendor_table)->vendor_class[
+				vclass]->oui[i])) {
+			method = &(*vendor_table)->vendor_class[
+				vclass]->method_table[i];
+			BUG_ON(*method);
+			/* Allocate method table for this OUI */
+			if ((ret = allocate_method_table(method)))
+				goto error3;
+			memcpy((*vendor_table)->vendor_class[vclass]->oui[i],
+			       mad_reg_req->oui, 3);
+			goto check_in_use;
+		}
+	}
+	printk(KERN_ERR PFX "All OUI slots in use\n");
+	goto error3;
+
+check_in_use:
+	/* Now, make sure methods are not already in use */
+	if (method_in_use(method, mad_reg_req))
+		goto error4;
+
+	/* Finally, add in methods being registered */
+	for (i = find_first_bit(mad_reg_req->method_mask,
+				IB_MGMT_MAX_METHODS);
+	     i < IB_MGMT_MAX_METHODS;
+	     i = find_next_bit(mad_reg_req->method_mask, IB_MGMT_MAX_METHODS,
+			       1+i)) {
+		(*method)->agent[i] = agent_priv;
+	}
+	return 0;
+
+error4:
+	/* Remove any methods for this mad agent */
+	remove_methods_mad_agent(*method, agent_priv);
+	/* Now, check to see if there are any methods in use */
+	if (!check_method_table(*method)) {
+		/* If not, release management method table */
+		kfree(*method);
+		*method = NULL;
+	}
+	ret = -EINVAL;
+error3:
+	if (vendor_class) {
+		(*vendor_table)->vendor_class[vclass] = NULL;
+		kfree(vendor_class);
+	}
+error2:
+	if (vendor) {
+		*vendor_table = NULL;
+		kfree(vendor);
+	}
+error1:
+	return ret;
+}
+
+static void remove_mad_reg_req(struct ib_mad_agent_private *agent_priv)
+{
+	struct ib_mad_port_private *port_priv;
+	struct ib_mad_mgmt_class_table *class;
+	struct ib_mad_mgmt_method_table *method;
+	struct ib_mad_mgmt_vendor_class_table *vendor;
+	struct ib_mad_mgmt_vendor_class *vendor_class;
+	int index;
+	u8 mgmt_class;
+
+	/*
+	 * Was MAD registration request supplied
+	 * with original registration ?
+	 */
+	if (!agent_priv->reg_req) {
+		goto out;
+	}
+
+	port_priv = agent_priv->qp_info->port_priv;
+	mgmt_class = convert_mgmt_class(agent_priv->reg_req->mgmt_class);
+	class = port_priv->version[
+			agent_priv->reg_req->mgmt_class_version].class;
+	if (!class)
+		goto vendor_check;
+
+	method = class->method_table[mgmt_class];
+	if (method) {
+		/* Remove any methods for this mad agent */
+		remove_methods_mad_agent(method, agent_priv);
+		/* Now, check to see if there are any methods still in use */
+		if (!check_method_table(method)) {
+			/* If not, release management method table */
+			 kfree(method);
+			 class->method_table[mgmt_class] = NULL;
+			 /* Any management classes left ? */
+			if (!check_class_table(class)) {
+				/* If not, release management class table */
+				kfree(class);
+				port_priv->version[
+					agent_priv->reg_req->
+					mgmt_class_version].class = NULL;
+			}
+		}
+	}
+
+vendor_check:
+	if (!is_vendor_class(mgmt_class))
+		goto out;
+
+	/* normalize mgmt_class to vendor range 2 */
+	mgmt_class = vendor_class_index(agent_priv->reg_req->mgmt_class);
+	vendor = port_priv->version[
+			agent_priv->reg_req->mgmt_class_version].vendor;
+
+	if (!vendor)
+		goto out;
+
+	vendor_class = vendor->vendor_class[mgmt_class];
+	if (vendor_class) {
+		index = find_vendor_oui(vendor_class, agent_priv->reg_req->oui);
+		if (index < 0)
+			goto out;
+		method = vendor_class->method_table[index];
+		if (method) {
+			/* Remove any methods for this mad agent */
+			remove_methods_mad_agent(method, agent_priv);
+			/*
+			 * Now, check to see if there are
+			 * any methods still in use
+			 */
+			if (!check_method_table(method)) {
+				/* If not, release management method table */
+				kfree(method);
+				vendor_class->method_table[index] = NULL;
+				memset(vendor_class->oui[index], 0, 3);
+				/* Any OUIs left ? */
+				if (!check_vendor_class(vendor_class)) {
+					/* If not, release vendor class table */
+					kfree(vendor_class);
+					vendor->vendor_class[mgmt_class] = NULL;
+					/* Any other vendor classes left ? */
+					if (!check_vendor_table(vendor)) {
+						kfree(vendor);
+						port_priv->version[
+							agent_priv->reg_req->
+							mgmt_class_version].
+							vendor = NULL;
+					}
+				}
+			}
+		}
+	}
+
+out:
+	return;
+}
+
+static struct ib_mad_agent_private *
+find_mad_agent(struct ib_mad_port_private *port_priv,
+	       struct ib_mad *mad)
+{
+	struct ib_mad_agent_private *mad_agent = NULL;
+	unsigned long flags;
+
+	spin_lock_irqsave(&port_priv->reg_lock, flags);
+	if (ib_response_mad(mad)) {
+		u32 hi_tid;
+		struct ib_mad_agent_private *entry;
+
+		/*
+		 * Routing is based on high 32 bits of transaction ID
+		 * of MAD.
+		 */
+		hi_tid = be64_to_cpu(mad->mad_hdr.tid) >> 32;
+		list_for_each_entry(entry, &port_priv->agent_list, agent_list) {
+			if (entry->agent.hi_tid == hi_tid) {
+				mad_agent = entry;
+				break;
+			}
+		}
+	} else {
+		struct ib_mad_mgmt_class_table *class;
+		struct ib_mad_mgmt_method_table *method;
+		struct ib_mad_mgmt_vendor_class_table *vendor;
+		struct ib_mad_mgmt_vendor_class *vendor_class;
+		struct ib_vendor_mad *vendor_mad;
+		int index;
+
+		/*
+		 * Routing is based on version, class, and method
+		 * For "newer" vendor MADs, also based on OUI
+		 */
+		if (mad->mad_hdr.class_version >= MAX_MGMT_VERSION)
+			goto out;
+		if (!is_vendor_class(mad->mad_hdr.mgmt_class)) {
+			class = port_priv->version[
+					mad->mad_hdr.class_version].class;
+			if (!class)
+				goto out;
+			method = class->method_table[convert_mgmt_class(
+							mad->mad_hdr.mgmt_class)];
+			if (method)
+				mad_agent = method->agent[mad->mad_hdr.method &
+							  ~IB_MGMT_METHOD_RESP];
+		} else {
+			vendor = port_priv->version[
+					mad->mad_hdr.class_version].vendor;
+			if (!vendor)
+				goto out;
+			vendor_class = vendor->vendor_class[vendor_class_index(
+						mad->mad_hdr.mgmt_class)];
+			if (!vendor_class)
+				goto out;
+			/* Find matching OUI */
+			vendor_mad = (struct ib_vendor_mad *)mad;
+			index = find_vendor_oui(vendor_class, vendor_mad->oui);
+			if (index == -1)
+				goto out;
+			method = vendor_class->method_table[index];
+			if (method) {
+				mad_agent = method->agent[mad->mad_hdr.method &
+							  ~IB_MGMT_METHOD_RESP];
+			}
+		}
+	}
+
+	if (mad_agent) {
+		if (mad_agent->agent.recv_handler)
+			atomic_inc(&mad_agent->refcount);
+		else {
+			printk(KERN_NOTICE PFX "No receive handler for client "
+			       "%p on port %d\n",
+			       &mad_agent->agent, port_priv->port_num);
+			mad_agent = NULL;
+		}
+	}
+out:
+	spin_unlock_irqrestore(&port_priv->reg_lock, flags);
+
+	return mad_agent;
+}
+
+static int validate_mad(struct ib_mad *mad, u32 qp_num)
+{
+	int valid = 0;
+
+	/* Make sure MAD base version is understood */
+	if (mad->mad_hdr.base_version != IB_MGMT_BASE_VERSION) {
+		printk(KERN_ERR PFX "MAD received with unsupported base "
+		       "version %d\n", mad->mad_hdr.base_version);
+		goto out;
+	}
+
+	/* Filter SMI packets sent to other than QP0 */
+	if ((mad->mad_hdr.mgmt_class == IB_MGMT_CLASS_SUBN_LID_ROUTED) ||
+	    (mad->mad_hdr.mgmt_class == IB_MGMT_CLASS_SUBN_DIRECTED_ROUTE)) {
+		if (qp_num == 0)
+			valid = 1;
+	} else {
+		/* Filter GSI packets sent to QP0 */
+		if (qp_num != 0)
+			valid = 1;
+	}
+
+out:
+	return valid;
+}
+
+static int is_data_mad(struct ib_mad_agent_private *mad_agent_priv,
+		       struct ib_mad_hdr *mad_hdr)
+{
+	struct ib_rmpp_mad *rmpp_mad;
+
+	rmpp_mad = (struct ib_rmpp_mad *)mad_hdr;
+	return !mad_agent_priv->agent.rmpp_version ||
+		!(ib_get_rmpp_flags(&rmpp_mad->rmpp_hdr) &
+				    IB_MGMT_RMPP_FLAG_ACTIVE) ||
+		(rmpp_mad->rmpp_hdr.rmpp_type == IB_MGMT_RMPP_TYPE_DATA);
+}
+
+static inline int rcv_has_same_class(struct ib_mad_send_wr_private *wr,
+				     struct ib_mad_recv_wc *rwc)
+{
+	return ((struct ib_mad *)(wr->send_buf.mad))->mad_hdr.mgmt_class ==
+		rwc->recv_buf.mad->mad_hdr.mgmt_class;
+}
+
+static inline int rcv_has_same_gid(struct ib_mad_agent_private *mad_agent_priv,
+				   struct ib_mad_send_wr_private *wr,
+				   struct ib_mad_recv_wc *rwc )
+{
+	struct ib_ah_attr attr;
+	u8 send_resp, rcv_resp;
+	union ib_gid sgid;
+	struct ib_device *device = mad_agent_priv->agent.device;
+	u8 port_num = mad_agent_priv->agent.port_num;
+	u8 lmc;
+
+	send_resp = ib_response_mad((struct ib_mad *)wr->send_buf.mad);
+	rcv_resp = ib_response_mad(rwc->recv_buf.mad);
+
+	if (send_resp == rcv_resp)
+		/* both requests, or both responses. GIDs different */
+		return 0;
+
+	if (ib_query_ah(wr->send_buf.ah, &attr))
+		/* Assume not equal, to avoid false positives. */
+		return 0;
+
+	if (!!(attr.ah_flags & IB_AH_GRH) !=
+	    !!(rwc->wc->wc_flags & IB_WC_GRH))
+		/* one has GID, other does not.  Assume different */
+		return 0;
+
+	if (!send_resp && rcv_resp) {
+		/* is request/response. */
+		if (!(attr.ah_flags & IB_AH_GRH)) {
+			if (ib_get_cached_lmc(device, port_num, &lmc))
+				return 0;
+			return (!lmc || !((attr.src_path_bits ^
+					   rwc->wc->dlid_path_bits) &
+					  ((1 << lmc) - 1)));
+		} else {
+			if (ib_get_cached_gid(device, port_num,
+					      attr.grh.sgid_index, &sgid))
+				return 0;
+			return !memcmp(sgid.raw, rwc->recv_buf.grh->dgid.raw,
+				       16);
+		}
+	}
+
+	if (!(attr.ah_flags & IB_AH_GRH))
+		return attr.dlid == rwc->wc->slid;
+	else
+		return !memcmp(attr.grh.dgid.raw, rwc->recv_buf.grh->sgid.raw,
+			       16);
+}
+
+static inline int is_direct(u8 class)
+{
+	return (class == IB_MGMT_CLASS_SUBN_DIRECTED_ROUTE);
+}
+
+struct ib_mad_send_wr_private*
+ib_find_send_mad(struct ib_mad_agent_private *mad_agent_priv,
+		 struct ib_mad_recv_wc *wc)
+{
+	struct ib_mad_send_wr_private *wr;
+	struct ib_mad *mad;
+
+	mad = (struct ib_mad *)wc->recv_buf.mad;
+
+	list_for_each_entry(wr, &mad_agent_priv->wait_list, agent_list) {
+		if ((wr->tid == mad->mad_hdr.tid) &&
+		    rcv_has_same_class(wr, wc) &&
+		    /*
+		     * Don't check GID for direct routed MADs.
+		     * These might have permissive LIDs.
+		     */
+		    (is_direct(wc->recv_buf.mad->mad_hdr.mgmt_class) ||
+		     rcv_has_same_gid(mad_agent_priv, wr, wc)))
+			return (wr->status == IB_WC_SUCCESS) ? wr : NULL;
+	}
+
+	/*
+	 * It's possible to receive the response before we've
+	 * been notified that the send has completed
+	 */
+	list_for_each_entry(wr, &mad_agent_priv->send_list, agent_list) {
+		if (is_data_mad(mad_agent_priv, wr->send_buf.mad) &&
+		    wr->tid == mad->mad_hdr.tid &&
+		    wr->timeout &&
+		    rcv_has_same_class(wr, wc) &&
+		    /*
+		     * Don't check GID for direct routed MADs.
+		     * These might have permissive LIDs.
+		     */
+		    (is_direct(wc->recv_buf.mad->mad_hdr.mgmt_class) ||
+		     rcv_has_same_gid(mad_agent_priv, wr, wc)))
+			/* Verify request has not been canceled */
+			return (wr->status == IB_WC_SUCCESS) ? wr : NULL;
+	}
+	return NULL;
+}
+
+void ib_mark_mad_done(struct ib_mad_send_wr_private *mad_send_wr)
+{
+	mad_send_wr->timeout = 0;
+	if (mad_send_wr->refcount == 1)
+		list_move_tail(&mad_send_wr->agent_list,
+			      &mad_send_wr->mad_agent_priv->done_list);
+}
+
+static void ib_mad_complete_recv(struct ib_mad_agent_private *mad_agent_priv,
+				 struct ib_mad_recv_wc *mad_recv_wc)
+{
+	struct ib_mad_send_wr_private *mad_send_wr;
+	struct ib_mad_send_wc mad_send_wc;
+	unsigned long flags;
+
+	INIT_LIST_HEAD(&mad_recv_wc->rmpp_list);
+	list_add(&mad_recv_wc->recv_buf.list, &mad_recv_wc->rmpp_list);
+	if (mad_agent_priv->agent.rmpp_version) {
+		mad_recv_wc = ib_process_rmpp_recv_wc(mad_agent_priv,
+						      mad_recv_wc);
+		if (!mad_recv_wc) {
+			deref_mad_agent(mad_agent_priv);
+			return;
+		}
+	}
+
+	/* Complete corresponding request */
+	if (ib_response_mad(mad_recv_wc->recv_buf.mad)) {
+		spin_lock_irqsave(&mad_agent_priv->lock, flags);
+		mad_send_wr = ib_find_send_mad(mad_agent_priv, mad_recv_wc);
+		if (!mad_send_wr) {
+			spin_unlock_irqrestore(&mad_agent_priv->lock, flags);
+			ib_free_recv_mad(mad_recv_wc);
+			deref_mad_agent(mad_agent_priv);
+			return;
+		}
+		ib_mark_mad_done(mad_send_wr);
+		spin_unlock_irqrestore(&mad_agent_priv->lock, flags);
+
+		/* Defined behavior is to complete response before request */
+		mad_recv_wc->wc->wr_id = (unsigned long) &mad_send_wr->send_buf;
+		mad_agent_priv->agent.recv_handler(&mad_agent_priv->agent,
+						   mad_recv_wc);
+		atomic_dec(&mad_agent_priv->refcount);
+
+		mad_send_wc.status = IB_WC_SUCCESS;
+		mad_send_wc.vendor_err = 0;
+		mad_send_wc.send_buf = &mad_send_wr->send_buf;
+		ib_mad_complete_send_wr(mad_send_wr, &mad_send_wc);
+	} else {
+		mad_agent_priv->agent.recv_handler(&mad_agent_priv->agent,
+						   mad_recv_wc);
+		deref_mad_agent(mad_agent_priv);
+	}
+}
+
+static void ib_mad_recv_done_handler(struct ib_mad_port_private *port_priv,
+				     struct ib_wc *wc)
+{
+	struct ib_mad_qp_info *qp_info;
+	struct ib_mad_private_header *mad_priv_hdr;
+	struct ib_mad_private *recv, *response = NULL;
+	struct ib_mad_list_head *mad_list;
+	struct ib_mad_agent_private *mad_agent;
+	int port_num;
+
+	mad_list = (struct ib_mad_list_head *)(unsigned long)wc->wr_id;
+	qp_info = mad_list->mad_queue->qp_info;
+	dequeue_mad(mad_list);
+
+	mad_priv_hdr = container_of(mad_list, struct ib_mad_private_header,
+				    mad_list);
+	recv = container_of(mad_priv_hdr, struct ib_mad_private, header);
+	ib_dma_unmap_single(port_priv->device,
+			    recv->header.mapping,
+			    sizeof(struct ib_mad_private) -
+			      sizeof(struct ib_mad_private_header),
+			    DMA_FROM_DEVICE);
+
+	/* Setup MAD receive work completion from "normal" work completion */
+	recv->header.wc = *wc;
+	recv->header.recv_wc.wc = &recv->header.wc;
+	recv->heade:104000000C709CA07F00002800A311A289A10000D1
+:10401000B07805A040001030B3780000780033304D
+:10402000781050300427582C60AC0C63002222A377
+:10403000086300211BA3002405A340002930C80009
+:104040002930128410820A8389A10000602B780035
+:104050001030602B078ABAA7322F3DA7002C826848
+:10406000866F8E6C8A6B077012007810562F7C005A
+:104070003887042705A0C0004430986005A04000A0
+:104080004D3060203920322F518A40004C3008706A
+:1040900084A0C00086A0C0007C00512000007C00ED
+:1040A000508A3987042704A0C0005D303920382F9A
+:1040B000006064A0C0005D30602D7C007E127E0D2B
+:1040C000912000227F0D806860208468886B8C6C52
+:1040D0005780D4AAFF0084A0FF00B8A0322F087E2A
+:1040E000B5A60C00186884A0400040007930B5A641
+:1040F00001007E0F7920000158787F0F84A04000D6
+:104100004000883084A60100C0008830B5A60100B8
+:1041100007700400047084A00400C0008A3000709E
+:1041200005A0400095307810A51B002405A3C00011
+:104130009B307800D830582C042760AC046000A471
+:104140007E001A70006001A31E700920FD04042186
+:1041500086A0FD047F00C000C83084A0010040009C
+:10416000C83084A60100C000C83013700100177069
+:104170000000027607700100B3780100A0A40100DE
+:1041800099A30000046000A41A70006001A31E70CF
+:104190000C62002402A212700862002303A21670AF
+:1041A000027607700100602B781038307800DA3022
+:1041B00078106B31C000D8307F1200207C007E1256
+:1041C0007E0D912000227F0D07700400047084A0F2
+:1041D0000400C000E630037008007F1200207C005D
+:1041E0007E127E0D912000227F0D4920F030077055
+:1041F0000400047084A00400C000F930007005A021
+:10420000400004317810A51B087EB5A60C00186884
+:1042100084A0400040000E31B5A60100246805A02E
+:1042200040001A3150203920352F602D78106B3125
+:10423000C00016317F1200207C007E127E007E01BD
+:104240007E0D912000227F0D7F037F04087EB5A69E
+:104250000C00186884A0400040003031B5A6010071
+:1042600049201D31246855A040006831702D602E12
+:104270003920352F042768AE0C6822A408681BA3D8
+:1042800048005531518AC00047317810A51B388746
+:10429000042705A0C0003B31987075A06020400045
+:1042A00068313920322F78003A31228420841A83F1
+:1042B00099A300000C69002422A1086900231BA116
+:1042C000C80064317810A51B712020007800883068
+:1042D0007F1200207C00087084A0C00086A0C0006F
+:1042E00040009331042708AC04211E70088104218A
+:1042F0001A700881042116700881042112707E0F43
+:104300007920000158787F0F84A0400040008E3152
+:1043100084A60100C0008E31B5A6010002760770A8
+:104320000100781038307C007E127E007E0D9120D6
+:104330000022492094317F0D7F08087184A1C000BC
+:10434000C000AA31246805A04000BA317800DE2EF2
+:104350007800BA3108710481C800B2317810A82FF2
+:1043600078009D310770100008710481C800B431D5
+:104370007810A82F087086A00200C0009D31007040
+:1043800005A0C0009D3103700000492000007F128D
+:1043900000207C007E127E147E137E157E0D9120FF
+:1043A00000227F0D4920CA3180AD1000A020992045
+:1043B00031000C7084A07F00266807700800077029
+:1043C0000200037001004000E8310080AC80A5537A
+:1043D00007700400047084A00400C000EA31492082
+:1043E0000000037000007F157F137F147F120020F0
+:1043F0007C007E127E007E0D912000227F0D4920E0
+:10440000F931806860208468886B8C6C5780D4AAEE
+:10441000FF0084A0FF00B8A0322F087EB5A60400DC
+:1044200007700400047084A00400C0001232582CED
+:10443000042760AC046000A41A70006001A31E7021
+:1044400013700100177000000276077001007F00F2
+:104450000780092031000A20A0002C320871077063
+:1044600002000C81C8002C320C81480039327800DF
+:10447000EA2FA0A4010099A300008A6B8E6C07703C
+:10448000040049200000037000007F1200207C001F
+:10449000A920100006A0048086808E81C8005132B9
+:1044A00000A2F0004C3286808E817C007E15A9200F
+:1044B000100005A0400077321AA1C800773213829D
+:1044C0008D8148006A321AA1C8006B32F0005F3259
+:1044D00078006F321AA108231082F0005F327E004C
+:1044E000003284A0FFF780207F007F157C007E00D3
+:1044F000003285A0000878007332E000BF329120BE
+:104500000060207801802278C000B93224782278B7
+:104510009120008069204035006884A00700400099
+:10452000A13286A002004000A13230680DA04000F8
+:10453000A132042105A04000A13201800A204000E0
+:104540006F3361208036A9208000346005A04000D0
+:10455000B33201803660C000B332106005A0400065
+:10456000B3327810191AE0AC10007000B93278003C
+:10457000A5327810D4327810C2327810F9329120F6
+:1045800001807C003C7801803E78C000D3324078C6
+:104590003E78487805A04000D33201804A78C000B8
+:1045A000D3327810191A7C00347801803678C00034
+:1045B000F8323878367891200080447805A0C00021
+:1045C000E332012001010180467880A0803E402036
+:104(delay) {
+		list_for_each_prev(list_item, &mad_agent_priv->wait_list) {
+			temp_mad_send_wr = list_entry(list_item,
+						struct ib_mad_send_wr_private,
+						agent_list);
+			if (time_after(mad_send_wr->timeout,
+				       temp_mad_send_wr->timeout))
+				break;
+		}
+	}
+	else
+		list_item = &mad_agent_priv->wait_list;
+	list_add(&mad_send_wr->agent_list, list_item);
+
+	/* Reschedule a work item if we have a shorter timeout */
+	if (mad_agent_priv->wait_list.next == &mad_send_wr->agent_list) {
+		cancel_delayed_work(&mad_agent_priv->timed_work);
+		queue_delayed_work(mad_agent_priv->qp_info->port_priv->wq,
+				   &mad_agent_priv->timed_work, delay);
+	}
+}
+
+void ib_reset_mad_timeout(struct ib_mad_send_wr_private *mad_send_wr,
+			  int timeout_ms)
+{
+	mad_send_wr->timeout = msecs_to_jiffies(timeout_ms);
+	wait_for_response(mad_send_wr);
+}
+
+/*
+ * Process a send work completion
+ */
+void ib_mad_complete_send_wr(struct ib_mad_send_wr_private *mad_send_wr,
+			     struct ib_mad_send_wc *mad_send_wc)
+{
+	struct ib_mad_agent_private	*mad_agent_priv;
+	unsigned long			flags;
+	int				ret;
+
+	mad_agent_priv = mad_send_wr->mad_agent_priv;
+	spin_lock_irqsave(&mad_agent_priv->lock, flags);
+	if (mad_agent_priv->agent.rmpp_version) {
+		ret = ib_process_rmpp_send_wc(mad_send_wr, mad_send_wc);
+		if (ret == IB_RMPP_RESULT_CONSUMED)
+			goto done;
+	} else
+		ret = IB_RMPP_RESULT_UNHANDLED;
+
+	if (mad_send_wc->status != IB_WC_SUCCESS &&
+	    mad_send_wr->status == IB_WC_SUCCESS) {
+		mad_send_wr->status = mad_send_wc->status;
+		mad_send_wr->refcount -= (mad_send_wr->timeout > 0);
+	}
+
+	if (--mad_send_wr->refcount > 0) {
+		if (mad_send_wr->refcount == 1 && mad_send_wr->timeout &&
+		    mad_send_wr->status == IB_WC_SUCCESS) {
+			wait_for_response(mad_send_wr);
+		}

@@ -1,0 +1,207 @@
+ride_timer.expires = jiffies + 1;
+		add_timer(&dd->ipath_led_override_timer);
+	} else
+		atomic_dec(&dd->ipath_led_override_timer_active);
+}
+
+/**
+ * ipath_shutdown_device - shut down a device
+ * @dd: the infinipath device
+ *
+ * This is called to make the device quiet when we are about to
+ * unload the driver, and also when the device is administratively
+ * disabled.   It does not free any data structures.
+ * Everything it does has to be setup again by ipath_init_chip(dd,1)
+ */
+void ipath_shutdown_device(struct ipath_devdata *dd)
+{
+	unsigned long flags;
+
+	ipath_dbg("Shutting down the device\n");
+
+	ipath_hol_up(dd); /* make sure user processes aren't suspended */
+
+	dd->ipath_flags |= IPATH_LINKUNK;
+	dd->ipath_flags &= ~(IPATH_INITTED | IPATH_LINKDOWN |
+			     IPATH_LINKINIT | IPATH_LINKARMED |
+			     IPATH_LINKACTIVE);
+	*dd->ipath_statusp &= ~(IPATH_STATUS_IB_CONF |
+				IPATH_STATUS_IB_READY);
+
+	/* mask interrupts, but not errors */
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_intmask, 0ULL);
+
+	dd->ipath_rcvctrl = 0;
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_rcvctrl,
+			 dd->ipath_rcvctrl);
+
+	if (dd->ipath_flags & IPATH_HAS_SEND_DMA)
+		teardown_sdma(dd);
+
+	/*
+	 * gracefully stop all sends allowing any in progress to trickle out
+	 * first.
+	 */
+	spin_lock_irqsave(&dd->ipath_sendctrl_lock, flags);
+	dd->ipath_sendctrl = 0;
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_sendctrl, dd->ipath_sendctrl);
+	/* flush it */
+	ipath_read_kreg64(dd, dd->ipath_kregs->kr_scratch);
+	spin_unlock_irqrestore(&dd->ipath_sendctrl_lock, flags);
+
+	/*
+	 * enough for anything that's going to trickle out to have actually
+	 * done so.
+	 */
+	udelay(5);
+
+	dd->ipath_f_setextled(dd, 0, 0); /* make sure LEDs are off */
+
+	ipath_set_ib_lstate(dd, 0, INFINIPATH_IBCC_LINKINITCMD_DISABLE);
+	ipath_cancel_sends(dd, 0);
+
+	/*
+	 * we are shutting down, so tell components that care.  We don't do
+	 * this on just a link state change, much like ethernet, a cable
+	 * unplug, etc. doesn't change driver state
+	 */
+	signal_ib_event(dd, IB_EVENT_PORT_ERR);
+
+	/* disable IBC */
+	dd->ipath_control &= ~INFINIPATH_C_LINKENABLE;
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_control,
+			 dd->ipath_control | INFINIPATH_C_FREEZEMODE);
+
+	/*
+	 * clear SerdesEnable and turn the leds off; do this here because
+	 * we are unloading, so don't count on interrupts to move along
+	 * Turn the LEDs off explictly for the same reason.
+	 */
+	dd->ipath_f_quiet_serdes(dd);
+
+	/* stop all the timers that might still be running */
+	del_timer_sync(&dd->ipath_hol_timer);
+	if (dd->ipath_stats_timer_active) {
+		del_timer_sync(&dd->ipath_stats_timer);
+		dd->ipath_stats_timer_active = 0;
+	}
+	if (dd->ipath_intrchk_timer.data) {
+		del_timer_sync(&dd->ipath_intrchk_timer);
+		dd->ipath_intrchk_timer.data = 0;
+	}
+	if (atomic_read(&dd->ipath_led_override_timer_active)) {
+		del_timer_sync(&dd->ipath_led_override_timer);
+		atomic_set(&dd->ipath_led_override_timer_active, 0);
+	}
+
+	/*
+	 * clear all interrupts and errors, so that the next time the driver
+	 * is loaded or device is enabled, we know that whatever is set
+	 * happened while we were unloaded
+	 */
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_hwerrclear,
+			 ~0ULL & ~INFINIPATH_HWE_MEMBISTFAILED);
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_errorclear, -1LL);
+	ipath_write_kreg(dd, dd->ipath_kregs->kr_intclear, -1LL);
+
+	ipath_cdbg(VERBOSE, "Flush time and errors to EEPROM\n");
+	ipath_update_eeprom_log(dd);
+}
+
+/**
+ * ipath_free_pddata - free a port's allocated data
+ * @dd: the infinipath device
+ * @pd: the portdata structure
+ *
+ * free up any allocated data for a port
+ * This should not touch anything that would affect a simultaneous
+ * re-allocation of port data, because it is called after ipath_mutex
+ * is released (and can be called from reinit as well).
+ * It should never change any chip state, or global driver state.
+ * (The only exception to global state is freeing the port0 port0_skbs.)
+ */
+void ipath_free_pddata(struct ipath_devdata *dd, struct ipath_portdata *pd)
+{
+	if (!pd)
+		return;
+
+	if (pd->port_rcvhdrq) {
+		ipath_cdbg(VERBOSE, "free closed port %d rcvhdrq @ %p "
+			   "(size=%lu)\n", pd->port_port, pd->port_rcvhdrq,
+			   (unsigned long) pd->port_rcvhdrq_size);
+		dma_free_coherent(&dd->pcidev->dev, pd->port_rcvhdrq_size,
+				  pd->port_rcvhdrq, pd->port_rcvhdrq_phys);
+		pd->port_rcvhdrq = NULL;
+		if (pd->port_rcvhdrtail_kvaddr) {
+			dma_free_coherent(&dd->pcidev->dev, PAGE_SIZE,
+					 pd->port_rcvhdrtail_kvaddr,
+					 pd->port_rcvhdrqtailaddr_phys);
+			pd->port_rcvhdrtail_kvaddr = NULL;
+		}
+	}
+	if (pd->port_port && pd->port_rcvegrbuf) {
+		unsigned e;
+
+		for (e = 0; e < pd->port_rcvegrbuf_chunks; e++) {
+			void *base = pd->port_rcvegrbuf[e];
+			size_t size = pd->port_rcvegrbuf_size;
+
+			ipath_cdbg(VERBOSE, "egrbuf free(%p, %lu), "
+				   "chunk %u/%u\n", base,
+				   (unsigned long) size,
+				   e, pd->port_rcvegrbuf_chunks);
+			dma_free_coherent(&dd->pcidev->dev, size,
+				base, pd->port_rcvegrbuf_phys[e]);
+		}
+		kfree(pd->port_rcvegrbuf);
+		pd->port_rcvegrbuf = NULL;
+		kfree(pd->port_rcvegrbuf_phys);
+		pd->port_rcvegrbuf_phys = NULL;
+		pd->port_rcvegrbuf_chunks = 0;
+	} else if (pd->port_port == 0 && dd->ipath_port0_skbinfo) {
+		unsigned e;
+		struct ipath_skbinfo *skbinfo = dd->ipath_port0_skbinfo;
+
+		dd->ipath_port0_skbinfo = NULL;
+		ipath_cdbg(VERBOSE, "free closed port %d "
+			   "ipath_port0_skbinfo @ %p\n", pd->port_port,
+			   skbinfo);
+		for (e = 0; e < dd->ipath_p0_rcvegrcnt; e++)
+			if (skbinfo[e].skb) {
+				pci_unmap_single(dd->pcidev, skbinfo[e].phys,
+						 dd->ipath_ibmaxlen,
+						 PCI_DMA_FROMDEVICE);
+				dev_kfree_skb(skbinfo[e].skb);
+			}
+		vfree(skbinfo);
+	}
+	kfree(pd->port_tid_pg_list);
+	vfree(pd->subport_uregbase);
+	vfree(pd->subport_rcvegrbuf);
+	vfree(pd->subport_rcvhdr_base);
+	kfree(pd);
+}
+
+static int __init infinipath_init(void)
+{
+	int ret;
+
+	if (ipath_debug & __IPATH_DBG)
+		printk(KERN_INFO DRIVER_LOAD_MSG "%s", ib_ipath_version);
+
+	/*
+	 * These must be called before the driver is registered with
+	 * the PCI subsystem.
+	 */
+	idr_init(&unit_table);
+	if (!idr_pre_get(&unit_table, GFP_KERNEL)) {
+		printk(KERN_ERR IPATH_DRV_NAME ": idr_pre_get() failed\n");
+		ret = -ENOMEM;
+		goto bail;
+	}
+
+	ret = pci_register_driver(&ipath_driver);
+	if (ret < 0) {
+		printk(KERN_ERR IPATH_DRV_NAME
+		       ": Unable to register driver: error %d\n", -ret);
+		goto bail_unit

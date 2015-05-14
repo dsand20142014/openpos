@@ -1,0 +1,45 @@
+n,
+					cap->capabilities);
+		break;
+	}
+
+	/* --- priority ------------------------------------------ */
+	case VIDIOC_G_PRIORITY:
+	{
+		enum v4l2_priority *p = arg;
+
+		if (!ops->vidioc_g_priority)
+			break;
+		ret = ops->vidioc_g_priority(file, fh, p);
+		if (!ret)
+			dbgarg(cmd, "priority is %d\n", *p);
+		break;
+	}
+	case VIDIOC_S_PRIORITY:
+	{
+		enum v4l2_priority *p = arg;
+
+		if (!ops->vidioc_s_priority)
+			break;
+		dbgarg(cmd, "setting priority to %d\n", *p);
+		ret = ops->vidioc_s_priority(file, fh, *p);
+		break;
+	}
+
+	/* --- capture ioctls ---------------------------------------- */
+	case VIDIOC_ENUM_FMT:
+	{
+		struct v4l2_fmtdesc *f = arg;
+
+		switch (f->type) {
+		case V4L2_BUF_TYPE_VIDEO_CAPTURE:
+			if (ops->vidioc_enum_fmt_vid_cap)
+				ret = ops->vidioc_enum_fmt_vid_cap(file, fh, f);
+			break;
+		case V4L2_BUF_TYPE_VIDEO_OVERLAY:
+			if (ops->vidioc_enum_fmt_vid_overlay)
+				ret = ops->vidioc_enum_fmt_vid_overlay(file,
+					fh, f);
+			break;
+		case V4L2_BUF_TYPE_VIDEO_OUTPUT:
+			if (ops->vidioc_en

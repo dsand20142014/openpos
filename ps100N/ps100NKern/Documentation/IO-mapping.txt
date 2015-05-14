@@ -1,0 +1,255 @@
+OWN	0xFF
+#define AHD_PERIOD_UNKNOWN	0xFF
+#define AHD_OFFSET_UNKNOWN	0xFF
+#define AHD_PPR_OPTS_UNKNOWN	0xFF
+
+/*
+ * Transfer Negotiation Information.
+ */
+struct ahd_transinfo {
+	uint8_t protocol_version;	/* SCSI Revision level */
+	uint8_t transport_version;	/* SPI Revision level */
+	uint8_t width;			/* Bus width */
+	uint8_t period;			/* Sync rate factor */
+	uint8_t offset;			/* Sync offset */
+	uint8_t ppr_options;		/* Parallel Protocol Request options */
+};
+
+/*
+ * Per-initiator current, goal and user transfer negotiation information. */
+struct ahd_initiator_tinfo {
+	struct ahd_transinfo curr;
+	struct ahd_transinfo goal;
+	struct ahd_transinfo user;
+};
+
+/*
+ * Per enabled target ID state.
+ * Pointers to lun target state as well as sync/wide negotiation information
+ * for each initiator<->target mapping.  For the initiator role we pretend
+ * that we are the target and the targets are the initiators since the
+ * negotiation is the same regardless of role.
+ */
+struct ahd_tmode_tstate {
+	struct ahd_tmode_lstate*	enabled_luns[AHD_NUM_LUNS];
+	struct ahd_initiator_tinfo	transinfo[AHD_NUM_TARGETS];
+
+	/*
+	 * Per initiator state bitmasks.
+	 */
+	uint16_t	 auto_negotiate;/* Auto Negotiation Required */
+	uint16_t	 discenable;	/* Disconnection allowed  */
+	uint16_t	 tagenable;	/* Tagged Queuing allowed */
+};
+
+/*
+ * Points of interest along the negotiated transfer scale.
+ */
+#define AHD_SYNCRATE_160	0x8
+#define AHD_SYNCRATE_PACED	0x8
+#define AHD_SYNCRATE_DT		0x9
+#define AHD_SYNCRATE_ULTRA2	0xa
+#define AHD_SYNCRATE_ULTRA	0xc
+#define AHD_SYNCRATE_FAST	0x19
+#define AHD_SYNCRATE_MIN_DT	AHD_SYNCRATE_FAST
+#define AHD_SYNCRATE_SYNC	0x32
+#define AHD_SYNCRATE_MIN	0x60
+#define	AHD_SYNCRATE_ASYNC	0xFF
+#define AHD_SYNCRATE_MAX	AHD_SYNCRATE_160
+
+/* Safe and valid period for async negotiations. */
+#define	AHD_ASYNC_XFER_PERIOD	0x44
+
+/*
+ * In RevA, the synctable uses a 120MHz rate for the period
+ * factor 8 and 160MHz for the period factor 7.  The 120MHz
+ * rate never made it into the official SCSI spec, so we must
+ * compensate when setting the negotiation table for Rev A
+ * parts.
+ */
+#define AHD_SYNCRATE_REVA_120	0x8
+#define AHD_SYNCRATE_REVA_160	0x7
+
+/***************************** Lookup Tables **********************************/
+/*
+ * Phase -> name and message out response
+ * to parity errors in each phase table. 
+ */
+struct ahd_phase_table_entry {
+        uint8_t phase;
+        uint8_t mesg_out; /* Message response to parity errors */
+	const char *phasemsg;
+};
+
+/************************** Serial EEPROM Format ******************************/
+
+struct seeprom_config {
+/*
+ * Per SCSI ID Configuration Flags
+ */
+	uint16_t device_flags[16];	/* words 0-15 */
+#define		CFXFER		0x003F	/* synchronous transfer rate */
+#define			CFXFER_ASYNC	0x3F
+#define		CFQAS		0x0040	/* Negotiate QAS */
+#define		CFPACKETIZED	0x0080	/* Negotiate Packetized Transfers */
+#define		CFSTART		0x0100	/* send start unit SCSI command */
+#define		CFINCBIOS	0x0200	/* include in BIOS scan */
+#define		CFDISC		0x0400	/* enable disconnection */
+#define		CFMULTILUNDEV	0x0800	/* Probe multiple luns in BIOS scan */
+#define		CFWIDEB		0x1000	/* wide bus device */
+#define		CFHOSTMANAGED	0x8000	/* Managed by a RAID controller */
+
+/*
+ * BIOS Control Bits
+ */
+	uint16_t bios_control;		/* word 16 */
+#define		CFSUPREM	0x0001	/* support all removeable drives */
+#define		CFSUPREMB	0x0002	/* support removeable boot drives */
+#define		CFBIOSSTATE	0x000C	/* BIOS Action State */
+#define		    CFBS_DISABLED	0x00
+#define		    CFBS_ENABLED	0x04
+#define		    CFBS_DISABLED_SCAN	0x08
+#define		CFENABLEDV	0x0010	/* Perform Domain Validation */
+#define		CFCTRL_A	0x0020	/* BIOS displays Ctrl-A message */	
+#define		CFSPARITY	0x0040	/* SCSI parity */
+#define		CFEXTEND	0x0080	/* extended translation enabled */
+#define		CFBOOTCD	0x0100  /* Support Bootable CD-ROM */
+#define		CFMSG_LEVEL	0x0600	/* BIOS Message Level */
+#define			CFMSG_VERBOSE	0x0000
+#define			CFMSG_SILENT	0x0200
+#define			CFMSG_DIAG	0x0400
+#define		CFRESETB	0x0800	/* reset SCSI bus at boot */
+/*		UNUSED		0xf000	*/
+
+/*
+ * Host Adapter Control Bits
+ */
+	uint16_t adapter_control;	/* word 17 */	
+#define		CFAUTOTERM	0x0001	/* Perform Auto termination */
+#define		CFSTERM		0x0002	/* SCSI low byte termination */
+#define		CFWSTERM	0x0004	/* SCSI high byte termination */
+#define		CFSEAUTOTERM	0x0008	/* Ultra2 Perform secondary Auto Term*/
+#define		CFSELOWTERM	0x0010	/* Ultra2 secondary low term */
+#define		CFSEHIGHTERM	0x0020	/* Ultra2 secondary high term */
+#define		CFSTPWLEVEL	0x0040	/* Termination level control */
+#define		CFBIOSAUTOTERM	0x0080	/* Perform Auto termination */
+#define		CFTERM_MENU	0x0100	/* BIOS displays termination menu */	
+#define		CFCLUSTERENB	0x8000	/* Cluster Enable */
+
+/*
+ * Bus Release Time, Host Adapter ID
+ */
+	uint16_t brtime_id;		/* word 18 */
+#define		CFSCSIID	0x000f	/* host adapter SCSI ID */
+/*		UNUSED		0x00f0	*/
+#define		CFBRTIME	0xff00	/* bus release time/PCI Latency Time */
+
+/*
+ * Maximum targets
+ */
+	uint16_t max_targets;		/* word 19 */	
+#define		CFMAXTARG	0x00ff	/* maximum targets */
+#define		CFBOOTLUN	0x0f00	/* Lun to boot from */
+#define		CFBOOTID	0xf000	/* Target to boot from */
+	uint16_t res_1[10];		/* words 20-29 */
+	uint16_t signature;		/* BIOS Signature */
+#define		CFSIGNATURE	0x400
+	uint16_t checksum;		/* word 31 */
+};
+
+/*
+ * Vital Product Data used during POST and by the BIOS.
+ */
+struct vpd_config {
+	uint8_t  bios_flags;
+#define		VPDMASTERBIOS	0x0001
+#define		VPDBOOTHOST	0x0002
+	uint8_t  reserved_1[21];
+	uint8_t  resource_type;
+	uint8_t  resource_len[2];
+	uint8_t  resource_data[8];
+	uint8_t  vpd_tag;
+	uint16_t vpd_len;
+	uint8_t  vpd_keyword[2];
+	uint8_t  length;
+	uint8_t  revision;
+	uint8_t  device_flags;
+	uint8_t  termnation_menus[2];
+	uint8_t  fifo_threshold;
+	uint8_t  end_tag;
+	uint8_t  vpd_checksum;
+	uint16_t default_target_flags;
+	uint16_t default_bios_flags;
+	uint16_t default_ctrl_flags;
+	uint8_t  default_irq;
+	uint8_t  pci_lattime;
+	uint8_t  max_target;
+	uint8_t  boot_lun;
+	uint16_t signature;
+	uint8_t  reserved_2;
+	uint8_t  checksum;
+	uint8_t	 reserved_3[4];
+};
+
+/****************************** Flexport Logic ********************************/
+#define FLXADDR_TERMCTL			0x0
+#define		FLX_TERMCTL_ENSECHIGH	0x8
+#define		FLX_TERMCTL_ENSECLOW	0x4
+#define		FLX_TERMCTL_ENPRIHIGH	0x2
+#define		FLX_TERMCTL_ENPRILOW	0x1
+#define FLXADDR_ROMSTAT_CURSENSECTL	0x1
+#define		FLX_ROMSTAT_SEECFG	0xF0
+#define		FLX_ROMSTAT_EECFG	0x0F
+#define		FLX_ROMSTAT_SEE_93C66	0x00
+#define		FLX_ROMSTAT_SEE_NONE	0xF0
+#define		FLX_ROMSTAT_EE_512x8	0x0
+#define		FLX_ROMSTAT_EE_1MBx8	0x1
+#define		FLX_ROMSTAT_EE_2MBx8	0x2
+#define		FLX_ROMSTAT_EE_4MBx8	0x3
+#define		FLX_ROMSTAT_EE_16MBx8	0x4
+#define 		CURSENSE_ENB	0x1
+#define	FLXADDR_FLEXSTAT		0x2
+#define		FLX_FSTAT_BUSY		0x1
+#define FLXADDR_CURRENT_STAT		0x4
+#define		FLX_CSTAT_SEC_HIGH	0xC0
+#define		FLX_CSTAT_SEC_LOW	0x30
+#define		FLX_CSTAT_PRI_HIGH	0x0C
+#define		FLX_CSTAT_PRI_LOW	0x03
+#define		FLX_CSTAT_MASK		0x03
+#define		FLX_CSTAT_SHIFT		2
+#define		FLX_CSTAT_OKAY		0x0
+#define		FLX_CSTAT_OVER		0x1
+#define		FLX_CSTAT_UNDER		0x2
+#define		FLX_CSTAT_INVALID	0x3
+
+int		ahd_read_seeprom(struct ahd_softc *ahd, uint16_t *buf,
+				 u_int start_addr, u_int count, int bstream);
+
+int		ahd_write_seeprom(struct ahd_softc *ahd, uint16_t *buf,
+				  u_int start_addr, u_int count);
+int		ahd_verify_cksum(struct seeprom_config *sc);
+int		ahd_acquire_seeprom(struct ahd_softc *ahd);
+void		ahd_release_seeprom(struct ahd_softc *ahd);
+
+/****************************  Message Buffer *********************************/
+typedef enum {
+	MSG_FLAG_NONE			= 0x00,
+	MSG_FLAG_EXPECT_PPR_BUSFREE	= 0x01,
+	MSG_FLAG_IU_REQ_CHANGED		= 0x02,
+	MSG_FLAG_EXPECT_IDE_BUSFREE	= 0x04,
+	MSG_FLAG_EXPECT_QASREJ_BUSFREE	= 0x08,
+	MSG_FLAG_PACKETIZED		= 0x10
+} ahd_msg_flags;
+
+typedef enum {
+	MSG_TYPE_NONE			= 0x00,
+	MSG_TYPE_INITIATOR_MSGOUT	= 0x01,
+	MSG_TYPE_INITIATOR_MSGIN	= 0x02,
+	MSG_TYPE_TARGET_MSGOUT		= 0x03,
+	MSG_TYPE_TARGET_MSGIN		= 0x04
+} ahd_msg_type;
+
+typedef enum {
+	MSGLOOP_IN_PROG,
+	MSGLOOP_MSGCOMPLETE,
+	MSGLOOP_TERMINA

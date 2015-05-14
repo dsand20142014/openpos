@@ -1,0 +1,823 @@
+ruc++ = 0x0000;       /* reserved */
+        }
+
+        /* Set node address. */
+        *pTimer_Struc++ = dev->dev_addr[0] << 8
+                | (dev->dev_addr[1] & 0xFF);
+        *pTimer_Struc++ = dev->dev_addr[2] << 8
+                | (dev->dev_addr[3] & 0xFF);
+        *pTimer_Struc++ = dev->dev_addr[4] << 8
+                | (dev->dev_addr[5] & 0xFF);
+
+        /* Set group address. */
+        *pTimer_Struc++ = tp->group_address_0 << 8
+                | tp->group_address_0 >> 8;
+        *pTimer_Struc++ = tp->group_address[0] << 8
+                | tp->group_address[0] >> 8;
+        *pTimer_Struc++ = tp->group_address[1] << 8
+                | tp->group_address[1] >> 8;
+
+        /* Set functional address. */
+        *pTimer_Struc++ = tp->functional_address_0 << 8
+                | tp->functional_address_0 >> 8;
+        *pTimer_Struc++ = tp->functional_address[0] << 8
+                | tp->functional_address[0] >> 8;
+        *pTimer_Struc++ = tp->functional_address[1] << 8
+                | tp->functional_address[1] >> 8;
+
+        /* Set Bit-Wise group address. */
+        *pTimer_Struc++ = tp->bitwise_group_address[0] << 8
+                | tp->bitwise_group_address[0] >> 8;
+        *pTimer_Struc++ = tp->bitwise_group_address[1] << 8
+                | tp->bitwise_group_address[1] >> 8;
+
+        /* Set ring number address. */
+        *pTimer_Struc++ = tp->source_ring_number;
+        *pTimer_Struc++ = tp->target_ring_number;
+
+        /* Physical drop number. */
+        *pTimer_Struc++ = (unsigned short)0;
+        *pTimer_Struc++ = (unsigned short)0;
+
+        /* Product instance ID. */
+        for(i = 0; i < 9; i++)
+                *pTimer_Struc++ = (unsigned short)0;
+
+        err = smctr_setup_single_cmd_w_data(dev, ACB_CMD_INIT_TRC_TIMERS, 0);
+
+        return (err);
+}
+
+static int smctr_issue_init_txrx_cmd(struct net_device *dev)
+{
+        struct net_local *tp = netdev_priv(dev);
+        unsigned int i;
+        int err;
+        void **txrx_ptrs = (void *)tp->misc_command_data;
+
+        if((err = smctr_wait_while_cbusy(dev)))
+                return (err);
+
+        if((err = smctr_wait_cmd(dev)))
+	{
+                printk(KERN_ERR "%s: Hardware failure\n", dev->name);
+                return (err);
+        }
+
+        /* Initialize Transmit Queue Pointers that are used, to point to
+         * a single FCB.
+         */
+        for(i = 0; i < NUM_TX_QS_USED; i++)
+                *txrx_ptrs++ = (void *)TRC_POINTER(tp->tx_fcb_head[i]);
+
+        /* Initialize Transmit Queue Pointers that are NOT used to ZERO. */
+        for(; i < MAX_TX_QS; i++)
+                *txrx_ptrs++ = (void *)0;
+
+        /* Initialize Receive Queue Pointers (MAC and Non-MAC) that are
+         * used, to point to a single FCB and a BDB chain of buffers.
+         */
+        for(i = 0; i < NUM_RX_QS_USED; i++)
+        {
+                *txrx_ptrs++ = (void *)TRC_POINTER(tp->rx_fcb_head[i]);
+                *txrx_ptrs++ = (void *)TRC_POINTER(tp->rx_bdb_head[i]);
+        }
+
+        /* Initialize Receive Queue Pointers that are NOT used to ZERO. */
+        for(; i < MAX_RX_QS; i++)
+        {
+                *txrx_ptrs++ = (void *)0;
+                *txrx_ptrs++ = (void *)0;
+        }
+
+        err = smctr_setup_single_cmd_w_data(dev, ACB_CMD_INIT_TX_RX, 0);
+
+        return (err);
+}
+
+static int smctr_issue_insert_cmd(struct net_device *dev)
+{
+        int err;
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_INSERT, ACB_SUB_CMD_NOP);
+
+        return (err);
+}
+
+static int smctr_issue_read_ring_status_cmd(struct net_device *dev)
+{
+        int err;
+
+        if((err = smctr_wait_while_cbusy(dev)))
+                return (err);
+
+        if((err = smctr_wait_cmd(dev)))
+                return (err);
+
+        err = smctr_setup_single_cmd_w_data(dev, ACB_CMD_READ_TRC_STATUS,
+                RW_TRC_STATUS_BLOCK);
+
+        return (err);
+}
+
+static int smctr_issue_read_word_cmd(struct net_device *dev, __u16 aword_cnt)
+{
+        int err;
+
+        if((err = smctr_wait_while_cbusy(dev)))
+                return (err);
+
+        if((err = smctr_wait_cmd(dev)))
+                return (err);
+
+        err = smctr_setup_single_cmd_w_data(dev, ACB_CMD_MCT_READ_VALUE,
+                aword_cnt);
+
+        return (err);
+}
+
+static int smctr_issue_remove_cmd(struct net_device *dev)
+{
+        struct net_local *tp = netdev_priv(dev);
+        int err;
+
+        if((err = smctr_wait_while_cbusy(dev)))
+                return (err);
+
+        tp->sclb_ptr->resume_control    = 0;
+        tp->sclb_ptr->valid_command     = SCLB_VALID | SCLB_CMD_REMOVE;
+
+        smctr_set_ctrl_attention(dev);
+
+        return (0);
+}
+
+static int smctr_issue_resume_acb_cmd(struct net_device *dev)
+{
+        struct net_local *tp = netdev_priv(dev);
+        int err;
+
+        if((err = smctr_wait_while_cbusy(dev)))
+                return (err);
+
+        tp->sclb_ptr->resume_control = SCLB_RC_ACB;
+        tp->sclb_ptr->valid_command  = SCLB_VALID | SCLB_RESUME_CONTROL_VALID;
+
+        tp->acb_pending = 1;
+
+        smctr_set_ctrl_attention(dev);
+
+        return (0);
+}
+
+static int smctr_issue_resume_rx_bdb_cmd(struct net_device *dev, __u16 queue)
+{
+        struct net_local *tp = netdev_priv(dev);
+        int err;
+
+        if((err = smctr_wait_while_cbusy(dev)))
+                return (err);
+
+        if(queue == MAC_QUEUE)
+                tp->sclb_ptr->resume_control = SCLB_RC_RX_MAC_BDB;
+        else
+                tp->sclb_ptr->resume_control = SCLB_RC_RX_NON_MAC_BDB;
+
+        tp->sclb_ptr->valid_command = SCLB_VALID | SCLB_RESUME_CONTROL_VALID;
+
+        smctr_set_ctrl_attention(dev);
+
+        return (0);
+}
+
+static int smctr_issue_resume_rx_fcb_cmd(struct net_device *dev, __u16 queue)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        if(smctr_debug > 10)
+                printk(KERN_DEBUG "%s: smctr_issue_resume_rx_fcb_cmd\n", dev->name);
+
+        if(smctr_wait_while_cbusy(dev))
+                return (-1);
+
+        if(queue == MAC_QUEUE)
+                tp->sclb_ptr->resume_control = SCLB_RC_RX_MAC_FCB;
+        else
+                tp->sclb_ptr->resume_control = SCLB_RC_RX_NON_MAC_FCB;
+
+        tp->sclb_ptr->valid_command = SCLB_VALID | SCLB_RESUME_CONTROL_VALID;
+
+        smctr_set_ctrl_attention(dev);
+
+        return (0);
+}
+
+static int smctr_issue_resume_tx_fcb_cmd(struct net_device *dev, __u16 queue)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        if(smctr_debug > 10)
+                printk(KERN_DEBUG "%s: smctr_issue_resume_tx_fcb_cmd\n", dev->name);
+
+        if(smctr_wait_while_cbusy(dev))
+                return (-1);
+
+        tp->sclb_ptr->resume_control = (SCLB_RC_TFCB0 << queue);
+        tp->sclb_ptr->valid_command = SCLB_RESUME_CONTROL_VALID | SCLB_VALID;
+
+        smctr_set_ctrl_attention(dev);
+
+        return (0);
+}
+
+static int smctr_issue_test_internal_rom_cmd(struct net_device *dev)
+{
+        int err;
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_MCT_TEST,
+                TRC_INTERNAL_ROM_TEST);
+
+        return (err);
+}
+
+static int smctr_issue_test_hic_cmd(struct net_device *dev)
+{
+        int err;
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_HIC_TEST,
+                TRC_HOST_INTERFACE_REG_TEST);
+
+        return (err);
+}
+
+static int smctr_issue_test_mac_reg_cmd(struct net_device *dev)
+{
+        int err;
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_MCT_TEST,
+                TRC_MAC_REGISTERS_TEST);
+
+        return (err);
+}
+
+static int smctr_issue_trc_loopback_cmd(struct net_device *dev)
+{
+        int err;
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_MCT_TEST,
+                TRC_INTERNAL_LOOPBACK);
+
+        return (err);
+}
+
+static int smctr_issue_tri_loopback_cmd(struct net_device *dev)
+{
+        int err;
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_MCT_TEST,
+                TRC_TRI_LOOPBACK);
+
+        return (err);
+}
+
+static int smctr_issue_write_byte_cmd(struct net_device *dev,
+        short aword_cnt, void *byte)
+{
+	struct net_local *tp = netdev_priv(dev);
+        unsigned int iword, ibyte;
+	int err;
+
+        if((err = smctr_wait_while_cbusy(dev)))
+                return (err);
+
+        if((err = smctr_wait_cmd(dev)))
+                return (err);
+
+        for(iword = 0, ibyte = 0; iword < (unsigned int)(aword_cnt & 0xff);
+        	iword++, ibyte += 2)
+        {
+                tp->misc_command_data[iword] = (*((__u8 *)byte + ibyte) << 8)
+			| (*((__u8 *)byte + ibyte + 1));
+        }
+
+        return (smctr_setup_single_cmd_w_data(dev, ACB_CMD_MCT_WRITE_VALUE, 
+		aword_cnt));
+}
+
+static int smctr_issue_write_word_cmd(struct net_device *dev,
+        short aword_cnt, void *word)
+{
+        struct net_local *tp = netdev_priv(dev);
+        unsigned int i, err;
+
+        if((err = smctr_wait_while_cbusy(dev)))
+                return (err);
+
+        if((err = smctr_wait_cmd(dev)))
+                return (err);
+
+        for(i = 0; i < (unsigned int)(aword_cnt & 0xff); i++)
+                tp->misc_command_data[i] = *((__u16 *)word + i);
+
+        err = smctr_setup_single_cmd_w_data(dev, ACB_CMD_MCT_WRITE_VALUE,
+                aword_cnt);
+
+        return (err);
+}
+
+static int smctr_join_complete_state(struct net_device *dev)
+{
+        int err;
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_CHANGE_JOIN_STATE,
+                JS_JOIN_COMPLETE_STATE);
+
+        return (err);
+}
+
+static int smctr_link_tx_fcbs_to_bdbs(struct net_device *dev)
+{
+        struct net_local *tp = netdev_priv(dev);
+        unsigned int i, j;
+        FCBlock *fcb;
+        BDBlock *bdb;
+
+        for(i = 0; i < NUM_TX_QS_USED; i++)
+        {
+                fcb = tp->tx_fcb_head[i];
+                bdb = tp->tx_bdb_head[i];
+
+                for(j = 0; j < tp->num_tx_fcbs[i]; j++)
+                {
+                        fcb->bdb_ptr            = bdb;
+                        fcb->trc_bdb_ptr        = TRC_POINTER(bdb);
+                        fcb = (FCBlock *)((char *)fcb + sizeof(FCBlock));
+                        bdb = (BDBlock *)((char *)bdb + sizeof(BDBlock));
+                }
+        }
+
+        return (0);
+}
+
+static int smctr_load_firmware(struct net_device *dev)
+{
+        struct net_local *tp = netdev_priv(dev);
+	const struct firmware *fw;
+        __u16 i, checksum = 0;
+        int err = 0;
+
+        if(smctr_debug > 10)
+                printk(KERN_DEBUG "%s: smctr_load_firmware\n", dev->name);
+
+	if (request_firmware(&fw, "tr_smctr.bin", &dev->dev)) {
+		printk(KERN_ERR "%s: firmware not found\n", dev->name);
+		return (UCODE_NOT_PRESENT);
+	}
+
+        tp->num_of_tx_buffs     = 4;
+        tp->mode_bits          |= UMAC;
+        tp->receive_mask        = 0;
+        tp->max_packet_size     = 4177;
+
+        /* Can only upload the firmware once per adapter reset. */
+        if (tp->microcode_version != 0) {
+		err = (UCODE_PRESENT);
+		goto out;
+	}
+
+        /* Verify the firmware exists and is there in the right amount. */
+        if (!fw->data
+                || (*(fw->data + UCODE_VERSION_OFFSET) < UCODE_VERSION))
+        {
+                err = (UCODE_NOT_PRESENT);
+		goto out;
+        }
+
+        /* UCODE_SIZE is not included in Checksum. */
+        for(i = 0; i < *((__u16 *)(fw->data + UCODE_SIZE_OFFSET)); i += 2)
+                checksum += *((__u16 *)(fw->data + 2 + i));
+        if (checksum) {
+		err = (UCODE_NOT_PRESENT);
+		goto out;
+	}
+
+        /* At this point we have a valid firmware image, lets kick it on up. */
+        smctr_enable_adapter_ram(dev);
+        smctr_enable_16bit(dev);
+        smctr_set_page(dev, (__u8 *)tp->ram_access);
+
+        if((smctr_checksum_firmware(dev))
+                || (*(fw->data + UCODE_VERSION_OFFSET)
+                > tp->microcode_version))
+        {
+                smctr_enable_adapter_ctrl_store(dev);
+
+                /* Zero out ram space for firmware. */
+                for(i = 0; i < CS_RAM_SIZE; i += 2)
+                        *((__u16 *)(tp->ram_access + i)) = 0;
+
+                smctr_decode_firmware(dev, fw);
+
+                tp->microcode_version = *(fw->data + UCODE_VERSION_OFFSET);                *((__u16 *)(tp->ram_access + CS_RAM_VERSION_OFFSET))
+                        = (tp->microcode_version << 8);
+                *((__u16 *)(tp->ram_access + CS_RAM_CHECKSUM_OFFSET))
+                        = ~(tp->microcode_version << 8) + 1;
+
+                smctr_disable_adapter_ctrl_store(dev);
+
+                if(smctr_checksum_firmware(dev))
+                        err = HARDWARE_FAILED;
+        }
+        else
+                err = UCODE_PRESENT;
+
+        smctr_disable_16bit(dev);
+ out:
+	release_firmware(fw);
+        return (err);
+}
+
+static int smctr_load_node_addr(struct net_device *dev)
+{
+        int ioaddr = dev->base_addr;
+        unsigned int i;
+        __u8 r;
+
+        for(i = 0; i < 6; i++)
+        {
+                r = inb(ioaddr + LAR0 + i);
+                dev->dev_addr[i] = (char)r;
+        }
+        dev->addr_len = 6;
+
+        return (0);
+}
+
+/* Lobe Media Test.
+ * During the transmission of the initial 1500 lobe media MAC frames,
+ * the phase lock loop in the 805 chip may lock, and then un-lock, causing
+ * the 825 to go into a PURGE state. When performing a PURGE, the MCT
+ * microcode will not transmit any frames given to it by the host, and
+ * will consequently cause a timeout.
+ *
+ * NOTE 1: If the monitor_state is MS_BEACON_TEST_STATE, all transmit
+ * queues other than the one used for the lobe_media_test should be
+ * disabled.!?
+ *
+ * NOTE 2: If the monitor_state is MS_BEACON_TEST_STATE and the receive_mask
+ * has any multi-cast or promiscous bits set, the receive_mask needs to
+ * be changed to clear the multi-cast or promiscous mode bits, the lobe_test
+ * run, and then the receive mask set back to its original value if the test
+ * is successful.
+ */
+static int smctr_lobe_media_test(struct net_device *dev)
+{
+        struct net_local *tp = netdev_priv(dev);
+        unsigned int i, perror = 0;
+        unsigned short saved_rcv_mask;
+
+        if(smctr_debug > 10)
+                printk(KERN_DEBUG "%s: smctr_lobe_media_test\n", dev->name);
+
+        /* Clear receive mask for lobe test. */
+        saved_rcv_mask          = tp->receive_mask;
+        tp->receive_mask        = 0;
+
+        smctr_chg_rx_mask(dev);
+
+        /* Setup the lobe media test. */
+        smctr_lobe_media_test_cmd(dev);
+        if(smctr_wait_cmd(dev))
+        {
+                smctr_reset_adapter(dev);
+                tp->status = CLOSED;
+                return (LOBE_MEDIA_TEST_FAILED);
+        }
+
+        /* Tx lobe media test frames. */
+        for(i = 0; i < 1500; ++i)
+        {
+                if(smctr_send_lobe_media_test(dev))
+                {
+                        if(perror)
+                        {
+                                smctr_reset_adapter(dev);
+                                tp->state = CLOSED;
+                                return (LOBE_MEDIA_TEST_FAILED);
+                        }
+                        else
+                        {
+                                perror = 1;
+                                if(smctr_lobe_media_test_cmd(dev))
+                                {
+                                        smctr_reset_adapter(dev);
+                                        tp->state = CLOSED;
+                                        return (LOBE_MEDIA_TEST_FAILED);
+                                }
+                        }
+                }
+        }
+
+        if(smctr_send_dat(dev))
+        {
+                if(smctr_send_dat(dev))
+                {
+                        smctr_reset_adapter(dev);
+                        tp->state = CLOSED;
+                        return (LOBE_MEDIA_TEST_FAILED);
+                }
+        }
+
+        /* Check if any frames received during test. */
+        if((tp->rx_fcb_curr[MAC_QUEUE]->frame_status)
+                || (tp->rx_fcb_curr[NON_MAC_QUEUE]->frame_status))
+        {
+                smctr_reset_adapter(dev);
+                tp->state = CLOSED;
+                return (LOBE_MEDIA_TEST_FAILED);
+        }
+
+        /* Set receive mask to "Promisc" mode. */
+        tp->receive_mask = saved_rcv_mask;
+
+        smctr_chg_rx_mask(dev);
+
+        return (0);
+}
+
+static int smctr_lobe_media_test_cmd(struct net_device *dev)
+{
+        struct net_local *tp = netdev_priv(dev);
+        int err;
+
+        if(smctr_debug > 10)
+                printk(KERN_DEBUG "%s: smctr_lobe_media_test_cmd\n", dev->name);
+
+        /* Change to lobe media test state. */
+        if(tp->monitor_state != MS_BEACON_TEST_STATE)
+        {
+                smctr_lobe_media_test_state(dev);
+                if(smctr_wait_cmd(dev))
+                {
+                        printk(KERN_ERR "Lobe Failed test state\n");
+                        return (LOBE_MEDIA_TEST_FAILED);
+                }
+        }
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_MCT_TEST,
+                TRC_LOBE_MEDIA_TEST);
+
+        return (err);
+}
+
+static int smctr_lobe_media_test_state(struct net_device *dev)
+{
+        int err;
+
+        err = smctr_setup_single_cmd(dev, ACB_CMD_CHANGE_JOIN_STATE,
+                JS_LOBE_TEST_STATE);
+
+        return (err);
+}
+
+static int smctr_make_8025_hdr(struct net_device *dev,
+        MAC_HEADER *rmf, MAC_HEADER *tmf, __u16 ac_fc)
+{
+        tmf->ac = MSB(ac_fc);                 /* msb is access control */
+        tmf->fc = LSB(ac_fc);                 /* lsb is frame control */
+
+        tmf->sa[0] = dev->dev_addr[0];
+        tmf->sa[1] = dev->dev_addr[1];
+        tmf->sa[2] = dev->dev_addr[2];
+        tmf->sa[3] = dev->dev_addr[3];
+        tmf->sa[4] = dev->dev_addr[4];
+        tmf->sa[5] = dev->dev_addr[5];
+
+        switch(tmf->vc)
+        {
+		/* Send RQ_INIT to RPS */
+                case RQ_INIT:
+                        tmf->da[0] = 0xc0;
+                        tmf->da[1] = 0x00;
+                        tmf->da[2] = 0x00;
+                        tmf->da[3] = 0x00;
+                        tmf->da[4] = 0x00;
+                        tmf->da[5] = 0x02;
+                        break;
+
+		/* Send RPT_TX_FORWARD to CRS */
+                case RPT_TX_FORWARD:
+                        tmf->da[0] = 0xc0;
+                        tmf->da[1] = 0x00;
+                        tmf->da[2] = 0x00;
+                        tmf->da[3] = 0x00;
+                        tmf->da[4] = 0x00;
+                        tmf->da[5] = 0x10;
+                        break;
+
+		/* Everything else goes to sender */
+                default:
+                        tmf->da[0] = rmf->sa[0];
+                        tmf->da[1] = rmf->sa[1];
+                        tmf->da[2] = rmf->sa[2];
+                        tmf->da[3] = rmf->sa[3];
+                        tmf->da[4] = rmf->sa[4];
+                        tmf->da[5] = rmf->sa[5];
+                        break;
+        }
+
+        return (0);
+}
+
+static int smctr_make_access_pri(struct net_device *dev, MAC_SUB_VECTOR *tsv)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        tsv->svi = AUTHORIZED_ACCESS_PRIORITY;
+        tsv->svl = S_AUTHORIZED_ACCESS_PRIORITY;
+
+        tsv->svv[0] = MSB(tp->authorized_access_priority);
+        tsv->svv[1] = LSB(tp->authorized_access_priority);
+
+	return (0);
+}
+
+static int smctr_make_addr_mod(struct net_device *dev, MAC_SUB_VECTOR *tsv)
+{
+        tsv->svi = ADDRESS_MODIFER;
+        tsv->svl = S_ADDRESS_MODIFER;
+
+        tsv->svv[0] = 0;
+        tsv->svv[1] = 0;
+
+        return (0);
+}
+
+static int smctr_make_auth_funct_class(struct net_device *dev,
+        MAC_SUB_VECTOR *tsv)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        tsv->svi = AUTHORIZED_FUNCTION_CLASS;
+        tsv->svl = S_AUTHORIZED_FUNCTION_CLASS;
+
+        tsv->svv[0] = MSB(tp->authorized_function_classes);
+        tsv->svv[1] = LSB(tp->authorized_function_classes);
+
+        return (0);
+}
+
+static int smctr_make_corr(struct net_device *dev,
+        MAC_SUB_VECTOR *tsv, __u16 correlator)
+{
+        tsv->svi = CORRELATOR;
+        tsv->svl = S_CORRELATOR;
+
+        tsv->svv[0] = MSB(correlator);
+        tsv->svv[1] = LSB(correlator);
+
+        return (0);
+}
+
+static int smctr_make_funct_addr(struct net_device *dev, MAC_SUB_VECTOR *tsv)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        smctr_get_functional_address(dev);
+
+        tsv->svi = FUNCTIONAL_ADDRESS;
+        tsv->svl = S_FUNCTIONAL_ADDRESS;
+
+        tsv->svv[0] = MSB(tp->misc_command_data[0]);
+        tsv->svv[1] = LSB(tp->misc_command_data[0]);
+
+        tsv->svv[2] = MSB(tp->misc_command_data[1]);
+        tsv->svv[3] = LSB(tp->misc_command_data[1]);
+
+        return (0);
+}
+
+static int smctr_make_group_addr(struct net_device *dev, MAC_SUB_VECTOR *tsv)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        smctr_get_group_address(dev);
+
+        tsv->svi = GROUP_ADDRESS;
+        tsv->svl = S_GROUP_ADDRESS;
+
+        tsv->svv[0] = MSB(tp->misc_command_data[0]);
+        tsv->svv[1] = LSB(tp->misc_command_data[0]);
+
+        tsv->svv[2] = MSB(tp->misc_command_data[1]);
+        tsv->svv[3] = LSB(tp->misc_command_data[1]);
+
+        /* Set Group Address Sub-vector to all zeros if only the
+         * Group Address/Functional Address Indicator is set.
+         */
+        if(tsv->svv[0] == 0x80 && tsv->svv[1] == 0x00
+        	&& tsv->svv[2] == 0x00 && tsv->svv[3] == 0x00)
+                tsv->svv[0] = 0x00;
+
+        return (0);
+}
+
+static int smctr_make_phy_drop_num(struct net_device *dev,
+        MAC_SUB_VECTOR *tsv)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        smctr_get_physical_drop_number(dev);
+
+        tsv->svi = PHYSICAL_DROP;
+        tsv->svl = S_PHYSICAL_DROP;
+
+        tsv->svv[0] = MSB(tp->misc_command_data[0]);
+        tsv->svv[1] = LSB(tp->misc_command_data[0]);
+
+        tsv->svv[2] = MSB(tp->misc_command_data[1]);
+        tsv->svv[3] = LSB(tp->misc_command_data[1]);
+
+        return (0);
+}
+
+static int smctr_make_product_id(struct net_device *dev, MAC_SUB_VECTOR *tsv)
+{
+        int i;
+
+        tsv->svi = PRODUCT_INSTANCE_ID;
+        tsv->svl = S_PRODUCT_INSTANCE_ID;
+
+        for(i = 0; i < 18; i++)
+                tsv->svv[i] = 0xF0;
+
+        return (0);
+}
+
+static int smctr_make_station_id(struct net_device *dev, MAC_SUB_VECTOR *tsv)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        smctr_get_station_id(dev);
+
+        tsv->svi = STATION_IDENTIFER;
+        tsv->svl = S_STATION_IDENTIFER;
+
+        tsv->svv[0] = MSB(tp->misc_command_data[0]);
+        tsv->svv[1] = LSB(tp->misc_command_data[0]);
+
+        tsv->svv[2] = MSB(tp->misc_command_data[1]);
+        tsv->svv[3] = LSB(tp->misc_command_data[1]);
+
+        tsv->svv[4] = MSB(tp->misc_command_data[2]);
+        tsv->svv[5] = LSB(tp->misc_command_data[2]);
+
+        return (0);
+}
+
+static int smctr_make_ring_station_status(struct net_device *dev,
+        MAC_SUB_VECTOR * tsv)
+{
+        tsv->svi = RING_STATION_STATUS;
+        tsv->svl = S_RING_STATION_STATUS;
+
+        tsv->svv[0] = 0;
+        tsv->svv[1] = 0;
+        tsv->svv[2] = 0;
+        tsv->svv[3] = 0;
+        tsv->svv[4] = 0;
+        tsv->svv[5] = 0;
+
+        return (0);
+}
+
+static int smctr_make_ring_station_version(struct net_device *dev,
+        MAC_SUB_VECTOR *tsv)
+{
+        struct net_local *tp = netdev_priv(dev);
+
+        tsv->svi = RING_STATION_VERSION_NUMBER;
+        tsv->svl = S_RING_STATION_VERSION_NUMBER;
+
+        tsv->svv[0] = 0xe2;            /* EBCDIC - S */
+        tsv->svv[1] = 0xd4;            /* EBCDIC - M */
+        tsv->svv[2] = 0xc3;            /* EBCDIC - C */
+        tsv->svv[3] = 0x40;            /* EBCDIC -   */
+        tsv->svv[4] = 0xe5;            /* EBCDIC - V */
+        tsv->svv[5] = 0xF0 + (tp->microcode_version >> 4);
+        tsv->svv[6] = 0xF0 + (tp->microcode_version & 0x0f);
+        tsv->svv[7] = 0x40;            /* EBCDIC -   */
+        tsv->svv[8] = 0xe7;            /* EBCDIC - X */
+
+        if(tp->extra_info & CHIP_REV_MASK)
+                tsv->svv[9] = 0xc5;    /* EBCDIC - E */
+        else
+                tsv->svv[9] = 0xc4;    /* EBCDIC - D */
+
+        return (0);
+}
+
+static int smctr_make_tx_status_code(struct net_device *dev,
+        MAC_SUB_VECTOR *tsv, __u16 tx_fstatus)
+{
+        tsv->svi = TRANSMIT_STAT

@@ -1,0 +1,153 @@
+l		= MUXSEL(2, 3, 1, 1),
+		.gpiomux 	= { 1, 0, 0, 0 },
+		.pll            = PLL_28,
+		.tuner_type	= TUNER_PHILIPS_PAL,
+		.tuner_addr	= ADDR_UNSET,
+	},
+
+	/* ---- card 0x20 ---------------------------------- */
+	[BTTV_BOARD_INTEL_C_S_PCI] = {
+		.name		= "Intel Create and Share PCI/ Smart Video Recorder III",
+		.video_inputs	= 4,
+		/* .audio_inputs= 0, */
+		.svhs		= 2,
+		.gpiomask	= 0,
+		.muxsel		= MUXSEL(2, 3, 1, 1),
+		.gpiomux 	= { 0 },
+		.needs_tvaudio	= 0,
+		.tuner_type	= TUNER_ABSENT,
+		.tuner_addr	= ADDR_UNSET,
+	},
+	[BTTV_BOARD_TERRATVALUE] = {
+		.name           = "Terratec TerraTValue Version Bt878",
+		.video_inputs	= 3,
+		/* .audio_inputs= 1, */
+		.svhs		= 2,
+		.gpiomask	= 0xffff00,
+		.muxsel		= MUXSEL(2, 3, 1, 1),
+		.gpiomux 	= { 0x500, 0, 0x300, 0x900 },
+		.gpiomute 	= 0x900,
+		.needs_tvaudio	= 1,
+		.pll		= PLL_28,
+		.tuner_type	= TUNER_PHILIPS_PAL,
+		.tuner_addr	= ADDR_UNSET,
+	},
+	[BTTV_BOARD_WINFAST2000] = {
+		.name		= "Leadtek WinFast 2000/ WinFast 2000 XP",
+		.video_inputs	= 4,
+		/* .audio_inputs= 1, */
+		.svhs		= 2,
+		/* TV, CVid, SVid, CVid over SVid connector */
+		.muxsel		= MUXSEL(2, 3, 1, 1, 0),
+		/* Alexander Varakin <avarakin@hotmail.com> [stereo version] */
+		.gpiomask	= 0xb33000,
+		.gpiomux 	= { 0x122000,0x1000,0x0000,0x620000 },
+		.gpiomute 	= 0x800000,
+		/* Audio Routing for "WinFast 2000 XP" (no tv stereo !)
+			gpio23 -- hef4052:nEnable (0x800000)
+			gpio12 -- hef4052:A1
+			gpio13 -- hef4052:A0
+		0x0000: external audio
+		0x1000: FM
+		0x2000: TV
+		0x3000: n.c.
+		Note: There exists another variant "Winfast 2000" with tv stereo !?
+		Note: eeprom only contains FF and pci subsystem id 107d:6606
+		*/
+		.needs_tvaudio	= 0,
+		.pll		= PLL_28,
+		.has_radio	= 1,
+		.tuner_type	= TUNER_PHILIPS_PAL, /* default for now, gpio reads BFFF06 for Pal bg+dk */
+		.tuner_addr	= ADDR_UNSET,
+		.audio_mode_gpio= winfast2000_audio,
+		.has_remote     = 1,
+	},
+	[BTTV_BOARD_CHRONOS_VS2] = {
+		.name		= "Lifeview FlyVideo 98 LR50 / Chronos Video Shuttle II",
+		.video_inputs	= 4,
+		/* .audio_inputs= 3, */
+		.svhs		= 2,
+		.gpiomask	= 0x1800,
+		.muxsel		= MUXSEL(2, 3, 1, 1),
+		.gpiomux 	= { 0, 0x800, 0x1000, 0x1000 },
+		.gpiomute 	= 0x1800,
+		.pll		= PLL_28,
+		.tuner_type	= UNSET,
+		.tuner_addr	= ADDR_UNSET,
+	},
+
+	/* ---- card 0x24 ---------------------------------- */
+	[BTTV_BOARD_TYPHOON_TVIEW] = {
+		.name		= "Lifeview FlyVideo 98FM LR50 / Typhoon TView TV/FM Tuner",
+		.video_inputs	= 4,
+		/* .audio_inputs= 3, */
+		.svhs		= 2,
+		.gpiomask	= 0x1800,
+		.muxsel		= MUXSEL(2, 3, 1, 1),
+		.gpiomux 	= { 0, 0x800, 0x1000, 0x1000 },
+		.gpiomute 	= 0x1800,
+		.pll		= PLL_28,
+		.tuner_type	= UNSET,
+		.tuner_addr	= ADDR_UNSET,
+		.has_radio	= 1,
+	},
+	[BTTV_BOARD_PXELVWPLTVPRO] = {
+		.name		= "Prolink PixelView PlayTV pro",
+		.video_inputs	= 3,
+		/* .audio_inputs= 1, */
+		.svhs		= 2,
+		.gpiomask	= 0xff,
+		.muxsel		= MUXSEL(2, 3, 1, 1),
+		.gpiomux 	= { 0x21, 0x20, 0x24, 0x2c },
+		.gpiomute 	= 0x29,
+		.no_msp34xx	= 1,
+		.pll		= PLL_28,
+		.tuner_type	= UNSET,
+		.tuner_addr	= ADDR_UNSET,
+	},
+	[BTTV_BOARD_MAGICTVIEW063] = {
+		.name		= "Askey CPH06X TView99",
+		.video_inputs	= 4,
+		/* .audio_inputs= 1, */
+		.svhs		= 2,
+		.gpiomask	= 0x551e00,
+		.muxsel		= MUXSEL(2, 3, 1, 0),
+		.gpiomux 	= { 0x551400, 0x551200, 0, 0 },
+		.gpiomute 	= 0x551c00,
+		.needs_tvaudio	= 1,
+		.pll		= PLL_28,
+		.tuner_type	= TUNER_PHILIPS_PAL_I,
+		.tuner_addr	= ADDR_UNSET,
+		.has_remote     = 1,
+	},
+	[BTTV_BOARD_PINNACLE] = {
+		.name		= "Pinnacle PCTV Studio/Rave",
+		.video_inputs	= 3,
+		/* .audio_inputs= 1, */
+		.svhs		= 2,
+		.gpiomask	= 0x03000F,
+		.muxsel		= MUXSEL(2, 3, 1, 1),
+		.gpiomux 	= { 2, 0xd0001, 0, 0 },
+		.gpiomute 	= 1,
+		.needs_tvaudio	= 0,
+		.pll		= PLL_28,
+		.tuner_type	= UNSET,
+		.tuner_addr	= ADDR_UNSET,
+	},
+
+	/* ---- card 0x28 ---------------------------------- */
+	[BTTV_BOARD_STB2] = {
+		.name		= "STB TV PCI FM, Gateway P/N 6000704 (bt878), 3Dfx VoodooTV 100",
+		.video_inputs	= 3,
+		/* .audio_inputs= 1, */
+		.svhs		= 2,
+		.gpiomask	= 7,
+		.muxsel		= MUXSEL(2, 3, 1, 1),
+		.gpiomux 	= { 4, 0, 2, 3 },
+		.gpiomute 	= 1,
+		.no_msp34xx	= 1,
+		.needs_tvaudio	= 1,
+		.tuner_type     = TUNER_PHILIPS_NTSC,
+		.tuner_addr	= ADDR_UNSET,
+		.pll            = PLL_28,
+		

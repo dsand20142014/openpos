@@ -1,0 +1,21 @@
+
+	if (expectRsp) {
+		icmd->un.elsreq64.bdl.bdeSize = (2 * sizeof(struct ulp_bde64));
+		icmd->ulpCommand = CMD_ELS_REQUEST64_CR;
+		icmd->ulpTimeout = phba->fc_ratov * 2;
+	} else {
+		icmd->un.elsreq64.bdl.bdeSize = sizeof(struct ulp_bde64);
+		icmd->ulpCommand = CMD_XMIT_ELS_RSP64_CX;
+	}
+	icmd->ulpBdeCount = 1;
+	icmd->ulpLe = 1;
+	icmd->ulpClass = CLASS3;
+
+	if (phba->sli3_options & LPFC_SLI3_NPIV_ENABLED) {
+		icmd->un.elsreq64.myID = vport->fc_myDID;
+
+		/* For ELS_REQUEST64_CR, use the VPI by default */
+		icmd->ulpContext = vport->vpi + phba->vpi_base;
+		icmd->ulpCt_h = 0;
+		/* The CT field must be 0=INVALID_RPI for the ECHO cmd */
+		if (elscmd == ELS_C

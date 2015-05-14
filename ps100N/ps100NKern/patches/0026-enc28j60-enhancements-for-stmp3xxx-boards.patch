@@ -1,0 +1,261 @@
+ = icd;
+
+ebusy:
+	return ret;
+}
+
+/* Called with .video_lock held */
+static void pxa_camera_remove_device(struct soc_camera_device *icd)
+{
+	struct soc_camera_host *ici = to_soc_camera_host(icd->dev.parent);
+	struct pxa_camera_dev *pcdev = ici->priv;
+
+	BUG_ON(icd != pcdev->icd);
+
+	dev_info(&icd->dev, "PXA Camera driver detached from camera %d\n",
+		 icd->devnum);
+
+	/* disable capture, disable interrupts */
+	__raw_writel(0x3ff, pcdev->base + CICR0);
+
+	/* Stop DMA engine */
+	DCSR(pcdev->dma_chans[0]) = 0;
+	DCSR(pcdev->dma_chans[1]) = 0;
+	DCSR(pcdev->dma_chans[2]) = 0;
+
+	icd->ops->release(icd);
+
+	pxa_camera_deactivate(pcdev);
+
+	pcdev->icd = NULL;
+}
+
+static int test_platform_param(struct pxa_camera_dev *pcdev,
+			       unsigned char buswidth, unsigned long *flags)
+{
+	/*
+	 * Platform specified synchronization and pixel clock polarities are
+	 * only a recommendation and are only used during probing. The PXA270
+	 * quick capture interface supports both.
+	 */
+	*flags = (pcdev->platform_flags & PXA_CAMERA_MASTER ?
+		  SOCAM_MASTER : SOCAM_SLAVE) |
+		SOCAM_HSYNC_ACTIVE_HIGH |
+		SOCAM_HSYNC_ACTIVE_LOW |
+		SOCAM_VSYNC_ACTIVE_HIGH |
+		SOCAM_VSYNC_ACTIVE_LOW |
+		SOCAM_DATA_ACTIVE_HIGH |
+		SOCAM_PCLK_SAMPLE_RISING |
+		SOCAM_PCLK_SAMPLE_FALLING;
+
+	/* If requested data width is supported by the platform, use it */
+	switch (buswidth) {
+	case 10:
+		if (!(pcdev->platform_flags & PXA_CAMERA_DATAWIDTH_10))
+			return -EINVAL;
+		*flags |= SOCAM_DATAWIDTH_10;
+		break;
+	case 9:
+		if (!(pcdev->platform_flags & PXA_CAMERA_DATAWIDTH_9))
+			return -EINVAL;
+		*flags |= SOCAM_DATAWIDTH_9;
+		break;
+	case 8:
+		if (!(pcdev->platform_flags & PXA_CAMERA_DATAWIDTH_8))
+			return -EINVAL;
+		*flags |= SOCAM_DATAWIDTH_8;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int pxa_camera_set_bus_param(struct soc_camera_device *icd, __u32 pixfmt)
+{
+	struct soc_camera_host *ici = to_soc_camera_host(icd->dev.parent);
+	struct pxa_camera_dev *pcdev = ici->priv;
+	unsigned long dw, bpp, bus_flags, camera_flags, common_flags;
+	u32 cicr0, cicr1, cicr2, cicr3, cicr4 = 0;
+	int ret = test_platform_param(pcdev, icd->buswidth, &bus_flags);
+
+	if (ret < 0)
+		return ret;
+
+	camera_flags = icd->ops->query_bus_param(icd);
+
+	common_flags = soc_camera_bus_param_compatible(camera_flags, bus_flags);
+	if (!common_flags)
+		return -EINVAL;
+
+	pcdev->channels = 1;
+
+	/* Make choises, based on platform preferences */
+	if ((common_flags & SOCAM_HSYNC_ACTIVE_HIGH) &&
+	    (common_flags & SOCAM_HSYNC_ACTIVE_LOW)) {
+		if (pcdev->platform_flags & PXA_CAMERA_HSP)
+			common_flags &= ~SOCAM_HSYNC_ACTIVE_HIGH;
+		else
+			common_flags &= ~SOCAM_HSYNC_ACTIVE_LOW;
+	}
+
+	if ((common_flags & SOCAM_VSYNC_ACTIVE_HIGH) &&
+	    (common_flags & SOCAM_VSYNC_ACTIVE_LOW)) {
+		if (pcdev->platform_flags & PXA_CAMERA_VSP)
+			common_flags &= ~SOCAM_VSYNC_ACTIVE_HIGH;
+		else
+			common_flags &= ~SOCAM_VSYNC_ACTIVE_LOW;
+	}
+
+	if ((common_flags & SOCAM_PCLK_SAMPLE_RISING) &&
+	    (common_flags & SOCAM_PCLK_SAMPLE_FALLING)) {
+		if (pcdev->platform_flags & PXA_CAMERA_PCP)
+			common_flags &= ~SOCAM_PCLK_SAMPLE_RISING;
+		else
+			common_flags &= ~SOCAM_PCLK_SAMPLE_FALLING;
+	}
+
+	ret = icd->ops->set_bus_param(icd, common_flags);
+	if (ret < 0)
+		return ret;
+
+	/* Datawidth is now guaranteed to be equal to one of the three values.
+	 * We fix bit-per-pixel equal to data-width... */
+	switch (common_flags & SOCAM_DATAWIDTH_MASK) {
+	case SOCAM_DATAWIDTH_10:
+		dw = 4;
+		bpp = 0x40;
+		break;
+	case SOCAM_DATAWIDTH_9:
+		dw = 3;
+		bpp = 0x20;
+		break;
+	default:
+		/* Actually it can only be 8 now,
+		 * default is just to silence compiler warnings */
+	case SOCAM_DATAWIDTH_8:
+		dw = 2;
+		bpp = 0;
+	}
+
+	if (pcdev->platform_flags & PXA_CAMERA_PCLK_EN)
+		cicr4 |= CICR4_PCLK_EN;
+	if (pcdev->platform_flags & PXA_CAMERA_MCLK_EN)
+		cicr4 |= CICR4_MCLK_EN;
+	if (common_flags & SOCAM_PCLK_SAMPLE_FALLING)
+		cicr4 |= CICR4_PCP;
+	if (common_flags & SOCAM_HSYNC_ACTIVE_LOW)
+		cicr4 |= CICR4_HSP;
+	if (common_flags & SOCAM_VSYNC_ACTIVE_LOW)
+		cicr4 |= CICR4_VSP;
+
+	cicr0 = __raw_readl(pcdev->base + CICR0);
+	if (cicr0 & CICR0_ENB)
+		__raw_writel(cicr0 & ~CICR0_ENB, pcdev->base + CICR0);
+
+	cicr1 = CICR1_PPL_VAL(icd->width - 1) | bpp | dw;
+
+	switch (pixfmt) {
+	case V4L2_PIX_FMT_YUV422P:
+		pcdev->channels = 3;
+		cicr1 |= CICR1_YCBCR_F;
+		/*
+		 * Normally, pxa bus wants as input UYVY format. We allow all
+		 * reorderings of the YUV422 format, as no processing is done,
+		 * and the YUV stream is just passed through without any
+		 * transformation. Note that UYVY is the only format that
+		 * should be used if pxa framebuffer Overlay2 is used.
+		 */
+	case V4L2_PIX_FMT_UYVY:
+	case V4L2_PIX_FMT_VYUY:
+	case V4L2_PIX_FMT_YUYV:
+	case V4L2_PIX_FMT_YVYU:
+		cicr1 |= CICR1_COLOR_SP_VAL(2);
+		break;
+	case V4L2_PIX_FMT_RGB555:
+		cicr1 |= CICR1_RGB_BPP_VAL(1) | CICR1_RGBT_CONV_VAL(2) |
+			CICR1_TBIT | CICR1_COLOR_SP_VAL(1);
+		break;
+	case V4L2_PIX_FMT_RGB565:
+		cicr1 |= CICR1_COLOR_SP_VAL(1) | CICR1_RGB_BPP_VAL(2);
+		break;
+	}
+
+	cicr2 = 0;
+	cicr3 = CICR3_LPF_VAL(icd->height - 1) |
+		CICR3_BFW_VAL(min((unsigned short)255, icd->y_skip_top));
+	cicr4 |= pcdev->mclk_divisor;
+
+	__raw_writel(cicr1, pcdev->base + CICR1);
+	__raw_writel(cicr2, pcdev->base + CICR2);
+	__raw_writel(cicr3, pcdev->base + CICR3);
+	__raw_writel(cicr4, pcdev->base + CICR4);
+
+	/* CIF interrupts are not used, only DMA */
+	cicr0 = (cicr0 & CICR0_ENB) | (pcdev->platform_flags & PXA_CAMERA_MASTER ?
+		CICR0_SIM_MP : (CICR0_SL_CAP_EN | CICR0_SIM_SP));
+	cicr0 |= CICR0_DMAEN | CICR0_IRQ_MASK;
+	__raw_writel(cicr0, pcdev->base + CICR0);
+
+	return 0;
+}
+
+static int pxa_camera_try_bus_param(struct soc_camera_device *icd,
+				    unsigned char buswidth)
+{
+	struct soc_camera_host *ici = to_soc_camera_host(icd->dev.parent);
+	struct pxa_camera_dev *pcdev = ici->priv;
+	unsigned long bus_flags, camera_flags;
+	int ret = test_platform_param(pcdev, buswidth, &bus_flags);
+
+	if (ret < 0)
+		return ret;
+
+	camera_flags = icd->ops->query_bus_param(icd);
+
+	return soc_camera_bus_param_compatible(camera_flags, bus_flags) ? 0 : -EINVAL;
+}
+
+static const struct soc_camera_data_format pxa_camera_formats[] = {
+	{
+		.name		= "Planar YUV422 16 bit",
+		.depth		= 16,
+		.fourcc		= V4L2_PIX_FMT_YUV422P,
+		.colorspace	= V4L2_COLORSPACE_JPEG,
+	},
+};
+
+static bool buswidth_supported(struct soc_camera_device *icd, int depth)
+{
+	struct soc_camera_host *ici = to_soc_camera_host(icd->dev.parent);
+	struct pxa_camera_dev *pcdev = ici->priv;
+
+	switch (depth) {
+	case 8:
+		return !!(pcdev->platform_flags & PXA_CAMERA_DATAWIDTH_8);
+	case 9:
+		return !!(pcdev->platform_flags & PXA_CAMERA_DATAWIDTH_9);
+	case 10:
+		return !!(pcdev->platform_flags & PXA_CAMERA_DATAWIDTH_10);
+	}
+	return false;
+}
+
+static int required_buswidth(const struct soc_camera_data_format *fmt)
+{
+	switch (fmt->fourcc) {
+	case V4L2_PIX_FMT_UYVY:
+	case V4L2_PIX_FMT_VYUY:
+	case V4L2_PIX_FMT_YUYV:
+	case V4L2_PIX_FMT_YVYU:
+	case V4L2_PIX_FMT_RGB565:
+	case V4L2_PIX_FMT_RGB555:
+		return 8;
+	default:
+		return fmt->depth;
+	}
+}
+
+static int pxa_camera_get_formats(struct soc_camera_device *icd, int idx,
+				  struct soc_camera_format_xlate *xlate)

@@ -1,0 +1,196 @@
+TYPE_LEAF:
+		if (kv->key.id != CSR1212_KV_ID_EXTENDED_ROM) {
+			size_t size = quads_to_bytes(kvi_len);
+
+			kv->value.leaf.data = CSR1212_MALLOC(size);
+			if (!kv->value.leaf.data) {
+				ret = -ENOMEM;
+				goto out;
+			}
+
+			kv->value.leaf.len = kvi_len;
+			memcpy(kv->value.leaf.data, kvi->data, size);
+		}
+		break;
+	}
+
+	kv->valid = 1;
+out:
+	return ret;
+}
+
+static int
+csr1212_read_keyval(struct csr1212_csr *csr, struct csr1212_keyval *kv)
+{
+	struct csr1212_cache_region *cr, *ncr, *newcr = NULL;
+	struct csr1212_keyval_img *kvi = NULL;
+	struct csr1212_csr_rom_cache *cache;
+	int cache_index;
+	u64 addr;
+	u32 *cache_ptr;
+	u16 kv_len = 0;
+
+	BUG_ON(!csr || !kv || csr->max_rom < 1);
+
+	/* First find which cache the data should be in (or go in if not read
+	 * yet). */
+	for (cache = csr->cache_head; cache; cache = cache->next)
+		if (kv->offset >= cache->offset &&
+		    kv->offset < (cache->offset + cache->size))
+			break;
+
+	if (!cache) {
+		u32 q, cache_size;
+
+		/* Only create a new cache for Extended ROM leaves. */
+		if (kv->key.id != CSR1212_KV_ID_EXTENDED_ROM)
+			return -EINVAL;
+
+		if (csr->ops->bus_read(csr,
+				       CSR1212_REGISTER_SPACE_BASE + kv->offset,
+				       &q, csr->private))
+			return -EIO;
+
+		kv->value.leaf.len = be32_to_cpu(q) >> 16;
+
+		cache_size = (quads_to_bytes(kv->value.leaf.len + 1) +
+			      (csr->max_rom - 1)) & ~(csr->max_rom - 1);
+
+		cache = csr1212_rom_cache_malloc(kv->offset, cache_size);
+		if (!cache)
+			return -ENOMEM;
+
+		kv->value.leaf.data = &cache->data[1];
+		csr->cache_tail->next = cache;
+		cache->prev = csr->cache_tail;
+		cache->next = NULL;
+		csr->cache_tail = cache;
+		cache->filled_head =
+			CSR1212_MALLOC(sizeof(*cache->filled_head));
+		if (!cache->filled_head)
+			return -ENOMEM;
+
+		cache->filled_head->offset_start = 0;
+		cache->filled_head->offset_end = sizeof(u32);
+		cache->filled_tail = cache->filled_head;
+		cache->filled_head->next = NULL;
+		cache->filled_head->prev = NULL;
+		cache->data[0] = q;
+
+		/* Don't read the entire extended ROM now.  Pieces of it will
+		 * be read when entries inside it are read. */
+		return csr1212_parse_keyval(kv, cache);
+	}
+
+	cache_index = kv->offset - cache->offset;
+
+	/* Now seach read portions of the cache to see if it is there. */
+	for (cr = cache->filled_head; cr; cr = cr->next) {
+		if (cache_index < cr->offset_start) {
+			newcr = CSR1212_MALLOC(sizeof(*newcr));
+			if (!newcr)
+				return -ENOMEM;
+
+			newcr->offset_start = cache_index & ~(csr->max_rom - 1);
+			newcr->offset_end = newcr->offset_start;
+			newcr->next = cr;
+			newcr->prev = cr->prev;
+			cr->prev = newcr;
+			cr = newcr;
+			break;
+		} else if ((cache_index >= cr->offset_start) &&
+			   (cache_index < cr->offset_end)) {
+			kvi = (struct csr1212_keyval_img*)
+				(&cache->data[bytes_to_quads(cache_index)]);
+			kv_len = quads_to_bytes(be16_to_cpu(kvi->length) + 1);
+			break;
+		} else if (cache_index == cr->offset_end) {
+			break;
+		}
+	}
+
+	if (!cr) {
+		cr = cache->filled_tail;
+		newcr = CSR1212_MALLOC(sizeof(*newcr));
+		if (!newcr)
+			return -ENOMEM;
+
+		newcr->offset_start = cache_index & ~(csr->max_rom - 1);
+		newcr->offset_end = newcr->offset_start;
+		newcr->prev = cr;
+		newcr->next = cr->next;
+		cr->next = newcr;
+		cr = newcr;
+		cache->filled_tail = newcr;
+	}
+
+	while(!kvi || cr->offset_end < cache_index + kv_len) {
+		cache_ptr = &cache->data[bytes_to_quads(cr->offset_end &
+							~(csr->max_rom - 1))];
+
+		addr = (CSR1212_CSR_ARCH_REG_SPACE_BASE + cache->offset +
+			cr->offset_end) & ~(csr->max_rom - 1);
+
+		if (csr->ops->bus_read(csr, addr, cache_ptr, csr->private))
+			return -EIO;
+
+		cr->offset_end += csr->max_rom - (cr->offset_end &
+						  (csr->max_rom - 1));
+
+		if (!kvi && (cr->offset_end > cache_index)) {
+			kvi = (struct csr1212_keyval_img*)
+				(&cache->data[bytes_to_quads(cache_index)]);
+			kv_len = quads_to_bytes(be16_to_cpu(kvi->length) + 1);
+		}
+
+		if ((kv_len + (kv->offset - cache->offset)) > cache->size) {
+			/* The Leaf or Directory claims its length extends
+			 * beyond the ConfigROM image region and thus beyond the
+			 * end of our cache region.  Therefore, we abort now
+			 * rather than seg faulting later. */
+			return -EIO;
+		}
+
+		ncr = cr->next;
+
+		if (ncr && (cr->offset_end >= ncr->offset_start)) {
+			/* consolidate region entries */
+			ncr->offset_start = cr->offset_start;
+
+			if (cr->prev)
+				cr->prev->next = cr->next;
+			ncr->prev = cr->prev;
+			if (cache->filled_head == cr)
+				cache->filled_head = ncr;
+			CSR1212_FREE(cr);
+			cr = ncr;
+		}
+	}
+
+	return csr1212_parse_keyval(kv, cache);
+}
+
+struct csr1212_keyval *
+csr1212_get_keyval(struct csr1212_csr *csr, struct csr1212_keyval *kv)
+{
+	if (!kv)
+		return NULL;
+	if (!kv->valid)
+		if (csr1212_read_keyval(csr, kv) != CSR1212_SUCCESS)
+			return NULL;
+	return kv;
+}
+
+int csr1212_parse_csr(struct csr1212_csr *csr)
+{
+	struct csr1212_dentry *dentry;
+	int ret;
+
+	BUG_ON(!csr || !csr->ops || !csr->ops->bus_read);
+
+	ret = csr1212_parse_bus_info_block(csr);
+	if (ret != CSR1212_SUCCESS)
+		return ret;
+
+	/*
+	 * There has been a buggy fir

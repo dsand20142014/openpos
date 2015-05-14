@@ -1,0 +1,710 @@
+>u.aen.data);
+			break;
+		case QLA_EVT_IDC_ACK:
+			qla81xx_idc_ack(vha, e->u.idc_ack.mb);
+			break;
+		}
+		if (e->flags & QLA_EVT_FLAG_FREE)
+			kfree(e);
+	}
+}
+
+/* Relogins all the fcports of a vport
+ * Context: dpc thread
+ */
+void qla2x00_relogin(struct scsi_qla_host *vha)
+{
+	fc_port_t       *fcport;
+	int status;
+	uint16_t        next_loopid = 0;
+	struct qla_hw_data *ha = vha->hw;
+
+	list_for_each_entry(fcport, &vha->vp_fcports, list) {
+	/*
+	 * If the port is not ONLINE then try to login
+	 * to it if we haven't run out of retries.
+	 */
+		if (atomic_read(&fcport->state) !=
+			FCS_ONLINE && fcport->login_retry) {
+
+			if (fcport->flags & FCF_FABRIC_DEVICE) {
+				if (fcport->flags & FCF_TAPE_PRESENT)
+					ha->isp_ops->fabric_logout(vha,
+							fcport->loop_id,
+							fcport->d_id.b.domain,
+							fcport->d_id.b.area,
+							fcport->d_id.b.al_pa);
+
+				status = qla2x00_fabric_login(vha, fcport,
+							&next_loopid);
+			} else
+				status = qla2x00_local_device_login(vha,
+								fcport);
+
+			fcport->login_retry--;
+			if (status == QLA_SUCCESS) {
+				fcport->old_loop_id = fcport->loop_id;
+
+				DEBUG(printk("scsi(%ld): port login OK: logged "
+				"in ID 0x%x\n", vha->host_no, fcport->loop_id));
+
+				qla2x00_update_fcport(vha, fcport);
+
+			} else if (status == 1) {
+				set_bit(RELOGIN_NEEDED, &vha->dpc_flags);
+				/* retry the login again */
+				DEBUG(printk("scsi(%ld): Retrying"
+				" %d login again loop_id 0x%x\n",
+				vha->host_no, fcport->login_retry,
+						fcport->loop_id));
+			} else {
+				fcport->login_retry = 0;
+			}
+
+			if (fcport->login_retry == 0 && status != QLA_SUCCESS)
+				fcport->loop_id = FC_NO_LOOP_ID;
+		}
+		if (test_bit(LOOP_RESYNC_NEEDED, &vha->dpc_flags))
+			break;
+	}
+}
+
+/**************************************************************************
+* qla2x00_do_dpc
+*   This kernel thread is a task that is schedule by the interrupt handler
+*   to perform the background processing for interrupts.
+*
+* Notes:
+* This task always run in the context of a kernel thread.  It
+* is kick-off by the driver's detect code and starts up
+* up one per adapter. It immediately goes to sleep and waits for
+* some fibre event.  When either the interrupt handler or
+* the timer routine detects a event it will one of the task
+* bits then wake us up.
+**************************************************************************/
+static int
+qla2x00_do_dpc(void *data)
+{
+	int		rval;
+	scsi_qla_host_t *base_vha;
+	struct qla_hw_data *ha;
+
+	ha = (struct qla_hw_data *)data;
+	base_vha = pci_get_drvdata(ha->pdev);
+
+	set_user_nice(current, -20);
+
+	while (!kthread_should_stop()) {
+		DEBUG3(printk("qla2x00: DPC handler sleeping\n"));
+
+		set_current_state(TASK_INTERRUPTIBLE);
+		schedule();
+		__set_current_state(TASK_RUNNING);
+
+		DEBUG3(printk("qla2x00: DPC handler waking up\n"));
+
+		/* Initialization not yet finished. Don't do anything yet. */
+		if (!base_vha->flags.init_done)
+			continue;
+
+		DEBUG3(printk("scsi(%ld): DPC handler\n", base_vha->host_no));
+
+		ha->dpc_active = 1;
+
+		if (ha->flags.mbox_busy) {
+			ha->dpc_active = 0;
+			continue;
+		}
+
+		qla2x00_do_work(base_vha);
+
+		if (test_and_clear_bit(ISP_ABORT_NEEDED,
+						&base_vha->dpc_flags)) {
+
+			DEBUG(printk("scsi(%ld): dpc: sched "
+			    "qla2x00_abort_isp ha = %p\n",
+			    base_vha->host_no, ha));
+			if (!(test_and_set_bit(ABORT_ISP_ACTIVE,
+			    &base_vha->dpc_flags))) {
+
+				if (qla2x00_abort_isp(base_vha)) {
+					/* failed. retry later */
+					set_bit(ISP_ABORT_NEEDED,
+					    &base_vha->dpc_flags);
+				}
+				clear_bit(ABORT_ISP_ACTIVE,
+						&base_vha->dpc_flags);
+			}
+
+			DEBUG(printk("scsi(%ld): dpc: qla2x00_abort_isp end\n",
+			    base_vha->host_no));
+		}
+
+		if (test_bit(FCPORT_UPDATE_NEEDED, &base_vha->dpc_flags)) {
+			qla2x00_update_fcports(base_vha);
+			clear_bit(FCPORT_UPDATE_NEEDED, &base_vha->dpc_flags);
+		}
+
+		if (test_and_clear_bit(RESET_MARKER_NEEDED,
+							&base_vha->dpc_flags) &&
+		    (!(test_and_set_bit(RESET_ACTIVE, &base_vha->dpc_flags)))) {
+
+			DEBUG(printk("scsi(%ld): qla2x00_reset_marker()\n",
+			    base_vha->host_no));
+
+			qla2x00_rst_aen(base_vha);
+			clear_bit(RESET_ACTIVE, &base_vha->dpc_flags);
+		}
+
+		/* Retry each device up to login retry count */
+		if ((test_and_clear_bit(RELOGIN_NEEDED,
+						&base_vha->dpc_flags)) &&
+		    !test_bit(LOOP_RESYNC_NEEDED, &base_vha->dpc_flags) &&
+		    atomic_read(&base_vha->loop_state) != LOOP_DOWN) {
+
+			DEBUG(printk("scsi(%ld): qla2x00_port_login()\n",
+					base_vha->host_no));
+			qla2x00_relogin(base_vha);
+
+			DEBUG(printk("scsi(%ld): qla2x00_port_login - end\n",
+			    base_vha->host_no));
+		}
+
+		if (test_and_clear_bit(LOOP_RESYNC_NEEDED,
+							&base_vha->dpc_flags)) {
+
+			DEBUG(printk("scsi(%ld): qla2x00_loop_resync()\n",
+				base_vha->host_no));
+
+			if (!(test_and_set_bit(LOOP_RESYNC_ACTIVE,
+			    &base_vha->dpc_flags))) {
+
+				rval = qla2x00_loop_resync(base_vha);
+
+				clear_bit(LOOP_RESYNC_ACTIVE,
+						&base_vha->dpc_flags);
+			}
+
+			DEBUG(printk("scsi(%ld): qla2x00_loop_resync - end\n",
+			    base_vha->host_no));
+		}
+
+		if (test_bit(NPIV_CONFIG_NEEDED, &base_vha->dpc_flags) &&
+		    atomic_read(&base_vha->loop_state) == LOOP_READY) {
+			clear_bit(NPIV_CONFIG_NEEDED, &base_vha->dpc_flags);
+			qla2xxx_flash_npiv_conf(base_vha);
+		}
+
+		if (!ha->interrupts_on)
+			ha->isp_ops->enable_intrs(ha);
+
+		if (test_and_clear_bit(BEACON_BLINK_NEEDED,
+					&base_vha->dpc_flags))
+			ha->isp_ops->beacon_blink(base_vha);
+
+		qla2x00_do_dpc_all_vps(base_vha);
+
+		ha->dpc_active = 0;
+	} /* End of while(1) */
+
+	DEBUG(printk("scsi(%ld): DPC handler exiting\n", base_vha->host_no));
+
+	/*
+	 * Make sure that nobody tries to wake us up again.
+	 */
+	ha->dpc_active = 0;
+
+	return 0;
+}
+
+void
+qla2xxx_wake_dpc(struct scsi_qla_host *vha)
+{
+	struct qla_hw_data *ha = vha->hw;
+	struct task_struct *t = ha->dpc_thread;
+
+	if (!test_bit(UNLOADING, &vha->dpc_flags) && t)
+		wake_up_process(t);
+}
+
+/*
+*  qla2x00_rst_aen
+*      Processes asynchronous reset.
+*
+* Input:
+*      ha  = adapter block pointer.
+*/
+static void
+qla2x00_rst_aen(scsi_qla_host_t *vha)
+{
+	if (vha->flags.online && !vha->flags.reset_active &&
+	    !atomic_read(&vha->loop_down_timer) &&
+	    !(test_bit(ABORT_ISP_ACTIVE, &vha->dpc_flags))) {
+		do {
+			clear_bit(RESET_MARKER_NEEDED, &vha->dpc_flags);
+
+			/*
+			 * Issue marker command only when we are going to start
+			 * the I/O.
+			 */
+			vha->marker_needed = 1;
+		} while (!atomic_read(&vha->loop_down_timer) &&
+		    (test_bit(RESET_MARKER_NEEDED, &vha->dpc_flags)));
+	}
+}
+
+static void
+qla2x00_sp_free_dma(srb_t *sp)
+{
+	struct scsi_cmnd *cmd = sp->cmd;
+
+	if (sp->flags & SRB_DMA_VALID) {
+		scsi_dma_unmap(cmd);
+		sp->flags &= ~SRB_DMA_VALID;
+	}
+	CMD_SP(cmd) = NULL;
+}
+
+void
+qla2x00_sp_compl(struct qla_hw_data *ha, srb_t *sp)
+{
+	struct scsi_cmnd *cmd = sp->cmd;
+
+	qla2x00_sp_free_dma(sp);
+
+	mempool_free(sp, ha->srb_mempool);
+
+	cmd->scsi_done(cmd);
+}
+
+/**************************************************************************
+*   qla2x00_timer
+*
+* Description:
+*   One second timer
+*
+* Context: Interrupt
+***************************************************************************/
+void
+qla2x00_timer(scsi_qla_host_t *vha)
+{
+	unsigned long	cpu_flags = 0;
+	fc_port_t	*fcport;
+	int		start_dpc = 0;
+	int		index;
+	srb_t		*sp;
+	int		t;
+	struct qla_hw_data *ha = vha->hw;
+	struct req_que *req;
+	/*
+	 * Ports - Port down timer.
+	 *
+	 * Whenever, a port is in the LOST state we start decrementing its port
+	 * down timer every second until it reaches zero. Once  it reaches zero
+	 * the port it marked DEAD.
+	 */
+	t = 0;
+	list_for_each_entry(fcport, &vha->vp_fcports, list) {
+		if (fcport->port_type != FCT_TARGET)
+			continue;
+
+		if (atomic_read(&fcport->state) == FCS_DEVICE_LOST) {
+
+			if (atomic_read(&fcport->port_down_timer) == 0)
+				continue;
+
+			if (atomic_dec_and_test(&fcport->port_down_timer) != 0)
+				atomic_set(&fcport->state, FCS_DEVICE_DEAD);
+
+			DEBUG(printk("scsi(%ld): fcport-%d - port retry count: "
+			    "%d remaining\n",
+			    vha->host_no,
+			    t, atomic_read(&fcport->port_down_timer)));
+		}
+		t++;
+	} /* End of for fcport  */
+
+
+	/* Loop down handler. */
+	if (atomic_read(&vha->loop_down_timer) > 0 &&
+	    !(test_bit(ABORT_ISP_ACTIVE, &vha->dpc_flags))
+		&& vha->flags.online) {
+
+		if (atomic_read(&vha->loop_down_timer) ==
+		    vha->loop_down_abort_time) {
+
+			DEBUG(printk("scsi(%ld): Loop Down - aborting the "
+			    "queues before time expire\n",
+			    vha->host_no));
+
+			if (!IS_QLA2100(ha) && vha->link_down_timeout)
+				atomic_set(&vha->loop_state, LOOP_DEAD);
+
+			/* Schedule an ISP abort to return any tape commands. */
+			/* NPIV - scan physical port only */
+			if (!vha->vp_idx) {
+				spin_lock_irqsave(&ha->hardware_lock,
+				    cpu_flags);
+				req = ha->req_q_map[0];
+				for (index = 1;
+				    index < MAX_OUTSTANDING_COMMANDS;
+				    index++) {
+					fc_port_t *sfcp;
+
+					sp = req->outstanding_cmds[index];
+					if (!sp)
+						continue;
+					sfcp = sp->fcport;
+					if (!(sfcp->flags & FCF_TAPE_PRESENT))
+						continue;
+
+					set_bit(ISP_ABORT_NEEDED,
+							&vha->dpc_flags);
+					break;
+				}
+				spin_unlock_irqrestore(&ha->hardware_lock,
+								cpu_flags);
+			}
+			start_dpc++;
+		}
+
+		/* if the loop has been down for 4 minutes, reinit adapter */
+		if (atomic_dec_and_test(&vha->loop_down_timer) != 0) {
+			if (!(vha->device_flags & DFLG_NO_CABLE) &&
+			    !vha->vp_idx) {
+				DEBUG(printk("scsi(%ld): Loop down - "
+				    "aborting ISP.\n",
+				    vha->host_no));
+				qla_printk(KERN_WARNING, ha,
+				    "Loop down - aborting ISP.\n");
+
+				set_bit(ISP_ABORT_NEEDED, &vha->dpc_flags);
+			}
+		}
+		DEBUG3(printk("scsi(%ld): Loop Down - seconds remaining %d\n",
+		    vha->host_no,
+		    atomic_read(&vha->loop_down_timer)));
+	}
+
+	/* Check if beacon LED needs to be blinked */
+	if (ha->beacon_blink_led == 1) {
+		set_bit(BEACON_BLINK_NEEDED, &vha->dpc_flags);
+		start_dpc++;
+	}
+
+	/* Process any deferred work. */
+	if (!list_empty(&vha->work_list))
+		start_dpc++;
+
+	/* Schedule the DPC routine if needed */
+	if ((test_bit(ISP_ABORT_NEEDED, &vha->dpc_flags) ||
+	    test_bit(LOOP_RESYNC_NEEDED, &vha->dpc_flags) ||
+	    test_bit(FCPORT_UPDATE_NEEDED, &vha->dpc_flags) ||
+	    start_dpc ||
+	    test_bit(RESET_MARKER_NEEDED, &vha->dpc_flags) ||
+	    test_bit(BEACON_BLINK_NEEDED, &vha->dpc_flags) ||
+	    test_bit(VP_DPC_NEEDED, &vha->dpc_flags) ||
+	    test_bit(RELOGIN_NEEDED, &vha->dpc_flags)))
+		qla2xxx_wake_dpc(vha);
+
+	qla2x00_restart_timer(vha, WATCH_INTERVAL);
+}
+
+/* Firmware interface routines. */
+
+#define FW_BLOBS	7
+#define FW_ISP21XX	0
+#define FW_ISP22XX	1
+#define FW_ISP2300	2
+#define FW_ISP2322	3
+#define FW_ISP24XX	4
+#define FW_ISP25XX	5
+#define FW_ISP81XX	6
+
+#define FW_FILE_ISP21XX	"ql2100_fw.bin"
+#define FW_FILE_ISP22XX	"ql2200_fw.bin"
+#define FW_FILE_ISP2300	"ql2300_fw.bin"
+#define FW_FILE_ISP2322	"ql2322_fw.bin"
+#define FW_FILE_ISP24XX	"ql2400_fw.bin"
+#define FW_FILE_ISP25XX	"ql2500_fw.bin"
+#define FW_FILE_ISP81XX	"ql8100_fw.bin"
+
+static DEFINE_MUTEX(qla_fw_lock);
+
+static struct fw_blob qla_fw_blobs[FW_BLOBS] = {
+	{ .name = FW_FILE_ISP21XX, .segs = { 0x1000, 0 }, },
+	{ .name = FW_FILE_ISP22XX, .segs = { 0x1000, 0 }, },
+	{ .name = FW_FILE_ISP2300, .segs = { 0x800, 0 }, },
+	{ .name = FW_FILE_ISP2322, .segs = { 0x800, 0x1c000, 0x1e000, 0 }, },
+	{ .name = FW_FILE_ISP24XX, },
+	{ .name = FW_FILE_ISP25XX, },
+	{ .name = FW_FILE_ISP81XX, },
+};
+
+struct fw_blob *
+qla2x00_request_firmware(scsi_qla_host_t *vha)
+{
+	struct qla_hw_data *ha = vha->hw;
+	struct fw_blob *blob;
+
+	blob = NULL;
+	if (IS_QLA2100(ha)) {
+		blob = &qla_fw_blobs[FW_ISP21XX];
+	} else if (IS_QLA2200(ha)) {
+		blob = &qla_fw_blobs[FW_ISP22XX];
+	} else if (IS_QLA2300(ha) || IS_QLA2312(ha) || IS_QLA6312(ha)) {
+		blob = &qla_fw_blobs[FW_ISP2300];
+	} else if (IS_QLA2322(ha) || IS_QLA6322(ha)) {
+		blob = &qla_fw_blobs[FW_ISP2322];
+	} else if (IS_QLA24XX_TYPE(ha)) {
+		blob = &qla_fw_blobs[FW_ISP24XX];
+	} else if (IS_QLA25XX(ha)) {
+		blob = &qla_fw_blobs[FW_ISP25XX];
+	} else if (IS_QLA81XX(ha)) {
+		blob = &qla_fw_blobs[FW_ISP81XX];
+	}
+
+	mutex_lock(&qla_fw_lock);
+	if (blob->fw)
+		goto out;
+
+	if (request_firmware(&blob->fw, blob->name, &ha->pdev->dev)) {
+		DEBUG2(printk("scsi(%ld): Failed to load firmware image "
+		    "(%s).\n", vha->host_no, blob->name));
+		blob->fw = NULL;
+		blob = NULL;
+		goto out;
+	}
+
+out:
+	mutex_unlock(&qla_fw_lock);
+	return blob;
+}
+
+static void
+qla2x00_release_firmware(void)
+{
+	int idx;
+
+	mutex_lock(&qla_fw_lock);
+	for (idx = 0; idx < FW_BLOBS; idx++)
+		if (qla_fw_blobs[idx].fw)
+			release_firmware(qla_fw_blobs[idx].fw);
+	mutex_unlock(&qla_fw_lock);
+}
+
+static pci_ers_result_t
+qla2xxx_pci_error_detected(struct pci_dev *pdev, pci_channel_state_t state)
+{
+	scsi_qla_host_t *base_vha = pci_get_drvdata(pdev);
+
+	switch (state) {
+	case pci_channel_io_normal:
+		return PCI_ERS_RESULT_CAN_RECOVER;
+	case pci_channel_io_frozen:
+		pci_disable_device(pdev);
+		return PCI_ERS_RESULT_NEED_RESET;
+	case pci_channel_io_perm_failure:
+		qla2x00_abort_all_cmds(base_vha, DID_NO_CONNECT << 16);
+		return PCI_ERS_RESULT_DISCONNECT;
+	}
+	return PCI_ERS_RESULT_NEED_RESET;
+}
+
+static pci_ers_result_t
+qla2xxx_pci_mmio_enabled(struct pci_dev *pdev)
+{
+	int risc_paused = 0;
+	uint32_t stat;
+	unsigned long flags;
+	scsi_qla_host_t *base_vha = pci_get_drvdata(pdev);
+	struct qla_hw_data *ha = base_vha->hw;
+	struct device_reg_2xxx __iomem *reg = &ha->iobase->isp;
+	struct device_reg_24xx __iomem *reg24 = &ha->iobase->isp24;
+
+	spin_lock_irqsave(&ha->hardware_lock, flags);
+	if (IS_QLA2100(ha) || IS_QLA2200(ha)){
+		stat = RD_REG_DWORD(&reg->hccr);
+		if (stat & HCCR_RISC_PAUSE)
+			risc_paused = 1;
+	} else if (IS_QLA23XX(ha)) {
+		stat = RD_REG_DWORD(&reg->u.isp2300.host_status);
+		if (stat & HSR_RISC_PAUSED)
+			risc_paused = 1;
+	} else if (IS_FWI2_CAPABLE(ha)) {
+		stat = RD_REG_DWORD(&reg24->host_status);
+		if (stat & HSRX_RISC_PAUSED)
+			risc_paused = 1;
+	}
+	spin_unlock_irqrestore(&ha->hardware_lock, flags);
+
+	if (risc_paused) {
+		qla_printk(KERN_INFO, ha, "RISC paused -- mmio_enabled, "
+		    "Dumping firmware!\n");
+		ha->isp_ops->fw_dump(base_vha, 0);
+
+		return PCI_ERS_RESULT_NEED_RESET;
+	} else
+		return PCI_ERS_RESULT_RECOVERED;
+}
+
+static pci_ers_result_t
+qla2xxx_pci_slot_reset(struct pci_dev *pdev)
+{
+	pci_ers_result_t ret = PCI_ERS_RESULT_DISCONNECT;
+	scsi_qla_host_t *base_vha = pci_get_drvdata(pdev);
+	struct qla_hw_data *ha = base_vha->hw;
+	int rc;
+
+	if (ha->mem_only)
+		rc = pci_enable_device_mem(pdev);
+	else
+		rc = pci_enable_device(pdev);
+
+	if (rc) {
+		qla_printk(KERN_WARNING, ha,
+		    "Can't re-enable PCI device after reset.\n");
+
+		return ret;
+	}
+	pci_set_master(pdev);
+
+	if (ha->isp_ops->pci_config(base_vha))
+		return ret;
+
+	set_bit(ABORT_ISP_ACTIVE, &base_vha->dpc_flags);
+	if (qla2x00_abort_isp(base_vha) == QLA_SUCCESS)
+		ret =  PCI_ERS_RESULT_RECOVERED;
+	clear_bit(ABORT_ISP_ACTIVE, &base_vha->dpc_flags);
+
+	return ret;
+}
+
+static void
+qla2xxx_pci_resume(struct pci_dev *pdev)
+{
+	scsi_qla_host_t *base_vha = pci_get_drvdata(pdev);
+	struct qla_hw_data *ha = base_vha->hw;
+	int ret;
+
+	ret = qla2x00_wait_for_hba_online(base_vha);
+	if (ret != QLA_SUCCESS) {
+		qla_printk(KERN_ERR, ha,
+		    "the device failed to resume I/O "
+		    "from slot/link_reset");
+	}
+	pci_cleanup_aer_uncorrect_error_status(pdev);
+}
+
+static struct pci_error_handlers qla2xxx_err_handler = {
+	.error_detected = qla2xxx_pci_error_detected,
+	.mmio_enabled = qla2xxx_pci_mmio_enabled,
+	.slot_reset = qla2xxx_pci_slot_reset,
+	.resume = qla2xxx_pci_resume,
+};
+
+static struct pci_device_id qla2xxx_pci_tbl[] = {
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP2100) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP2200) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP2300) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP2312) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP2322) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP6312) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP6322) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP2422) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP2432) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP8432) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP5422) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP5432) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP2532) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_QLOGIC, PCI_DEVICE_ID_QLOGIC_ISP8001) },
+	{ 0 },
+};
+MODULE_DEVICE_TABLE(pci, qla2xxx_pci_tbl);
+
+static struct pci_driver qla2xxx_pci_driver = {
+	.name		= QLA2XXX_DRIVER_NAME,
+	.driver		= {
+		.owner		= THIS_MODULE,
+	},
+	.id_table	= qla2xxx_pci_tbl,
+	.probe		= qla2x00_probe_one,
+	.remove		= qla2x00_remove_one,
+	.err_handler	= &qla2xxx_err_handler,
+};
+
+/**
+ * qla2x00_module_init - Module initialization.
+ **/
+static int __init
+qla2x00_module_init(void)
+{
+	int ret = 0;
+
+	/* Allocate cache for SRBs. */
+	srb_cachep = kmem_cache_create("qla2xxx_srbs", sizeof(srb_t), 0,
+	    SLAB_HWCACHE_ALIGN, NULL);
+	if (srb_cachep == NULL) {
+		printk(KERN_ERR
+		    "qla2xxx: Unable to allocate SRB cache...Failing load!\n");
+		return -ENOMEM;
+	}
+
+	/* Derive version string. */
+	strcpy(qla2x00_version_str, QLA2XXX_VERSION);
+	if (ql2xextended_error_logging)
+		strcat(qla2x00_version_str, "-debug");
+
+	qla2xxx_transport_template =
+	    fc_attach_transport(&qla2xxx_transport_functions);
+	if (!qla2xxx_transport_template) {
+		kmem_cache_destroy(srb_cachep);
+		return -ENODEV;
+	}
+	qla2xxx_transport_vport_template =
+	    fc_attach_transport(&qla2xxx_transport_vport_functions);
+	if (!qla2xxx_transport_vport_template) {
+		kmem_cache_destroy(srb_cachep);
+		fc_release_transport(qla2xxx_transport_template);
+		return -ENODEV;
+	}
+
+	printk(KERN_INFO "QLogic Fibre Channel HBA Driver: %s\n",
+	    qla2x00_version_str);
+	ret = pci_register_driver(&qla2xxx_pci_driver);
+	if (ret) {
+		kmem_cache_destroy(srb_cachep);
+		fc_release_transport(qla2xxx_transport_template);
+		fc_release_transport(qla2xxx_transport_vport_template);
+	}
+	return ret;
+}
+
+/**
+ * qla2x00_module_exit - Module cleanup.
+ **/
+static void __exit
+qla2x00_module_exit(void)
+{
+	pci_unregister_driver(&qla2xxx_pci_driver);
+	qla2x00_release_firmware();
+	kmem_cache_destroy(srb_cachep);
+	fc_release_transport(qla2xxx_transport_template);
+	fc_release_transport(qla2xxx_transport_vport_template);
+}
+
+module_init(qla2x00_module_init);
+module_exit(qla2x00_module_exit);
+
+MODULE_AUTHOR("QLogic Corporation");
+MODULE_DESCRIPTION("QLogic Fibre Channel HBA Driver");
+MODULE_LICENSE("GPL");
+MODULE_VERSION(QLA2XXX_VERSION);
+MODULE_FIRMWARE(FW_FILE_ISP21XX);
+MODULE_FIRMWARE(FW_FILE_ISP22XX);
+MODULE_FIRMWARE(FW_FILE_ISP2300);
+MODULE_FIRMWARE(FW_FILE_ISP2322);
+MODULE_FIRMWARE(FW_FILE_ISP24XX);
+MODULE_FIRMWARE(FW_FILE_ISP25XX);
+MODULE_FIRMWARE(FW_FILE_ISP81XX);
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    

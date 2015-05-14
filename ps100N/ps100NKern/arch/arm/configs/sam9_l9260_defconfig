@@ -1,0 +1,532 @@
+ (port_is_active(port, the_port))
+		set_notification(port, N_OUTPUT_LOWAT, 0);
+}
+
+/**
+ * null_void_function -
+ * @port: Port to operate on
+ *
+ */
+static void null_void_function(struct uart_port *the_port)
+{
+}
+
+/**
+ * ic4_shutdown - shut down the port - free irq and disable
+ * @port: Port to shut down
+ *
+ */
+static void ic4_shutdown(struct uart_port *the_port)
+{
+	unsigned long port_flags;
+	struct ioc4_port *port;
+	struct uart_info *info;
+
+	port = get_ioc4_port(the_port, 0);
+	if (!port)
+		return;
+
+	info = the_port->info;
+	port->ip_port = NULL;
+
+	wake_up_interruptible(&info->delta_msr_wait);
+
+	if (info->port.tty)
+		set_bit(TTY_IO_ERROR, &info->port.tty->flags);
+
+	spin_lock_irqsave(&the_port->lock, port_flags);
+	set_notification(port, N_ALL, 0);
+	port->ip_flags = PORT_INACTIVE;
+	spin_unlock_irqrestore(&the_port->lock, port_flags);
+}
+
+/**
+ * ic4_set_mctrl - set control lines (dtr, rts, etc)
+ * @port: Port to operate on
+ * @mctrl: Lines to set/unset
+ *
+ */
+static void ic4_set_mctrl(struct uart_port *the_port, unsigned int mctrl)
+{
+	unsigned char mcr = 0;
+	struct ioc4_port *port;
+
+	port = get_ioc4_port(the_port, 0);
+	if (!port_is_active(port, the_port))
+		return;
+
+	if (mctrl & TIOCM_RTS)
+		mcr |= UART_MCR_RTS;
+	if (mctrl & TIOCM_DTR)
+		mcr |= UART_MCR_DTR;
+	if (mctrl & TIOCM_OUT1)
+		mcr |= UART_MCR_OUT1;
+	if (mctrl & TIOCM_OUT2)
+		mcr |= UART_MCR_OUT2;
+	if (mctrl & TIOCM_LOOP)
+		mcr |= UART_MCR_LOOP;
+
+	set_mcr(the_port, mcr, IOC4_SHADOW_DTR);
+}
+
+/**
+ * ic4_get_mctrl - get control line info
+ * @port: port to operate on
+ *
+ */
+static unsigned int ic4_get_mctrl(struct uart_port *the_port)
+{
+	struct ioc4_port *port = get_ioc4_port(the_port, 0);
+	uint32_t shadow;
+	unsigned int ret = 0;
+
+	if (!port_is_active(port, the_port))
+		return 0;
+
+	shadow = readl(&port->ip_serial_regs->shadow);
+	if (shadow & IOC4_SHADOW_DCD)
+		ret |= TIOCM_CAR;
+	if (shadow & IOC4_SHADOW_DR)
+		ret |= TIOCM_DSR;
+	if (shadow & IOC4_SHADOW_CTS)
+		ret |= TIOCM_CTS;
+	return ret;
+}
+
+/**
+ * ic4_start_tx - Start transmitter, flush any output
+ * @port: Port to operate on
+ *
+ */
+static void ic4_start_tx(struct uart_port *the_port)
+{
+	struct ioc4_port *port = get_ioc4_port(the_port, 0);
+
+	if (port_is_active(port, the_port)) {
+		set_notification(port, N_OUTPUT_LOWAT, 1);
+		enable_intrs(port, port->ip_hooks->intr_tx_mt);
+	}
+}
+
+/**
+ * ic4_break_ctl - handle breaks
+ * @port: Port to operate on
+ * @break_state: Break state
+ *
+ */
+static void ic4_break_ctl(struct uart_port *the_port, int break_state)
+{
+}
+
+/**
+ * ic4_startup - Start up the serial port
+ * @port: Port to operate on
+ *
+ */
+static int ic4_startup(struct uart_port *the_port)
+{
+	int retval;
+	struct ioc4_port *port;
+	struct ioc4_control *control;
+	struct uart_info *info;
+	unsigned long port_flags;
+
+	if (!the_port)
+		return -ENODEV;
+	port = get_ioc4_port(the_port, 1);
+	if (!port)
+		return -ENODEV;
+	info = the_port->info;
+
+	control = port->ip_control;
+	if (!control) {
+		port->ip_port = NULL;
+		return -ENODEV;
+	}
+
+	/* Start up the serial port */
+	spin_lock_irqsave(&the_port->lock, port_flags);
+	retval = ic4_startup_local(the_port);
+	spin_unlock_irqrestore(&the_port->lock, port_flags);
+	return retval;
+}
+
+/**
+ * ic4_set_termios - set termios stuff
+ * @port: port to operate on
+ * @termios: New settings
+ * @termios: Old
+ *
+ */
+static void
+ic4_set_termios(struct uart_port *the_port,
+		struct ktermios *termios, struct ktermios *old_termios)
+{
+	unsigned long port_flags;
+
+	spin_lock_irqsave(&the_port->lock, port_flags);
+	ioc4_change_speed(the_port, termios, old_termios);
+	spin_unlock_irqrestore(&the_port->lock, port_flags);
+}
+
+/**
+ * ic4_request_port - allocate resources for port - no op....
+ * @port: port to operate on
+ *
+ */
+static int ic4_request_port(struct uart_port *port)
+{
+	return 0;
+}
+
+/* Associate the uart functions above - given to serial core */
+
+static struct uart_ops ioc4_ops = {
+	.tx_empty	= ic4_tx_empty,
+	.set_mctrl	= ic4_set_mctrl,
+	.get_mctrl	= ic4_get_mctrl,
+	.stop_tx	= ic4_stop_tx,
+	.start_tx	= ic4_start_tx,
+	.stop_rx	= null_void_function,
+	.enable_ms	= null_void_function,
+	.break_ctl	= ic4_break_ctl,
+	.startup	= ic4_startup,
+	.shutdown	= ic4_shutdown,
+	.set_termios	= ic4_set_termios,
+	.type		= ic4_type,
+	.release_port	= null_void_function,
+	.request_port	= ic4_request_port,
+};
+
+/*
+ * Boot-time initialization code
+ */
+
+static struct uart_driver ioc4_uart_rs232 = {
+	.owner		= THIS_MODULE,
+	.driver_name	= "ioc4_serial_rs232",
+	.dev_name	= DEVICE_NAME_RS232,
+	.major		= DEVICE_MAJOR,
+	.minor		= DEVICE_MINOR_RS232,
+	.nr		= IOC4_NUM_CARDS * IOC4_NUM_SERIAL_PORTS,
+};
+
+static struct uart_driver ioc4_uart_rs422 = {
+	.owner		= THIS_MODULE,
+	.driver_name	= "ioc4_serial_rs422",
+	.dev_name	= DEVICE_NAME_RS422,
+	.major		= DEVICE_MAJOR,
+	.minor		= DEVICE_MINOR_RS422,
+	.nr		= IOC4_NUM_CARDS * IOC4_NUM_SERIAL_PORTS,
+};
+
+
+/**
+ * ioc4_serial_remove_one - detach function
+ *
+ * @idd: IOC4 master module data for this IOC4
+ */
+
+static int ioc4_serial_remove_one(struct ioc4_driver_data *idd)
+{
+	int port_num, port_type;
+	struct ioc4_control *control;
+	struct uart_port *the_port;
+	struct ioc4_port *port;
+	struct ioc4_soft *soft;
+
+	/* If serial driver did not attach, don't try to detach */
+	control = idd->idd_serial_data;
+	if (!control)
+		return 0;
+
+	for (port_num = 0; port_num < IOC4_NUM_SERIAL_PORTS; port_num++) {
+		for (port_type = UART_PORT_MIN;
+					port_type < UART_PORT_COUNT;
+					port_type++) {
+			the_port = &control->ic_port[port_num].icp_uart_port
+							[port_type];
+			if (the_port) {
+				switch (port_type) {
+				case UART_PORT_RS422:
+					uart_remove_one_port(&ioc4_uart_rs422,
+							the_port);
+					break;
+				default:
+				case UART_PORT_RS232:
+					uart_remove_one_port(&ioc4_uart_rs232,
+							the_port);
+					break;
+				}
+			}
+		}
+		port = control->ic_port[port_num].icp_port;
+		/* we allocate in pairs */
+		if (!(port_num & 1) && port) {
+			pci_free_consistent(port->ip_pdev,
+					TOTAL_RING_BUF_SIZE,
+					port->ip_cpu_ringbuf,
+					port->ip_dma_ringbuf);
+			kfree(port);
+		}
+	}
+	soft = control->ic_soft;
+	if (soft) {
+		free_irq(control->ic_irq, soft);
+		if (soft->is_ioc4_serial_addr) {
+			iounmap(soft->is_ioc4_serial_addr);
+			release_mem_region((unsigned long)
+			     soft->is_ioc4_serial_addr,
+				sizeof(struct ioc4_serial));
+		}
+		kfree(soft);
+	}
+	kfree(control);
+	idd->idd_serial_data = NULL;
+
+	return 0;
+}
+
+
+/**
+ * ioc4_serial_core_attach_rs232 - register with serial core
+ *		This is done during pci probing
+ * @pdev: handle for this card
+ */
+static inline int
+ioc4_serial_core_attach(struct pci_dev *pdev, int port_type)
+{
+	struct ioc4_port *port;
+	struct uart_port *the_port;
+	struct ioc4_driver_data *idd = pci_get_drvdata(pdev);
+	struct ioc4_control *control = idd->idd_serial_data;
+	int port_num;
+	int port_type_idx;
+	struct uart_driver *u_driver;
+
+
+	DPRINT_CONFIG(("%s: attach pdev 0x%p - control 0x%p\n",
+			__func__, pdev, (void *)control));
+
+	if (!control)
+		return -ENODEV;
+
+	port_type_idx = (port_type == PROTO_RS232) ? UART_PORT_RS232
+						: UART_PORT_RS422;
+
+	u_driver = (port_type == PROTO_RS232)	? &ioc4_uart_rs232
+						: &ioc4_uart_rs422;
+
+	/* once around for each port on this card */
+	for (port_num = 0; port_num < IOC4_NUM_SERIAL_PORTS; port_num++) {
+		the_port = &control->ic_port[port_num].icp_uart_port
+							[port_type_idx];
+		port = control->ic_port[port_num].icp_port;
+		port->ip_all_ports[port_type_idx] = the_port;
+
+		DPRINT_CONFIG(("%s: attach the_port 0x%p / port 0x%p : type %s\n",
+				__func__, (void *)the_port,
+				(void *)port,
+				port_type == PROTO_RS232 ? "rs232" : "rs422"));
+
+		/* membase, iobase and mapbase just need to be non-0 */
+		the_port->membase = (unsigned char __iomem *)1;
+		the_port->iobase = (pdev->bus->number << 16) |  port_num;
+		the_port->line = (Num_of_ioc4_cards << 2) | port_num;
+		the_port->mapbase = port_type;
+		the_port->type = PORT_16550A;
+		the_port->fifosize = IOC4_FIFO_CHARS;
+		the_port->ops = &ioc4_ops;
+		the_port->irq = control->ic_irq;
+		the_port->dev = &pdev->dev;
+		spin_lock_init(&the_port->lock);
+		if (uart_add_one_port(u_driver, the_port) < 0) {
+			printk(KERN_WARNING
+		           "%s: unable to add port %d bus %d\n",
+			       __func__, the_port->line, pdev->bus->number);
+		} else {
+			DPRINT_CONFIG(
+			    ("IOC4 serial port %d irq = %d, bus %d\n",
+			       the_port->line, the_port->irq, pdev->bus->number));
+		}
+	}
+	return 0;
+}
+
+/**
+ * ioc4_serial_attach_one - register attach function
+ *		called per card found from IOC4 master module.
+ * @idd: Master module data for this IOC4
+ */
+int
+ioc4_serial_attach_one(struct ioc4_driver_data *idd)
+{
+	unsigned long tmp_addr1;
+	struct ioc4_serial __iomem *serial;
+	struct ioc4_soft *soft;
+	struct ioc4_control *control;
+	int ret = 0;
+
+
+	DPRINT_CONFIG(("%s (0x%p, 0x%p)\n", __func__, idd->idd_pdev,
+							idd->idd_pci_id));
+
+	/* PCI-RT does not bring out serial connections.
+	 * Do not attach to this particular IOC4.
+	 */
+	if (idd->idd_variant == IOC4_VARIANT_PCI_RT)
+		return 0;
+
+	/* request serial registers */
+	tmp_addr1 = idd->idd_bar0 + IOC4_SERIAL_OFFSET;
+
+	if (!request_mem_region(tmp_addr1, sizeof(struct ioc4_serial),
+					"sioc4_uart")) {
+		printk(KERN_WARNING
+			"ioc4 (%p): unable to get request region for "
+				"uart space\n", (void *)idd->idd_pdev);
+		ret = -ENODEV;
+		goto out1;
+	}
+	serial = ioremap(tmp_addr1, sizeof(struct ioc4_serial));
+	if (!serial) {
+		printk(KERN_WARNING
+			 "ioc4 (%p) : unable to remap ioc4 serial register\n",
+				(void *)idd->idd_pdev);
+		ret = -ENODEV;
+		goto out2;
+	}
+	DPRINT_CONFIG(("%s : mem 0x%p, serial 0x%p\n",
+				__func__, (void *)idd->idd_misc_regs,
+				(void *)serial));
+
+	/* Get memory for the new card */
+	control = kzalloc(sizeof(struct ioc4_control), GFP_KERNEL);
+
+	if (!control) {
+		printk(KERN_WARNING "ioc4_attach_one"
+		       ": unable to get memory for the IOC4\n");
+		ret = -ENOMEM;
+		goto out2;
+	}
+	idd->idd_serial_data = control;
+
+	/* Allocate the soft structure */
+	soft = kzalloc(sizeof(struct ioc4_soft), GFP_KERNEL);
+	if (!soft) {
+		printk(KERN_WARNING
+		       "ioc4 (%p): unable to get memory for the soft struct\n",
+		       (void *)idd->idd_pdev);
+		ret = -ENOMEM;
+		goto out3;
+	}
+
+	spin_lock_init(&soft->is_ir_lock);
+	soft->is_ioc4_misc_addr = idd->idd_misc_regs;
+	soft->is_ioc4_serial_addr = serial;
+
+	/* Init the IOC4 */
+	writel(0xf << IOC4_SIO_CR_CMD_PULSE_SHIFT,
+	       &idd->idd_misc_regs->sio_cr.raw);
+
+	/* Enable serial port mode select generic PIO pins as outputs */
+	writel(IOC4_GPCR_UART0_MODESEL | IOC4_GPCR_UART1_MODESEL
+		| IOC4_GPCR_UART2_MODESEL | IOC4_GPCR_UART3_MODESEL,
+		&idd->idd_misc_regs->gpcr_s.raw);
+
+	/* Clear and disable all serial interrupts */
+	write_ireg(soft, ~0, IOC4_W_IEC, IOC4_SIO_INTR_TYPE);
+	writel(~0, &idd->idd_misc_regs->sio_ir.raw);
+	write_ireg(soft, IOC4_OTHER_IR_SER_MEMERR, IOC4_W_IEC,
+		   IOC4_OTHER_INTR_TYPE);
+	writel(IOC4_OTHER_IR_SER_MEMERR, &idd->idd_misc_regs->other_ir.raw);
+	control->ic_soft = soft;
+
+	/* Hook up interrupt handler */
+	if (!request_irq(idd->idd_pdev->irq, ioc4_intr, IRQF_SHARED,
+				"sgi-ioc4serial", soft)) {
+		control->ic_irq = idd->idd_pdev->irq;
+	} else {
+		printk(KERN_WARNING
+		    "%s : request_irq fails for IRQ 0x%x\n ",
+			__func__, idd->idd_pdev->irq);
+	}
+	ret = ioc4_attach_local(idd);
+	if (ret)
+		goto out4;
+
+	/* register port with the serial core - 1 rs232, 1 rs422 */
+
+	if ((ret = ioc4_serial_core_attach(idd->idd_pdev, PROTO_RS232)))
+		goto out4;
+
+	if ((ret = ioc4_serial_core_attach(idd->idd_pdev, PROTO_RS422)))
+		goto out5;
+
+	Num_of_ioc4_cards++;
+
+	return ret;
+
+	/* error exits that give back resources */
+out5:
+	ioc4_serial_remove_one(idd);
+out4:
+	kfree(soft);
+out3:
+	kfree(control);
+out2:
+	if (serial)
+		iounmap(serial);
+	release_mem_region(tmp_addr1, sizeof(struct ioc4_serial));
+out1:
+
+	return ret;
+}
+
+
+static struct ioc4_submodule ioc4_serial_submodule = {
+	.is_name = "IOC4_serial",
+	.is_owner = THIS_MODULE,
+	.is_probe = ioc4_serial_attach_one,
+	.is_remove = ioc4_serial_remove_one,
+};
+
+/**
+ * ioc4_serial_init - module init
+ */
+int ioc4_serial_init(void)
+{
+	int ret;
+
+	/* register with serial core */
+	if ((ret = uart_register_driver(&ioc4_uart_rs232)) < 0) {
+		printk(KERN_WARNING
+			"%s: Couldn't register rs232 IOC4 serial driver\n",
+			__func__);
+		return ret;
+	}
+	if ((ret = uart_register_driver(&ioc4_uart_rs422)) < 0) {
+		printk(KERN_WARNING
+			"%s: Couldn't register rs422 IOC4 serial driver\n",
+			__func__);
+		return ret;
+	}
+
+	/* register with IOC4 main module */
+	return ioc4_register_submodule(&ioc4_serial_submodule);
+}
+
+static void __devexit ioc4_serial_exit(void)
+{
+	ioc4_unregister_submodule(&ioc4_serial_submodule);
+	uart_unregister_driver(&ioc4_uart_rs232);
+	uart_unregister_driver(&ioc4_uart_rs422);
+}
+
+late_initcall(ioc4_serial_init); /* Call only after tty init is done */
+module_exit(ioc4_serial_exit);
+
+MODULE_AUTHOR("Pat Gefre - Silicon Graphics Inc. (SGI) <pfg@sgi.com>");
+MODULE_DESCRIPTION("Serial PCI driver module for SGI IOC4 Base-IO Card");
+MODULE_LICENSE("GPL");
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
