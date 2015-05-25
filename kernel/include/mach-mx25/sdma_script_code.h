@@ -1,1 +1,0 @@
-../../arch/arm/mach-mx25/sdma_script_code.h

@@ -1,0 +1,8 @@
+#!/bin/sh
+/bin/sand_stop_splash
+cd /mnt/pos/app/lcd
+./sand_lcd_daemon>/tmp/lcd_daemon.log 2>&1 &
+usleep 100000;
+cd /mnt/pos/app
+./linuxpos>/tmp/linuxpos.log 2>&1 &
+cd /

@@ -1,0 +1,3 @@
+#!/bin/sh
+killall linuxpos
+killall sand_lcd_daemon
